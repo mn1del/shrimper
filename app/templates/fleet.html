@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Fleet</h1>
+<div class="mb-3">
+  <button class="btn btn-primary">Add Competitor</button>
+</div>
+<table class="table table-striped">
+  <thead>
+    <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="5" class="text-muted">No competitors.</td></tr>
+  </tbody>
+</table>
+{% endblock %}

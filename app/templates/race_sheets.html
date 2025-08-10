@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Series Index</h1>
+<div class="mb-3">
+  <a class="btn btn-primary" href="{{ url_for('main.series_new') }}">Create New Series</a>
+</div>
+<table class="table table-striped">
+  <thead>
+    <tr><th>Series</th><th>Dates</th><th># Races</th><th>Last updated</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="5" class="text-muted">No series yet.</td></tr>
+  </tbody>
+</table>
+{% endblock %}
