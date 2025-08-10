@@ -3,7 +3,7 @@
   "competitors": [
     {
       "competitor_id": "C_45",
-      "sailor_name": "Nick Harrop",
+      "sailor_name": "NH",
       "boat_name": "Braken Two",
       "sail_no": "45",
       "starting_handicap_s_per_hr": 520,
@@ -13,7 +13,7 @@
     },
     {
       "competitor_id": "C_298",
-      "sailor_name": "Brian Phipps",
+      "sailor_name": "BP",
       "boat_name": "Ysella",
       "sail_no": "298",
       "starting_handicap_s_per_hr": -204,
