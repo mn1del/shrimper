@@ -1,0 +1,24 @@
+{
+  "updated_at": "2025-08-10T12:00:00Z",
+  "competitors": [
+    {
+      "competitor_id": "C_45",
+      "sailor_name": "Nick Harrop",
+      "boat_name": "Braken Two",
+      "sail_no": "45",
+      "starting_handicap_s_per_hr": 520,
+      "current_handicap_s_per_hr": 520,
+      "active": true,
+      "notes": ""
+    },
+    {
+      "competitor_id": "C_298",
+      "sailor_name": "Brian Phipps",
+      "boat_name": "Ysella",
+      "sail_no": "298",
+      "starting_handicap_s_per_hr": -204,
+      "current_handicap_s_per_hr": -214,
+      "active": true
+    }
+  ]
+}

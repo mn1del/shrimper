@@ -4,44 +4,56 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Dict, Iterable
+from typing import Dict, Iterable, List, Tuple
 
 SECONDS_PER_HOUR = 3600
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+# Data directory lives at the project root under ``data``.
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-# Load handicap deltas by finishing position (index corresponds to place).
-with (DATA_DIR / "handicap_deltas.json").open() as f:
-    HANDICAP_DELTAS: List[int] = json.load(f)
 
-# Load fleet size scaling factors (index corresponds to fleet size).
-with (DATA_DIR / "fleet_size_scaling.json").open() as f:
-    FLEET_SCALING: List[float] = json.load(f)
+def _build_lookup(entries: List[Dict], key_field: str, value_field: str) -> Tuple[Dict[int, float], float]:
+    """Build lookup dict and default value from settings entries."""
+    lookup: Dict[int, float] = {}
+    default = 0.0
+    for item in entries:
+        key = item[key_field]
+        value = item[value_field]
+        if isinstance(key, int):
+            lookup[int(key)] = value
+        elif key == "default_or_higher":
+            default = value
+    return lookup, default
 
-# League points awarded to the first ten finishers (index corresponds to place).
-LEAGUE_BASE_POINTS: List[float] = [0.0, 25.0, 18.0, 12.0, 9.0, 7.0, 4.0, 3.0, 2.0, 1.0, 0.0]
 
-MAX_DELTA_POS = len(HANDICAP_DELTAS) - 1
-MAX_SCALING_SIZE = len(FLEET_SCALING) - 1
-MAX_POINTS_POS = len(LEAGUE_BASE_POINTS) - 1
+# Load configuration from settings.json.
+with (DATA_DIR / "settings.json").open() as f:
+    _SETTINGS = json.load(f)
+
+_HANDICAP_DELTAS, _HANDICAP_DEFAULT = _build_lookup(
+    _SETTINGS["handicap_delta_by_rank"], "rank", "delta_s_per_hr"
+)
+_LEAGUE_POINTS, _POINTS_DEFAULT = _build_lookup(
+    _SETTINGS["league_points_by_rank"], "rank", "points"
+)
+_FLEET_FACTORS, _FLEET_DEFAULT = _build_lookup(
+    _SETTINGS["fleet_size_factor"], "finishers", "factor"
+)
 
 
 def _full_delta(position: int) -> int:
     """Return the base handicap delta for the given finishing position."""
-    idx = position if position <= MAX_DELTA_POS else MAX_DELTA_POS
-    return HANDICAP_DELTAS[idx]
+    return int(_HANDICAP_DELTAS.get(position, _HANDICAP_DEFAULT))
 
 
 def _scaling_factor(fleet_size: int) -> float:
     """Return the fleet size scaling factor for the number of finishers."""
-    idx = fleet_size if fleet_size <= MAX_SCALING_SIZE else MAX_SCALING_SIZE
-    return FLEET_SCALING[idx]
+    return float(_FLEET_FACTORS.get(fleet_size, _FLEET_DEFAULT))
 
 
 def _base_points(position: int) -> float:
     """Return the base league points for the given finishing position."""
-    idx = position if position <= MAX_POINTS_POS else MAX_POINTS_POS
-    return LEAGUE_BASE_POINTS[idx]
+    return float(_LEAGUE_POINTS.get(position, _POINTS_DEFAULT))
 
 
 def adjusted_time(start: int, finish: int, handicap: int) -> Dict[str, float]:

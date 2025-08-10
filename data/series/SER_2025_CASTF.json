@@ -1,0 +1,11 @@
+{
+  "series_id": "SER_2025_CASTF",
+  "name": "Cast F",
+  "season": 2025,
+  "created_at": "2025-04-01T09:00:00Z",
+  "status": "open",
+  "race_ids": [
+    "RACE_2025_06Jun_CastF4"
+  ],
+  "notes": ""
+}

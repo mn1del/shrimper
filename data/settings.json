@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "updated_at": "2025-08-10T12:00:00Z",
+  "handicap_delta_by_rank": [
+    {"rank": 1, "delta_s_per_hr": -30},
+    {"rank": 2, "delta_s_per_hr": -20},
+    {"rank": 3, "delta_s_per_hr": -10},
+    {"rank": 4, "delta_s_per_hr": 0},
+    {"rank": 5, "delta_s_per_hr": 10},
+    {"rank": 6, "delta_s_per_hr": 20},
+    {"rank": 7, "delta_s_per_hr": 30},
+    {"rank": 8, "delta_s_per_hr": 40},
+    {"rank": 9, "delta_s_per_hr": 50},
+    {"rank": 10, "delta_s_per_hr": 60},
+    {"rank": "default_or_higher", "delta_s_per_hr": 60}
+  ],
+  "league_points_by_rank": [
+    {"rank": 1, "points": 25},
+    {"rank": 2, "points": 18},
+    {"rank": 3, "points": 12},
+    {"rank": 4, "points": 9},
+    {"rank": 5, "points": 7},
+    {"rank": 6, "points": 4},
+    {"rank": 7, "points": 3},
+    {"rank": 8, "points": 2},
+    {"rank": 9, "points": 1},
+    {"rank": 10, "points": 0},
+    {"rank": "default_or_higher", "points": 0}
+  ],
+  "fleet_size_factor": [
+    {"finishers": 1, "factor": 0.001},
+    {"finishers": 2, "factor": 0.0},
+    {"finishers": 3, "factor": 0.0},
+    {"finishers": 4, "factor": 0.3},
+    {"finishers": 5, "factor": 0.6},
+    {"finishers": 6, "factor": 1.0},
+    {"finishers": "default_or_higher", "factor": 1.0}
+  ]
+}
