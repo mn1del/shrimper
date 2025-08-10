@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="mb-3">
+  <a class="btn btn-primary" href="{{ url_for('main.race_new') }}">Create New Race</a>
+</div>
+<table class="table table-striped">
+  <thead>
+    <tr><th>Date</th><th>Race</th><th>Start Time</th><th># Entrants</th><th># Finishers</th><th>Status</th><th>Last updated</th></tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="7" class="text-muted">No races yet.</td></tr>
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Settings</h1>
+<form>
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <h2 class="h5">Base Handicap Change by Rank</h2>
+      <table class="table table-sm table-bordered">
+        <thead><tr><th>Rank</th><th>Δ (s/hr)</th></tr></thead>
+        <tbody><tr><td>1</td><td><input class="form-control form-control-sm" value="-30"></td></tr></tbody>
+      </table>
+    </div>
+    <div class="col-lg-4">
+      <h2 class="h5">League Points by Rank</h2>
+      <table class="table table-sm table-bordered">
+        <thead><tr><th>Rank</th><th>Points</th></tr></thead>
+        <tbody><tr><td>1</td><td><input class="form-control form-control-sm" value="25"></td></tr></tbody>
+      </table>
+    </div>
+    <div class="col-lg-4">
+      <h2 class="h5">Fleet-size Scaling</h2>
+      <table class="table table-sm table-bordered">
+        <thead><tr><th>Finishers</th><th>Factor</th></tr></thead>
+        <tbody><tr><td>1</td><td><input class="form-control form-control-sm" value="0.001"></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="mt-3">
+    <button class="btn btn-primary">Save settings</button>
+  </div>
+</form>
+{% endblock %}
