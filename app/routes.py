@@ -1,4 +1,6 @@
 from flask import Blueprint, redirect, render_template, url_for
+import json
+from pathlib import Path
 
 
 bp = Blueprint('main', __name__)
@@ -53,7 +55,10 @@ def standings_league():
 @bp.route('/fleet')
 def fleet():
     breadcrumbs = [('Fleet', None)]
-    return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs)
+    data_path = Path(__file__).resolve().parent / 'data' / 'fleet.json'
+    with data_path.open() as f:
+        fleet = json.load(f)
+    return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs, fleet=fleet)
 
 
 @bp.route('/rules')
