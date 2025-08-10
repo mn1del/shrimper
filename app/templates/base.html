@@ -18,8 +18,14 @@
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" href="#" id="raceSheetsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Race Sheets</a>
               <ul class="dropdown-menu" aria-labelledby="raceSheetsDropdown">
+                {% for entry in nav_series %}
+                  <li><h6 class="dropdown-header">{{ entry.series.name }}</h6></li>
+                  {% for race in entry.races %}
+                    <li><a class="dropdown-item" href="{{ url_for('main.race_sheet', race_id=race.race_id) }}">{{ race.name }}</a></li>
+                  {% endfor %}
+                  <li><hr class="dropdown-divider"></li>
+                {% endfor %}
                 <li><a class="dropdown-item" href="{{ url_for('main.series_index') }}">Series Index</a></li>
-                <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item" href="{{ url_for('main.series_new') }}">Create New Series</a></li>
                 <li><a class="dropdown-item" href="{{ url_for('main.race_new') }}">Create New Race</a></li>
               </ul>

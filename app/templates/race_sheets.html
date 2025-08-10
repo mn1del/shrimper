@@ -10,7 +10,19 @@
     <tr><th>Series</th><th>Dates</th><th># Races</th><th>Last updated</th><th>Actions</th></tr>
   </thead>
   <tbody>
-    <tr><td colspan="5" class="text-muted">No series yet.</td></tr>
+    {% if series_list %}
+      {% for s in series_list %}
+        <tr>
+          <td><a href="{{ url_for('main.series_detail', series_id=s.series_id) }}">{{ s.name }}</a></td>
+          <td>{{ s.dates or '-' }}</td>
+          <td>{{ s.num_races }}</td>
+          <td>{{ s.updated_at or '-' }}</td>
+          <td><a class="btn btn-sm btn-secondary" href="{{ url_for('main.series_detail', series_id=s.series_id) }}">View</a></td>
+        </tr>
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="5" class="text-muted">No series yet.</td></tr>
+    {% endif %}
   </tbody>
 </table>
 {% endblock %}

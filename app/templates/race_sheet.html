@@ -3,8 +3,8 @@
 {% block content %}
 <div class="card mb-3">
   <div class="card-body">
-    <h2 class="card-title">{{ title }}</h2>
-    <p class="card-text"><span class="badge bg-secondary">Draft</span></p>
+    <h2 class="card-title">{{ race.name }}</h2>
+    <p class="card-text"><span class="badge bg-secondary">{{ race.status | capitalize }}</span></p>
   </div>
 </div>
 
@@ -27,7 +27,13 @@
       </tr>
     </thead>
     <tbody>
-      <tr><td colspan="18" class="text-muted">No entrants yet.</td></tr>
+      {% if race.entrants %}
+        {% for entrant in race.entrants %}
+          <tr><td colspan="18" class="text-muted">{{ entrant }}</td></tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="18" class="text-muted">No entrants yet.</td></tr>
+      {% endif %}
     </tbody>
   </table>
 </div>

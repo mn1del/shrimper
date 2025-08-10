@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1>{{ title }}</h1>
+<h1>{{ series.name }}</h1>
 <div class="mb-3">
   <a class="btn btn-primary" href="{{ url_for('main.race_new') }}">Create New Race</a>
 </div>
@@ -10,7 +10,21 @@
     <tr><th>Date</th><th>Race</th><th>Start Time</th><th># Entrants</th><th># Finishers</th><th>Status</th><th>Last updated</th></tr>
   </thead>
   <tbody>
-    <tr><td colspan="7" class="text-muted">No races yet.</td></tr>
+    {% if races %}
+      {% for race in races %}
+        <tr>
+          <td>{{ race.date }}</td>
+          <td><a href="{{ url_for('main.race_sheet', race_id=race.race_id) }}">{{ race.name }}</a></td>
+          <td>{{ race.start_time }}</td>
+          <td>{{ race.entrants|length }}</td>
+          <td>{{ race.results|length }}</td>
+          <td>{{ race.status }}</td>
+          <td>{{ race.updated_at or race.created_at }}</td>
+        </tr>
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="7" class="text-muted">No races yet.</td></tr>
+    {% endif %}
   </tbody>
 </table>
 {% endblock %}
