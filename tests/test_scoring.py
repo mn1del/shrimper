@@ -60,22 +60,30 @@ def test_high_positions_capped_and_full_scaling():
     assert results[10]["actual_delta"] == 60
 
 
-def test_league_standings():
+def test_league_points_and_standings():
     race1_entries = [
         {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3600, "initial_handicap": 300},
         {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "finish": 3660, "initial_handicap": 300},
         {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3720, "initial_handicap": 300},
+        {"sailor": "D", "boat": "", "sail_number": 4, "start": 0, "finish": 3780, "initial_handicap": 300},
     ]
     race2_entries = [
         {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3700, "initial_handicap": 300},
         {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "finish": 3600, "initial_handicap": 300},
-        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3750, "initial_handicap": 300},
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3650, "initial_handicap": 300},
+        {"sailor": "D", "boat": "", "sail_number": 4, "start": 0, "finish": 3800, "initial_handicap": 300},
     ]
     race1 = calculate_race_results(race1_entries)
     race2 = calculate_race_results(race2_entries)
+    # With four finishers scaling factor is 0.3 so verify race points
+    assert math.isclose(race1[0]["points"], 25 * 0.3)
+    assert math.isclose(race1[1]["points"], 18 * 0.3)
+    assert math.isclose(race1[2]["points"], 12 * 0.3)
+
     standings = compute_league_standings([race1, race2])
     totals = {s["sailor"]: s["total_points"] for s in standings}
-    assert totals["C"] == 6
-    assert totals["A"] == 3
-    assert totals["B"] == 3
-    assert [s["sailor"] for s in standings] == ["A", "B", "C"]
+    assert math.isclose(totals["B"], 12.9)
+    assert math.isclose(totals["A"], 11.1)
+    assert math.isclose(totals["C"], 9.0)
+    assert math.isclose(totals["D"], 5.4)
+    assert [s["sailor"] for s in standings] == ["B", "A", "C", "D"]

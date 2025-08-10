@@ -18,8 +18,12 @@ with (DATA_DIR / "handicap_deltas.json").open() as f:
 with (DATA_DIR / "fleet_size_scaling.json").open() as f:
     FLEET_SCALING: List[float] = json.load(f)
 
+# League points awarded to the first ten finishers (index corresponds to place).
+LEAGUE_BASE_POINTS: List[float] = [0.0, 25.0, 18.0, 12.0, 9.0, 7.0, 4.0, 3.0, 2.0, 1.0, 0.0]
+
 MAX_DELTA_POS = len(HANDICAP_DELTAS) - 1
 MAX_SCALING_SIZE = len(FLEET_SCALING) - 1
+MAX_POINTS_POS = len(LEAGUE_BASE_POINTS) - 1
 
 
 def _full_delta(position: int) -> int:
@@ -32,6 +36,12 @@ def _scaling_factor(fleet_size: int) -> float:
     """Return the fleet size scaling factor for the number of finishers."""
     idx = fleet_size if fleet_size <= MAX_SCALING_SIZE else MAX_SCALING_SIZE
     return FLEET_SCALING[idx]
+
+
+def _base_points(position: int) -> float:
+    """Return the base league points for the given finishing position."""
+    idx = position if position <= MAX_POINTS_POS else MAX_POINTS_POS
+    return LEAGUE_BASE_POINTS[idx]
 
 
 def adjusted_time(start: int, finish: int, handicap: int) -> Dict[str, float]:
@@ -62,7 +72,7 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
 
     Each entry must provide ``start`` and ``finish`` times in seconds and an
     ``initial_handicap`` value. The function returns a list of results sorted by
-    adjusted time, including revised handicaps and handicap positions.
+    adjusted time, including revised handicaps, positions, and league points.
     """
     results: List[Dict] = []
     for entry in entries:
@@ -80,6 +90,8 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
         base_delta = _full_delta(position)
         scaled_delta = base_delta * factor
         actual_delta = int(round(scaled_delta))
+        base_points = _base_points(position)
+        race_points = base_points * factor
         result.update(
             {
                 "handicap_position": position,
@@ -87,6 +99,7 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
                 "scaled_delta": scaled_delta,
                 "actual_delta": actual_delta,
                 "revised_handicap": result["initial_handicap"] + actual_delta,
+                "points": race_points,
             }
         )
 
@@ -101,15 +114,15 @@ def compute_league_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]:
             :func:`calculate_race_results`.
 
     Returns:
-        List of standings dictionaries sorted by total points (low points wins).
+        List of standings dictionaries sorted by total points (high points wins).
     """
-    totals: Dict[str, int] = {}
+    totals: Dict[str, float] = {}
     names: Dict[str, Dict] = {}
     for race in races:
         for res in race:
             sailor = res.get("sailor")
-            points = res.get("handicap_position")
-            totals[sailor] = totals.get(sailor, 0) + points
+            points = res.get("points", 0.0)
+            totals[sailor] = totals.get(sailor, 0.0) + points
             names[sailor] = {
                 "sailor": sailor,
                 "boat": res.get("boat"),
@@ -121,7 +134,7 @@ def compute_league_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]:
         entry = {**names[sailor], "total_points": total_points}
         standings.append(entry)
 
-    standings.sort(key=lambda r: (r["total_points"], r["sailor"]))
+    standings.sort(key=lambda r: (-r["total_points"], r["sailor"]))
 
     for place, entry in enumerate(standings, start=1):
         entry["place"] = place
