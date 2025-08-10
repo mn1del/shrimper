@@ -7,20 +7,21 @@
 </div>
 <table class="table table-striped">
   <thead>
-    <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th></tr>
+    <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr>
   </thead>
   <tbody>
     {% if fleet %}
       {% for competitor in fleet %}
         <tr>
-          <td>{{ competitor.sailor or '?' }}</td>
-          <td>{{ competitor.boat }}</td>
-          <td>{{ competitor.sail_number }}</td>
-          <td>{{ competitor.initial_handicap }}</td>
+          <td>{{ competitor.sailor_name or '?' }}</td>
+          <td>{{ competitor.boat_name }}</td>
+          <td>{{ competitor.sail_no }}</td>
+          <td>{{ competitor.starting_handicap_s_per_hr }}</td>
+          <td>{{ competitor.current_handicap_s_per_hr }}</td>
         </tr>
       {% endfor %}
     {% else %}
-      <tr><td colspan="4" class="text-muted">No competitors.</td></tr>
+      <tr><td colspan="5" class="text-muted">No competitors.</td></tr>
     {% endif %}
   </tbody>
 </table>

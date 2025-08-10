@@ -55,10 +55,11 @@ def standings_league():
 @bp.route('/fleet')
 def fleet():
     breadcrumbs = [('Fleet', None)]
-    data_path = Path(__file__).resolve().parent / 'data' / 'fleet.json'
+    data_path = Path(__file__).resolve().parent.parent / 'data' / 'fleet.json'
     with data_path.open() as f:
-        fleet = json.load(f)
-    return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs, fleet=fleet)
+        data = json.load(f)
+    competitors = data.get('competitors', [])
+    return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs, fleet=competitors)
 
 
 @bp.route('/rules')
