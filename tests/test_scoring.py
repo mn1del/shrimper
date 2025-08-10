@@ -1,6 +1,15 @@
 import math
+import os
+import sys
 
-from app.scoring import adjusted_time, calculate_race_results, compute_league_standings
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from app.scoring import (
+    adjusted_time,
+    calculate_race_results,
+    compute_league_standings,
+    compute_traditional_standings,
+)
 
 
 def test_adjusted_time_and_rank():
@@ -87,3 +96,27 @@ def test_league_points_and_standings():
     assert math.isclose(totals["C"], 9.0)
     assert math.isclose(totals["D"], 5.4)
     assert [s["sailor"] for s in standings] == ["B", "A", "C", "D"]
+
+
+def test_traditional_points_and_standings():
+    race1_entries = [
+        {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3600, "initial_handicap": 300},
+        {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "finish": 3660, "initial_handicap": 300},
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "initial_handicap": 300, "status": "DNF"},
+    ]
+    race2_entries = [
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3600, "initial_handicap": 300},
+        {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3660, "initial_handicap": 300},
+        {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "initial_handicap": 300, "status": "DNF"},
+    ]
+    race1 = calculate_race_results(race1_entries)
+    race2 = calculate_race_results(race2_entries)
+    assert [r["traditional_points"] for r in race1] == [1, 2, 3]
+    assert [r["traditional_points"] for r in race2] == [1, 2, 3]
+
+    standings = compute_traditional_standings([race1, race2])
+    totals = {s["sailor"]: s["total_points"] for s in standings}
+    assert totals["A"] == 3
+    assert totals["B"] == 5
+    assert totals["C"] == 4
+    assert [s["sailor"] for s in standings] == ["A", "C", "B"]
