@@ -71,22 +71,34 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
     """Calculate race results using the PHC system.
 
     Each entry must provide ``start`` and ``finish`` times in seconds and an
-    ``initial_handicap`` value. The function returns a list of results sorted by
-    adjusted time, including revised handicaps, positions, and league points.
+    ``initial_handicap`` value.  Non-finishers can be indicated by setting
+    ``status`` to ``"DNF"``, ``"DNS"`` or ``"DSQ"`` or by omitting a finish
+    time.  The function returns a list of results sorted by adjusted time for
+    finishers and appends non-finisher entries afterwards.  Each result includes
+    revised handicaps, league points and traditional low-point scores.
     """
-    results: List[Dict] = []
+
+    finishers: List[Dict] = []
+    non_finishers: List[Dict] = []
     for entry in entries:
-        times = adjusted_time(entry["start"], entry["finish"], entry["initial_handicap"])
-        result = {**entry, **times}
-        results.append(result)
+        status = entry.get("status")
+        finish = entry.get("finish")
+        if status in {"DNF", "DNS", "DSQ"} or finish is None:
+            # Record the entry without timing information
+            non_finishers.append({**entry, "status": status})
+            continue
+
+        times = adjusted_time(entry["start"], finish, entry["initial_handicap"])
+        result = {**entry, **times, "status": status}
+        finishers.append(result)
 
     # Rank by adjusted time (lower is better)
-    results.sort(key=lambda r: r["adjusted_time_seconds"])
+    finishers.sort(key=lambda r: r["adjusted_time_seconds"])
 
-    fleet_size = len(results)
+    fleet_size = len(finishers)
     factor = _scaling_factor(fleet_size)
 
-    for position, result in enumerate(results, start=1):
+    for position, result in enumerate(finishers, start=1):
         base_delta = _full_delta(position)
         scaled_delta = base_delta * factor
         actual_delta = int(round(scaled_delta))
@@ -100,10 +112,27 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
                 "actual_delta": actual_delta,
                 "revised_handicap": result["initial_handicap"] + actual_delta,
                 "points": race_points,
+                # Traditional scoring assigns points equal to finishing position
+                "traditional_points": position,
             }
         )
 
-    return results
+    # Non-finishers score fleet_size + 1 points in traditional system
+    non_finisher_points = fleet_size + 1
+    for entry in non_finishers:
+        entry.update(
+            {
+                "handicap_position": None,
+                "full_delta": None,
+                "scaled_delta": None,
+                "actual_delta": None,
+                "revised_handicap": entry.get("initial_handicap"),
+                "points": 0.0,
+                "traditional_points": non_finisher_points,
+            }
+        )
+
+    return finishers + non_finishers
 
 
 def compute_league_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]:
@@ -141,4 +170,47 @@ def compute_league_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]:
 
     return standings
 
-__all__ = ["adjusted_time", "calculate_race_results", "compute_league_standings"]
+
+def compute_traditional_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]:
+    """Aggregate race points for traditional low-point scoring.
+
+    Args:
+        races: Iterable of race result iterables as returned by
+            :func:`calculate_race_results`.
+
+    Returns:
+        List of standings dictionaries sorted by ascending total points
+        (low points wins).
+    """
+
+    totals: Dict[str, float] = {}
+    names: Dict[str, Dict] = {}
+    for race in races:
+        for res in race:
+            sailor = res.get("sailor")
+            points = res.get("traditional_points", 0.0)
+            totals[sailor] = totals.get(sailor, 0.0) + points
+            names[sailor] = {
+                "sailor": sailor,
+                "boat": res.get("boat"),
+                "sail_number": res.get("sail_number"),
+            }
+
+    standings: List[Dict] = []
+    for sailor, total_points in totals.items():
+        entry = {**names[sailor], "total_points": total_points}
+        standings.append(entry)
+
+    standings.sort(key=lambda r: (r["total_points"], r["sailor"]))
+
+    for place, entry in enumerate(standings, start=1):
+        entry["place"] = place
+
+    return standings
+
+__all__ = [
+    "adjusted_time",
+    "calculate_race_results",
+    "compute_league_standings",
+    "compute_traditional_standings",
+]
