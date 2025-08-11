@@ -11,9 +11,8 @@ DATA_DIR = Path(__file__).resolve().parent.parent / 'data'
 def _series_meta_paths():
     """Yield paths to all series metadata files across seasons."""
     for season_dir in DATA_DIR.iterdir():
-        series_root = season_dir / "series"
-        if series_root.is_dir():
-            yield from series_root.glob("*/series_metadata.json")
+        if season_dir.is_dir():
+            yield from season_dir.glob("*/series_metadata.json")
 
 
 def _load_series_entries():
