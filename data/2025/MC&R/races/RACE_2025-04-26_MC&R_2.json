@@ -1,0 +1,29 @@
+{
+  "race_id": "RACE_2025-04-26_MC&R_2",
+  "series_id": "SER_2025_MC&R",
+  "name": "SER_2025_MC&R_2",
+  "date": "2025-04-26",
+  "start_time": "11:25:00",
+  "entrants": [
+    {
+      "competitor_id": "C_264",
+      "initial_handicap": 104,
+      "finish_time": "12:09:40"
+    },
+    {
+      "competitor_id": "C_334",
+      "initial_handicap": 280,
+      "finish_time": "12:18:05"
+    },
+    {
+      "competitor_id": "C_346",
+      "initial_handicap": -95,
+      "finish_time": "12:14:09"
+    },
+    {
+      "competitor_id": "C_889",
+      "initial_handicap": 276,
+      "finish_time": "12:13:52"
+    }
+  ]
+}
