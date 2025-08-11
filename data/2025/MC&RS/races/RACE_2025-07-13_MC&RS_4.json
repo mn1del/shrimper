@@ -1,0 +1,44 @@
+{
+  "race_id": "RACE_2025-07-13_MC&RS_4",
+  "series_id": "SER_2025_MC&RS",
+  "name": "SER_2025_MC&RS_4",
+  "date": "2025-07-13",
+  "start_time": "11:45:00",
+  "entrants": [
+    {
+      "competitor_id": "C_298",
+      "initial_handicap": -198,
+      "finish_time": "12:28:33"
+    },
+    {
+      "competitor_id": "C_503",
+      "initial_handicap": 153,
+      "finish_time": "12:35:14"
+    },
+    {
+      "competitor_id": "C_678",
+      "initial_handicap": -34,
+      "finish_time": "12:35:56"
+    },
+    {
+      "competitor_id": "C_802",
+      "initial_handicap": 190,
+      "finish_time": "12:34:25"
+    },
+    {
+      "competitor_id": "C_816",
+      "initial_handicap": 127,
+      "finish_time": "12:34:38"
+    },
+    {
+      "competitor_id": "C_842",
+      "initial_handicap": 306,
+      "finish_time": "12:35:28"
+    },
+    {
+      "competitor_id": "C_889",
+      "initial_handicap": 308,
+      "finish_time": "12:34:10"
+    }
+  ]
+}
