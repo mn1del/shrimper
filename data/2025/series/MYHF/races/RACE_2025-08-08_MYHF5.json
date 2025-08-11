@@ -1,5 +1,5 @@
 {
-  "race_id": "RACE_2025_08Aug_MYHF5",
+  "race_id": "RACE_2025-08-08_MYHF5",
   "series_id": "SER_2025_MYHF",
   "name": "MYHF5",
   "date": "2025-08-08",
@@ -24,7 +24,9 @@
     {
       "competitor_id": "C_45",
       "initial_handicap_s_per_hr": 520,
-      "finish": { "status": "DNF" }
+      "finish": {
+        "status": "DNF"
+      }
     }
   ],
   "results": {

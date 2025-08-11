@@ -5,7 +5,8 @@
   "created_at": "2025-04-01T09:00:00Z",
   "status": "open",
   "race_ids": [
-    "RACE_2025_08Aug_MYHF5"
+    "RACE_2025-08-08_MYHF5"
   ],
-  "notes": ""
+  "notes": "",
+  "slug": "MYHF"
 }

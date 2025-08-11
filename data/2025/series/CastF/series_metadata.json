@@ -5,7 +5,8 @@
   "created_at": "2025-04-01T09:00:00Z",
   "status": "open",
   "race_ids": [
-    "RACE_2025_06Jun_CastF4"
+    "RACE_2025-06-06_CastF4"
   ],
-  "notes": ""
+  "notes": "",
+  "slug": "CastF"
 }
