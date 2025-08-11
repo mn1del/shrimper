@@ -1,0 +1,64 @@
+{
+  "race_id": "RACE_2025-08-08_MYHF_5",
+  "series_id": "SER_2025_MYHF",
+  "name": "SER_2025_MYHF_5",
+  "date": "2025-08-08",
+  "start_time": "18:35:00",
+  "entrants": [
+    {
+      "competitor_id": "C_102",
+      "initial_handicap": -88,
+      "finish_time": "20:07:34"
+    },
+    {
+      "competitor_id": "C_264",
+      "initial_handicap": 105,
+      "finish_time": "19:56:30"
+    },
+    {
+      "competitor_id": "C_298",
+      "initial_handicap": -204,
+      "finish_time": "19:50:10"
+    },
+    {
+      "competitor_id": "C_346",
+      "initial_handicap": -30,
+      "finish_time": "19:54:59"
+    },
+    {
+      "competitor_id": "C_455",
+      "initial_handicap": -54,
+      "finish_time": "19:56:50"
+    },
+    {
+      "competitor_id": "C_727",
+      "initial_handicap": 130,
+      "finish_time": "20:00:15"
+    },
+    {
+      "competitor_id": "C_816",
+      "initial_handicap": 137,
+      "finish_time": "19:55:12"
+    },
+    {
+      "competitor_id": "C_842",
+      "initial_handicap": 286,
+      "finish_time": "20:11:04"
+    },
+    {
+      "competitor_id": "C_889",
+      "initial_handicap": 338,
+      "finish_time": "20:09:31"
+    },
+    {
+      "competitor_id": "C_392",
+      "initial_handicap": -80,
+      "finish_time": "19:57:35"
+    },
+    {
+      "competitor_id": "C_1120",
+      "initial_handicap": 370,
+      "finish_time": "20:08:33"
+    }
+  ]
+}
