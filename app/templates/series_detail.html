@@ -2,29 +2,70 @@
 
 {% block content %}
 <h1>{{ series.name }}</h1>
-<div class="mb-3">
-  <a class="btn btn-primary" href="{{ url_for('main.race_or_series_new') }}">Create New Race or Series</a>
+<form method="get" class="mb-3">
+  <select name="race_id" class="form-select" onchange="this.form.submit()">
+    <option value="">Select a race</option>
+    {% for race in races %}
+      <option value="{{ race.race_id }}" {% if selected_race and selected_race.race_id == race.race_id %}selected{% endif %}>
+        {{ race.name }} ({{ race.date }})
+      </option>
+    {% endfor %}
+    <option value="__new__">Create New Race</option>
+  </select>
+</form>
+
+{% if selected_race %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="mb-3">
+      <label for="start_time" class="form-label">Start Time</label>
+      <input type="text" id="start_time" class="form-control" value="{{ selected_race.start_time }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Number of Finishers</label>
+      <input type="text" class="form-control" value="{{ finisher_count }}" readonly>
+    </div>
+  </div>
 </div>
-<table class="table table-striped">
-  <thead>
-    <tr><th>Date</th><th>Race</th><th>Start Time</th><th># Entrants</th><th># Finishers</th><th>Status</th><th>Last updated</th></tr>
-  </thead>
-  <tbody>
-    {% if races %}
-      {% for race in races %}
-        <tr>
-          <td>{{ race.date }}</td>
-          <td><a href="{{ url_for('main.race_sheet', race_id=race.race_id) }}">{{ race.name }}</a></td>
-          <td>{{ race.start_time }}</td>
-          <td>{{ race.entrants|length }}</td>
-          <td>{{ race.results|length }}</td>
-          <td>{{ race.status }}</td>
-          <td>{{ race.updated_at or race.created_at }}</td>
-        </tr>
-      {% endfor %}
-    {% else %}
-      <tr><td colspan="7" class="text-muted">No races yet.</td></tr>
-    {% endif %}
-  </tbody>
-</table>
+
+<div class="table-responsive">
+  <table class="table table-bordered table-sm align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Sailor</th><th>Boat</th><th>Sail No.</th>
+        <th>Initial Hcp</th><th>Finish</th><th>On Course (s)</th>
+        <th>Abs Pos</th><th>Allowance</th><th>Adj Time (s)</th>
+        <th>Adj Time</th><th>Hcp Pos</th><th>Race Pts</th>
+        <th>League Pts</th><th>Full Δ</th><th>Scaled Δ</th>
+        <th>Actual Δ</th><th>Revised Hcp</th><th>Place</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for comp in fleet %}
+      {% set result = (selected_race.results or {}).get(comp.competitor_id, {}) %}
+      <tr>
+        <td>{{ comp.sailor_name }}</td>
+        <td>{{ comp.boat_name }}</td>
+        <td>{{ comp.sail_no }}</td>
+        <td>{{ comp.current_handicap_s_per_hr }}</td>
+        <td><input type="text" class="form-control form-control-sm" value="{{ result.finish_time or '' }}"></td>
+        <td>{{ result.on_course_secs or '' }}</td>
+        <td>{{ result.abs_pos or '' }}</td>
+        <td>{{ result.allowance or '' }}</td>
+        <td>{{ result.adj_time_secs or '' }}</td>
+        <td>{{ result.adj_time or '' }}</td>
+        <td>{{ result.hcp_pos or '' }}</td>
+        <td>{{ result.race_pts or '' }}</td>
+        <td>{{ result.league_pts or '' }}</td>
+        <td>{{ result.full_delta or '' }}</td>
+        <td>{{ result.scaled_delta or '' }}</td>
+        <td>{{ result.actual_delta or '' }}</td>
+        <td>{{ result.revised_hcp or '' }}</td>
+        <td>{{ result.place or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}
