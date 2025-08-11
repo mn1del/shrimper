@@ -1,0 +1,24 @@
+{
+  "race_id": "RACE_2025-07-27_CastS_1",
+  "series_id": "SER_2025_CastS",
+  "name": "SER_2025_CastS_1",
+  "date": "2025-07-27",
+  "start_time": "10:47:30",
+  "entrants": [
+    {
+      "competitor_id": "C_346",
+      "initial_handicap": -1,
+      "finish_time": "11:39:49"
+    },
+    {
+      "competitor_id": "C_503",
+      "initial_handicap": 183,
+      "finish_time": "11:44:11"
+    },
+    {
+      "competitor_id": "C_842",
+      "initial_handicap": 286,
+      "finish_time": "11:52:49"
+    }
+  ]
+}
