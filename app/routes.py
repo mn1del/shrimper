@@ -178,8 +178,39 @@ def series_detail(series_id):
     series, races = _find_series(series_id)
     if series is None:
         abort(404)
+
+    race_id = request.args.get('race_id')
+    if race_id == '__new__':
+        return redirect(url_for('main.race_or_series_new'))
+
+    selected_race = None
+    finisher_count = 0
+    fleet = []
+    if race_id:
+        selected_race = _find_race(race_id)
+        if selected_race:
+            results = selected_race.get('results', {})
+            if isinstance(results, list):
+                results = {r.get('competitor_id'): r for r in results if r.get('competitor_id')}
+                selected_race['results'] = results
+            finisher_count = sum(
+                1 for res in results.values() if res.get('finish_time')
+            )
+            fleet_path = DATA_DIR / 'fleet.json'
+            with fleet_path.open() as f:
+                fleet = json.load(f).get('competitors', [])
+
     breadcrumbs = [('Race Series', url_for('main.series_index')), (series.get('name', series_id), None)]
-    return render_template('series_detail.html', title=series.get('name', series_id), breadcrumbs=breadcrumbs, series=series, races=races)
+    return render_template(
+        'series_detail.html',
+        title=series.get('name', series_id),
+        breadcrumbs=breadcrumbs,
+        series=series,
+        races=races,
+        selected_race=selected_race,
+        finisher_count=finisher_count,
+        fleet=fleet,
+    )
 
 
 @bp.route('/races/<race_id>')
