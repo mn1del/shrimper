@@ -1,10 +1,5 @@
 {
   "series_id": "SER_2025_MC&R",
   "name": "MC&R",
-  "season": 2025,
-  "created_at": "2025-01-01T00:00:00Z",
-  "status": "open",
-  "race_ids": [],
-  "notes": "",
-  "slug": "MC&R"
+  "season": 2025
 }

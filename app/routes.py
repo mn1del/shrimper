@@ -24,11 +24,9 @@ def _load_series_entries():
             series = json.load(f)
         races = []
         races_dir = meta_path.parent / "races"
-        for race_id in series.get("race_ids", []):
-            race_path = races_dir / f"{race_id}.json"
-            if race_path.exists():
-                with race_path.open() as rf:
-                    races.append(json.load(rf))
+        for race_path in sorted(races_dir.glob("*.json")):
+            with race_path.open() as rf:
+                races.append(json.load(rf))
         entries.append({"series": series, "races": races})
     return entries
 
@@ -42,11 +40,9 @@ def _load_nav_data():
             series = json.load(f)
         races = []
         races_dir = meta_path.parent / "races"
-        for race_id in series.get("race_ids", []):
-            race_path = races_dir / f"{race_id}.json"
-            if race_path.exists():
-                with race_path.open() as rf:
-                    races.append(json.load(rf))
+        for race_path in sorted(races_dir.glob("*.json")):
+            with race_path.open() as rf:
+                races.append(json.load(rf))
         seasons.setdefault(season, []).append({"series": series, "races": races})
 
     nav = []
@@ -104,7 +100,6 @@ def series_index():
             "name": series.get("name"),
             "dates": dates,
             "num_races": len(races),
-            "updated_at": series.get("updated_at") or series.get("created_at", ""),
         })
     return render_template("race_series.html", title="Series Index", series_list=series_list)
 
@@ -135,12 +130,6 @@ def race_or_series_new():
             series_id = series_meta.get('series_id')
             season_dir = meta_path.parent.parent
             series_dir = meta_path.parent
-            race_ids = series_meta.setdefault('race_ids', [])
-            if race_id not in race_ids:
-                race_ids.append(race_id)
-            series_meta['updated_at'] = timestamp
-            with meta_path.open('w') as f:
-                json.dump(series_meta, f, indent=2)
         else:
             series_id = request.form.get('new_series_id')
             series_name = request.form.get('new_series_name')
@@ -152,11 +141,6 @@ def race_or_series_new():
                 'series_id': series_id,
                 'name': series_name,
                 'season': int(season),
-                'created_at': timestamp,
-                'status': 'open',
-                'race_ids': [race_id],
-                'notes': '',
-                'slug': series_name,
             }
             with (series_dir / 'series_metadata.json').open('w') as f:
                 json.dump(series_meta, f, indent=2)
