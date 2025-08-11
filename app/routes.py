@@ -1,5 +1,6 @@
-from flask import Blueprint, redirect, render_template, url_for, abort
+from flask import Blueprint, redirect, render_template, url_for, abort, request
 import json
+from datetime import datetime
 from pathlib import Path
 
 
@@ -108,21 +109,84 @@ def series_index():
     return render_template("race_series.html", title="Series Index", series_list=series_list)
 
 
-@bp.route('/series/new')
-def series_new():
-    breadcrumbs = [('Race Series', url_for('main.series_index')), ('Create New Series', None)]
-    return render_template('series_form.html', title='Create New Series', breadcrumbs=breadcrumbs)
+def _load_series_meta(series_id: str):
+    """Return (path, data) for the given series id or (None, None)."""
+    for meta_path in _series_meta_paths():
+        with meta_path.open() as f:
+            data = json.load(f)
+        if data.get("series_id") == series_id:
+            return meta_path, data
+    return None, None
 
 
-@bp.route('/races/new')
-def race_new():
-    breadcrumbs = [('Race Series', url_for('main.series_index')), ('Create New Race', None)]
+@bp.route('/race-series/new', methods=['GET', 'POST'])
+def race_or_series_new():
+    if request.method == 'POST':
+        existing_series_id = request.form.get('existing_series_id') or None
+        race_id = request.form.get('race_id')
+        race_name = request.form.get('race_name')
+        race_date = request.form.get('race_date')
+        timestamp = datetime.utcnow().isoformat() + 'Z'
+
+        if existing_series_id:
+            meta_path, series_meta = _load_series_meta(existing_series_id)
+            if meta_path is None:
+                abort(400)
+            series_id = series_meta.get('series_id')
+            season_dir = meta_path.parent.parent
+            series_dir = meta_path.parent
+            race_ids = series_meta.setdefault('race_ids', [])
+            if race_id not in race_ids:
+                race_ids.append(race_id)
+            series_meta['updated_at'] = timestamp
+            with meta_path.open('w') as f:
+                json.dump(series_meta, f, indent=2)
+        else:
+            series_id = request.form.get('new_series_id')
+            series_name = request.form.get('new_series_name')
+            season = request.form.get('new_series_season')
+            season_dir = DATA_DIR / str(season)
+            series_dir = season_dir / series_name
+            (series_dir / 'races').mkdir(parents=True, exist_ok=True)
+            series_meta = {
+                'series_id': series_id,
+                'name': series_name,
+                'season': int(season),
+                'created_at': timestamp,
+                'status': 'open',
+                'race_ids': [race_id],
+                'notes': '',
+                'slug': series_name,
+            }
+            with (series_dir / 'series_metadata.json').open('w') as f:
+                json.dump(series_meta, f, indent=2)
+
+        race_data = {
+            'race_id': race_id,
+            'series_id': series_id,
+            'name': race_name,
+            'date': race_date,
+            'start_time': '',
+            'status': 'draft',
+            'created_at': timestamp,
+            'updated_at': timestamp,
+            'entrants': [],
+            'results': {},
+        }
+
+        races_dir = series_dir / 'races'
+        races_dir.mkdir(parents=True, exist_ok=True)
+        with (races_dir / f'{race_id}.json').open('w') as f:
+            json.dump(race_data, f, indent=2)
+
+        global NAV_RACE_SERIES
+        NAV_RACE_SERIES = _load_nav_data()
+
+        return redirect(url_for('main.series_detail', series_id=series_id))
+
     series_list = [entry['series'] for entry in _load_series_entries()]
-    fleet_path = DATA_DIR / 'fleet.json'
-    with fleet_path.open() as f:
-        fleet_data = json.load(f)
-    competitors = fleet_data.get('competitors', [])
-    return render_template('race_form.html', title='Create New Race', breadcrumbs=breadcrumbs, series_list=series_list, competitors=competitors)
+    breadcrumbs = [('Race Series', url_for('main.series_index')), ('Create New Race or Series', None)]
+    return render_template('race_or_series_form.html', title='Create New Race or Series', breadcrumbs=breadcrumbs, series_list=series_list)
 
 
 @bp.route('/series/<series_id>')

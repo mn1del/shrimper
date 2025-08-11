@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Create New Race or Series</h1>
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Series</label>
+    <select class="form-select" name="existing_series_id" id="existing_series_id">
+      <option value="">Create new series</option>
+      {% for s in series_list %}
+        <option value="{{ s.series_id }}">{{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div id="new-series-fields">
+    <h2>New Series Details</h2>
+    <div class="mb-3">
+      <label class="form-label">Series ID</label>
+      <input type="text" class="form-control" name="new_series_id">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Series Name</label>
+      <input type="text" class="form-control" name="new_series_name">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Series Season</label>
+      <input type="number" class="form-control" name="new_series_season">
+    </div>
+  </div>
+
+  <h2>Race Details</h2>
+  <div class="mb-3">
+    <label class="form-label">Race ID</label>
+    <input type="text" class="form-control" name="race_id">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Race Name</label>
+    <input type="text" class="form-control" name="race_name">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Race Date</label>
+    <input type="date" class="form-control" name="race_date">
+  </div>
+  <button class="btn btn-primary">Save</button>
+</form>
+
+<script>
+  const seriesSelect = document.getElementById('existing_series_id');
+  const newSeries = document.getElementById('new-series-fields');
+  function toggleSeries() {
+    if (seriesSelect.value) {
+      newSeries.style.display = 'none';
+    } else {
+      newSeries.style.display = 'block';
+    }
+  }
+  seriesSelect.addEventListener('change', toggleSeries);
+  toggleSeries();
+</script>
+{% endblock %}
