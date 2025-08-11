@@ -1,10 +1,10 @@
 {
-  "series_id": "SER_2025_CASTF",
-  "name": "CastF",
+  "series_id": "SER_2025_CASTS",
+  "name": "CastS",
   "season": 2025,
   "created_at": "2025-01-01T00:00:00Z",
   "status": "open",
   "race_ids": [],
   "notes": "",
-  "slug": "CastF"
+  "slug": "CastS"
 }
