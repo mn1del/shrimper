@@ -1,0 +1,39 @@
+{
+  "race_id": "RACE_2025-06-29_PenD_6",
+  "series_id": "SER_2025_PenD",
+  "name": "SER_2025_PenD_6",
+  "date": "2025-06-29",
+  "start_time": "10:47:30",
+  "entrants": [
+    {
+      "competitor_id": "C_298",
+      "initial_handicap": -218,
+      "finish_time": "12:13:17"
+    },
+    {
+      "competitor_id": "C_334",
+      "initial_handicap": 313,
+      "finish_time": "12:22:10"
+    },
+    {
+      "competitor_id": "C_503",
+      "initial_handicap": 103,
+      "finish_time": "12:27:56"
+    },
+    {
+      "competitor_id": "C_816",
+      "initial_handicap": 147,
+      "finish_time": "12:14:14"
+    },
+    {
+      "competitor_id": "C_889",
+      "initial_handicap": 358,
+      "finish_time": "12:15:57"
+    },
+    {
+      "competitor_id": "C_392",
+      "initial_handicap": -90,
+      "finish_time": "12:09:42"
+    }
+  ]
+}

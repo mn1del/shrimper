@@ -1,0 +1,29 @@
+{
+  "race_id": "RACE_2025-06-22_PenD_5",
+  "series_id": "SER_2025_PenD",
+  "name": "SER_2025_PenD_5",
+  "date": "2025-06-22",
+  "start_time": "10:47:30",
+  "entrants": [
+    {
+      "competitor_id": "C_298",
+      "initial_handicap": -188,
+      "finish_time": "12:47:05"
+    },
+    {
+      "competitor_id": "C_503",
+      "initial_handicap": 53,
+      "finish_time": "12:56:37"
+    },
+    {
+      "competitor_id": "C_802",
+      "initial_handicap": 210,
+      "finish_time": "13:11:51"
+    },
+    {
+      "competitor_id": "C_816",
+      "initial_handicap": 157,
+      "finish_time": "13:14:17"
+    }
+  ]
+}
