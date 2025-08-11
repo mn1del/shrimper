@@ -32,6 +32,28 @@ def _load_series_entries():
     return entries
 
 
+def _load_nav_data():
+    """Return navigation data grouped by season then series."""
+    seasons = {}
+    for meta_path in sorted(_series_meta_paths()):
+        season = meta_path.parent.parent.name
+        with meta_path.open() as f:
+            series = json.load(f)
+        races = []
+        races_dir = meta_path.parent / "races"
+        for race_id in series.get("race_ids", []):
+            race_path = races_dir / f"{race_id}.json"
+            if race_path.exists():
+                with race_path.open() as rf:
+                    races.append(json.load(rf))
+        seasons.setdefault(season, []).append({"series": series, "races": races})
+
+    nav = []
+    for season in sorted(seasons):
+        nav.append({"season": season, "series": seasons[season]})
+    return nav
+
+
 def _find_series(series_id: str):
     """Return (series, races) for the given series id or (None, None)."""
     for entry in _load_series_entries():
@@ -51,10 +73,13 @@ def _find_race(race_id: str):
     return None
 
 
+NAV_RACE_SERIES = _load_nav_data()
+
+
 @bp.app_context_processor
 def inject_nav_data():
-    """Load series and race data for navigation menus."""
-    return {'nav_series': _load_series_entries()}
+    """Expose navigation data for menus."""
+    return {'nav_race_series': NAV_RACE_SERIES}
 
 
 @bp.route('/')
@@ -62,7 +87,7 @@ def index():
     return redirect(url_for('main.series_index'))
 
 
-@bp.route('/race-sheets')
+@bp.route('/race-series')
 def series_index():
     series_list = []
     for entry in _load_series_entries():
@@ -80,18 +105,18 @@ def series_index():
             "num_races": len(races),
             "updated_at": series.get("updated_at") or series.get("created_at", ""),
         })
-    return render_template("race_sheets.html", title="Series Index", series_list=series_list)
+    return render_template("race_series.html", title="Series Index", series_list=series_list)
 
 
 @bp.route('/series/new')
 def series_new():
-    breadcrumbs = [('Race Sheets', url_for('main.series_index')), ('Create New Series', None)]
+    breadcrumbs = [('Race Series', url_for('main.series_index')), ('Create New Series', None)]
     return render_template('series_form.html', title='Create New Series', breadcrumbs=breadcrumbs)
 
 
 @bp.route('/races/new')
 def race_new():
-    breadcrumbs = [('Race Sheets', url_for('main.series_index')), ('Create New Race', None)]
+    breadcrumbs = [('Race Series', url_for('main.series_index')), ('Create New Race', None)]
     series_list = [entry['series'] for entry in _load_series_entries()]
     fleet_path = DATA_DIR / 'fleet.json'
     with fleet_path.open() as f:
@@ -105,7 +130,7 @@ def series_detail(series_id):
     series, races = _find_series(series_id)
     if series is None:
         abort(404)
-    breadcrumbs = [('Race Sheets', url_for('main.series_index')), (series.get('name', series_id), None)]
+    breadcrumbs = [('Race Series', url_for('main.series_index')), (series.get('name', series_id), None)]
     return render_template('series_detail.html', title=series.get('name', series_id), breadcrumbs=breadcrumbs, series=series, races=races)
 
 
@@ -114,7 +139,7 @@ def race_sheet(race_id):
     race = _find_race(race_id)
     if race is None:
         abort(404)
-    breadcrumbs = [('Race Sheets', url_for('main.series_index')), (race.get('name', race_id), None)]
+    breadcrumbs = [('Race Series', url_for('main.series_index')), (race.get('name', race_id), None)]
     return render_template('race_sheet.html', title=race.get('name', race_id), breadcrumbs=breadcrumbs, race=race)
 
 

@@ -16,12 +16,15 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" id="raceSheetsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Race Sheets</a>
-              <ul class="dropdown-menu" aria-labelledby="raceSheetsDropdown">
-                {% for entry in nav_series %}
-                  <li><h6 class="dropdown-header">{{ entry.series.name }}</h6></li>
-                  {% for race in entry.races %}
-                    <li><a class="dropdown-item" href="{{ url_for('main.race_sheet', race_id=race.race_id) }}">{{ race.name }}</a></li>
+              <a class="nav-link dropdown-toggle" href="#" id="raceSeriesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Race Series</a>
+              <ul class="dropdown-menu" aria-labelledby="raceSeriesDropdown">
+                {% for season in nav_race_series %}
+                  <li><h6 class="dropdown-header">{{ season.season }}</h6></li>
+                  {% for entry in season.series %}
+                    <li><h6 class="dropdown-header ms-3">{{ entry.series.name }}</h6></li>
+                    {% for race in entry.races %}
+                      <li><a class="dropdown-item ms-5" href="{{ url_for('main.race_sheet', race_id=race.race_id) }}">{{ race.date }}</a></li>
+                    {% endfor %}
                   {% endfor %}
                   <li><hr class="dropdown-divider"></li>
                 {% endfor %}
