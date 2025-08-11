@@ -1,0 +1,39 @@
+{
+  "race_id": "RACE_2025-06-06_CastF_4",
+  "series_id": "SER_2025_CastF",
+  "name": "SER_2025_CastF_4",
+  "date": "2025-06-06",
+  "start_time": "18:25:00",
+  "entrants": [
+    {
+      "competitor_id": "C_298",
+      "initial_handicap": -198,
+      "finish_time": "19:36:32"
+    },
+    {
+      "competitor_id": "C_400",
+      "initial_handicap": 153,
+      "finish_time": "19:24:58"
+    },
+    {
+      "competitor_id": "C_455",
+      "initial_handicap": -92,
+      "finish_time": "19:23:35"
+    },
+    {
+      "competitor_id": "C_503",
+      "initial_handicap": 67,
+      "finish_time": "19:25:18"
+    },
+    {
+      "competitor_id": "C_518",
+      "initial_handicap": -176,
+      "finish_time": "19:24:05"
+    },
+    {
+      "competitor_id": "C_889",
+      "initial_handicap": 348,
+      "finish_time": "19:34:56"
+    }
+  ]
+}
