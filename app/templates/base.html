@@ -21,7 +21,7 @@
                 {% for season in nav_race_series %}
                   <li><h6 class="dropdown-header">{{ season.season }}</h6></li>
                   {% for entry in season.series %}
-                    <li><h6 class="dropdown-header ms-3">{{ entry.series.name }}</h6></li>
+                    <li><a class="dropdown-item ms-3" href="{{ url_for('main.series_detail', series_id=entry.series.series_id) }}">{{ entry.series.name }}</a></li>
                     {% for race in entry.races %}
                       <li><a class="dropdown-item ms-5" href="{{ url_for('main.race_sheet', race_id=race.race_id) }}">{{ race.date }}</a></li>
                     {% endfor %}
