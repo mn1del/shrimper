@@ -26,3 +26,11 @@ def test_race_sheet_redirects(client):
     res = client.get('/races/RACE_2025-07-11_MYHF_1', follow_redirects=False)
     assert res.status_code == 302
     assert '/series/SER_2025_MYHF?race_id=RACE_2025-07-11_MYHF_1' in res.headers['Location']
+
+
+def test_race_page_calculates_results(client):
+    res = client.get('/series/SER_2025_MYHF?race_id=RACE_2025-07-11_MYHF_1')
+    html = res.get_data(as_text=True)
+    # On course time and adjusted time are calculated
+    assert '5261' in html  # on course seconds for first finisher
+    assert '01:24:53' in html  # adjusted time hh:mm:ss

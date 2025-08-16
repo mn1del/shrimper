@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from .scoring import calculate_race_results
+
 
 bp = Blueprint('main', __name__)
 
@@ -186,19 +188,73 @@ def series_detail(series_id):
     selected_race = None
     finisher_count = 0
     fleet = []
+
+    def _parse_hms(t: str | None) -> int | None:
+        if not t:
+            return None
+        h, m, s = map(int, t.split(":"))
+        return h * 3600 + m * 60 + s
+
+    def _format_hms(seconds: float | None) -> str | None:
+        if seconds is None:
+            return None
+        total = int(round(seconds))
+        h = total // 3600
+        m = (total % 3600) // 60
+        s = total % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
     if race_id:
         selected_race = _find_race(race_id)
         if selected_race:
             entrants = selected_race.get('entrants', [])
-            results = selected_race.setdefault('results', {})
+            start_seconds = _parse_hms(selected_race.get('start_time'))
+
+            calc_entries = []
             for entrant in entrants:
                 cid = entrant.get('competitor_id')
                 if not cid:
                     continue
-                res = results.setdefault(cid, {})
-                if entrant.get('finish_time'):
-                    res.setdefault('finish_time', entrant.get('finish_time'))
-            finisher_count = sum(1 for e in entrants if e.get('finish_time'))
+                entry = {
+                    'competitor_id': cid,
+                    'start': start_seconds or 0,
+                    'initial_handicap': entrant.get('initial_handicap', 0),
+                }
+                ft = _parse_hms(entrant.get('finish_time'))
+                if ft is not None:
+                    entry['finish'] = ft
+                status = entrant.get('status')
+                if status:
+                    entry['status'] = status
+                calc_entries.append(entry)
+
+            results_list = calculate_race_results(calc_entries)
+            results: dict[str, dict] = {}
+            for res in results_list:
+                cid = res.get('competitor_id')
+                finish_str = next(
+                    (e.get('finish_time') for e in entrants if e.get('competitor_id') == cid),
+                    None,
+                )
+                results[cid] = {
+                    'finish_time': finish_str,
+                    'on_course_secs': res.get('elapsed_seconds'),
+                    'abs_pos': res.get('absolute_position'),
+                    'allowance': res.get('allowance_seconds'),
+                    'adj_time_secs': res.get('adjusted_time_seconds'),
+                    'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                    'hcp_pos': res.get('handicap_position'),
+                    'race_pts': res.get('traditional_points'),
+                    'league_pts': res.get('points'),
+                    'full_delta': res.get('full_delta'),
+                    'scaled_delta': res.get('scaled_delta'),
+                    'actual_delta': res.get('actual_delta'),
+                    'revised_hcp': res.get('revised_handicap'),
+                    'place': res.get('status'),
+                }
+
+            selected_race['results'] = results
+            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
 
             fleet_path = DATA_DIR / 'fleet.json'
             with fleet_path.open() as f:
