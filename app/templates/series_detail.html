@@ -51,8 +51,8 @@
         <td><input type="text" class="form-control form-control-sm" value="{{ result.finish_time or '' }}"></td>
         <td>{{ result.on_course_secs or '' }}</td>
         <td>{{ result.abs_pos or '' }}</td>
-        <td>{{ result.allowance or '' }}</td>
-        <td>{{ result.adj_time_secs or '' }}</td>
+        <td>{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
+        <td>{{ result.adj_time_secs|round|int if result.adj_time_secs is defined and result.adj_time_secs is not none else '' }}</td>
         <td>{{ result.adj_time or '' }}</td>
         <td>{{ result.hcp_pos or '' }}</td>
         <td>{{ result.race_pts or '' }}</td>
