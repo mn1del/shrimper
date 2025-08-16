@@ -72,13 +72,10 @@ def _find_race(race_id: str):
     return None
 
 
-NAV_RACE_SERIES = _load_nav_data()
-
-
 @bp.app_context_processor
 def inject_nav_data():
     """Expose navigation data for menus."""
-    return {'nav_race_series': NAV_RACE_SERIES}
+    return {'nav_race_series': _load_nav_data()}
 
 
 @bp.route('/')
@@ -164,9 +161,6 @@ def race_or_series_new():
         races_dir.mkdir(parents=True, exist_ok=True)
         with (races_dir / f'{race_id}.json').open('w') as f:
             json.dump(race_data, f, indent=2)
-
-        global NAV_RACE_SERIES
-        NAV_RACE_SERIES = _load_nav_data()
 
         return redirect(url_for('main.series_detail', series_id=series_id))
 
