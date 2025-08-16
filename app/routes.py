@@ -189,9 +189,17 @@ def series_detail(series_id):
     if race_id:
         selected_race = _find_race(race_id)
         if selected_race:
-            finisher_count = sum(
-                1 for res in selected_race.get('results', {}).values() if res.get('finish_time')
-            )
+            entrants = selected_race.get('entrants', [])
+            results = selected_race.setdefault('results', {})
+            for entrant in entrants:
+                cid = entrant.get('competitor_id')
+                if not cid:
+                    continue
+                res = results.setdefault(cid, {})
+                if entrant.get('finish_time'):
+                    res.setdefault('finish_time', entrant.get('finish_time'))
+            finisher_count = sum(1 for e in entrants if e.get('finish_time'))
+
             fleet_path = DATA_DIR / 'fleet.json'
             with fleet_path.open() as f:
                 fleet = json.load(f).get('competitors', [])
@@ -214,8 +222,10 @@ def race_sheet(race_id):
     race = _find_race(race_id)
     if race is None:
         abort(404)
-    breadcrumbs = [('Race Series', url_for('main.series_index')), (race.get('name', race_id), None)]
-    return render_template('race_sheet.html', title=race.get('name', race_id), breadcrumbs=breadcrumbs, race=race)
+    series_id = race.get('series_id')
+    if not series_id:
+        abort(404)
+    return redirect(url_for('main.series_detail', series_id=series_id, race_id=race_id))
 
 
 @bp.route('/standings/traditional')
