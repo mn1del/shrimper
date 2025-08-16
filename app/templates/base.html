@@ -23,7 +23,7 @@
                   {% for entry in season.series %}
                     <li><a class="dropdown-item ms-3" href="{{ url_for('main.series_detail', series_id=entry.series.series_id) }}">{{ entry.series.name }}</a></li>
                     {% for race in entry.races %}
-                      <li><a class="dropdown-item ms-5" href="{{ url_for('main.series_detail', series_id=race.series_id, race_id=race.race_id) }}">{{ race.date }}</a></li>
+                    <li><a class="dropdown-item ms-5" href="{{ url_for('main.series_detail', series_id=entry.series.series_id, race_id=race.race_id) }}">{{ race.date }}</a></li>
                     {% endfor %}
                   {% endfor %}
                   <li><hr class="dropdown-divider"></li>

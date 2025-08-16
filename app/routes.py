@@ -34,7 +34,12 @@ def _load_series_entries():
 
 
 def _load_nav_data():
-    """Return navigation data grouped by season then series."""
+    """Return navigation data grouped by season then series.
+
+    Race files may contain a `series_id` whose casing differs from the
+    canonical value in the series metadata. Normalise each race's
+    `series_id` to ensure generated links use the canonical form.
+    """
     seasons = {}
     for meta_path in sorted(_series_meta_paths()):
         season = meta_path.parent.parent.name
@@ -44,7 +49,9 @@ def _load_nav_data():
         races_dir = meta_path.parent / "races"
         for race_path in sorted(races_dir.glob("*.json")):
             with race_path.open() as rf:
-                races.append(json.load(rf))
+                race = json.load(rf)
+            race["series_id"] = series.get("series_id")
+            races.append(race)
         seasons.setdefault(season, []).append({"series": series, "races": races})
 
     nav = []
@@ -54,9 +61,15 @@ def _load_nav_data():
 
 
 def _find_series(series_id: str):
-    """Return (series, races) for the given series id or (None, None)."""
+    """Return (series, races) for the given series id or (None, None).
+
+    Series identifiers may appear with inconsistent casing across the data.
+    To make routing more robust, comparisons are performed case-insensitively.
+    """
+    target = series_id.lower()
     for entry in _load_series_entries():
-        if entry["series"].get("series_id") == series_id:
+        sid = entry["series"].get("series_id")
+        if sid and sid.lower() == target:
             return entry["series"], entry["races"]
     return None, None
 
@@ -104,11 +117,16 @@ def series_index():
 
 
 def _load_series_meta(series_id: str):
-    """Return (path, data) for the given series id or (None, None)."""
+    """Return (path, data) for the given series id or (None, None).
+
+    Comparison is case-insensitive to tolerate differing user input.
+    """
+    target = series_id.lower()
     for meta_path in _series_meta_paths():
         with meta_path.open() as f:
             data = json.load(f)
-        if data.get("series_id") == series_id:
+        sid = data.get("series_id")
+        if sid and sid.lower() == target:
             return meta_path, data
     return None, None
 
@@ -275,7 +293,11 @@ def race_sheet(race_id):
     series_id = race.get('series_id')
     if not series_id:
         abort(404)
-    return redirect(url_for('main.series_detail', series_id=series_id, race_id=race_id))
+    series, _ = _find_series(series_id)
+    if not series:
+        abort(404)
+    canonical_id = series.get('series_id')
+    return redirect(url_for('main.series_detail', series_id=canonical_id, race_id=race_id))
 
 
 @bp.route('/standings/traditional')
