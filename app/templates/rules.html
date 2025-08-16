@@ -2,22 +2,158 @@
 
 {% block content %}
 <h1>Rules</h1>
-<p class="text-muted">Explain handicapping system, scoring, and formulas used.</p>
-<div class="table-responsive">
-  <h2 class="h5">Base Handicap Change by Rank</h2>
-  <table class="table table-sm table-bordered">
-    <thead><tr><th>Rank</th><th>Δ (s/hr)</th></tr></thead>
-    <tbody><tr><td>1</td><td>-30</td></tr></tbody>
-  </table>
-  <h2 class="h5">League Points by Rank</h2>
-  <table class="table table-sm table-bordered">
-    <thead><tr><th>Rank</th><th>Points</th></tr></thead>
-    <tbody><tr><td>1</td><td>25</td></tr></tbody>
-  </table>
-  <h2 class="h5">Fleet-size Scaling</h2>
-  <table class="table table-sm table-bordered">
-    <thead><tr><th>Finishers</th><th>Factor</th></tr></thead>
-    <tbody><tr><td>1</td><td>0.001</td></tr></tbody>
-  </table>
-</div>
+
+<section class="mb-4">
+  <h2>1) Handicap scoring (Personal Handicap &ldquo;PHC&rdquo;)</h2>
+  <h3>What it does</h3>
+  <p>Everyone has a personal handicap expressed in seconds per hour (s/hr).
+     Your finish time is adjusted by this number so boats of different
+     speeds can compete fairly.</p>
+
+  <h3>How your handicap-adjusted time is calculated</h3>
+  <ol>
+    <li>Elapsed time = Finish time &minus; Start time (in seconds).</li>
+    <li>Elapsed hours = Elapsed time &divide; 3600.</li>
+    <li>Handicap allowance (seconds) = Your handicap (s/hr) &times; elapsed hours.</li>
+    <li>Handicap-adjusted time = Elapsed time &minus; allowance.
+      <span class="text-muted">(A negative handicap reduces your time;
+      a positive handicap increases it.)</span></li>
+  </ol>
+
+  <h3>How the race is ranked for results</h3>
+  <ul>
+    <li>Boats are ordered by handicap-adjusted time (lowest is 1st).</li>
+    <li>Ties on adjusted time share the same place; the next place is skipped
+        (e.g., 1, 2, 2, 4&hellip;).</li>
+    <li>&ldquo;Line-honours&rdquo; (absolute finishing order) is shown for interest only;
+        scoring uses the handicap order.</li>
+  </ul>
+
+  <h3>How your handicap changes after each race</h3>
+  <p>Your finishing place on handicap determines a base change to your handicap:</p>
+
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered w-auto">
+      <thead>
+        <tr><th>Place</th><th>Base change (s/hr)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1st</td><td>-30</td></tr>
+        <tr><td>2nd</td><td>-20</td></tr>
+        <tr><td>3rd</td><td>-10</td></tr>
+        <tr><td>4th</td><td>0</td></tr>
+        <tr><td>5th</td><td>+10</td></tr>
+        <tr><td>6th</td><td>+20</td></tr>
+        <tr><td>7th</td><td>+30</td></tr>
+        <tr><td>8th</td><td>+40</td></tr>
+        <tr><td>9th</td><td>+50</td></tr>
+        <tr><td>10th or worse</td><td>+60</td></tr>
+        <tr><td>Non-finishers</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>This base change is then scaled by fleet size (to avoid big swings in very
+     small fleets):</p>
+
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered w-auto">
+      <thead>
+        <tr><th>Finishers</th><th>Scaling factor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1&ndash;3</td><td>0&times; (no change)</td></tr>
+        <tr><td>4</td><td>0.3&times;</td></tr>
+        <tr><td>5</td><td>0.6&times;</td></tr>
+        <tr><td>6 or more</td><td>1.0&times;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The actual change is the base change &times; scaling factor (rounded to the
+     nearest whole second per hour).</p>
+  <p>Revised handicap = Your previous handicap + actual change. This revised
+     handicap becomes your starting handicap for your next race.</p>
+  <p class="small"><strong>Notes:</strong> Start-of-season and new-joiner
+     handicaps are set manually. Only finishers count toward the &ldquo;fleet size&rdquo;
+     used for scaling.</p>
+</section>
+
+<section class="mb-4">
+  <h2>2) League points (High-points system)</h2>
+  <h3>What it does</h3>
+  <p>Rewards higher finishing places with more points. Most points wins the
+     League standings.</p>
+
+  <h3>Per-race points</h3>
+  <p>Based on your handicap finishing place:</p>
+
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered w-auto">
+      <thead>
+        <tr><th>Place</th><th>Points</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1st</td><td>25</td></tr>
+        <tr><td>2nd</td><td>18</td></tr>
+        <tr><td>3rd</td><td>12</td></tr>
+        <tr><td>4th</td><td>9</td></tr>
+        <tr><td>5th</td><td>7</td></tr>
+        <tr><td>6th</td><td>4</td></tr>
+        <tr><td>7th</td><td>3</td></tr>
+        <tr><td>8th</td><td>2</td></tr>
+        <tr><td>9th</td><td>1</td></tr>
+        <tr><td>10th or worse</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>These points are then scaled by the same fleet-size factor used for handicap
+     adjustments:</p>
+
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered w-auto">
+      <thead>
+        <tr><th>Finishers</th><th>Scaling factor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1&ndash;3</td><td>0&times; (no points awarded)</td></tr>
+        <tr><td>4</td><td>0.3&times;</td></tr>
+        <tr><td>5</td><td>0.6&times;</td></tr>
+        <tr><td>6 or more</td><td>1.0&times;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <ul>
+    <li>DNF/DNS/DSQ: 0 points.</li>
+    <li>Ties share the same points (competition ranking).</li>
+  </ul>
+
+  <h3>Series/season result</h3>
+  <p>Sum your League points across the races counted for that table. Highest
+     total wins (tie-breaks can be agreed by the Race Committee if needed).</p>
+</section>
+
+<section>
+  <h2>3) Traditional points (Low-points system)</h2>
+  <h3>What it does</h3>
+  <p>Classic &ldquo;low-points&rdquo; scoring on handicap order. Lowest total wins.</p>
+
+  <h3>Per-race points</h3>
+  <ul>
+    <li>If you finish on handicap, your points equal your place (1 for 1st,
+        2 for 2nd, etc.).</li>
+    <li>If you do not finish (DNF/DNS/DSQ), your points are number of finishers
+        + 1 for that race.</li>
+    <li>Ties on handicap-adjusted time receive the same points; the next place
+        is skipped (1, 2, 2, 4&hellip;).</li>
+  </ul>
+
+  <h3>Series/season result</h3>
+  <p>Sum your points across the races counted for that table. Lowest total wins
+     (tie-breaks as per Sailing Instructions/Race Committee guidance).</p>
+</section>
+
 {% endblock %}
+
