@@ -1,45 +1,113 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1>Settings</h1>
-<form>
+<div class="d-flex justify-content-between align-items-center">
+  <h1>Settings</h1>
+  <button type="button" class="btn btn-outline-secondary" id="editToggle">🔒</button>
+</div>
+<form id="settingsForm">
   <div class="row g-4">
     <div class="col-lg-4">
       <h2 class="h5">Base Handicap Change by Rank</h2>
       <table class="table table-sm table-bordered">
-        <thead><tr><th>Rank</th><th>Δ (s/hr)</th></tr></thead>
+        <thead>
+          <tr><th>Rank</th><th>Δ (s/hr)</th><th class="edit-only d-none"></th></tr>
+        </thead>
         <tbody>
           {% for item in settings.handicap_delta_by_rank %}
-          <tr><td>{{ item.rank }}</td><td><input class="form-control form-control-sm" value="{{ item.delta_s_per_hr }}"></td></tr>
+          <tr>
+            <td><input class="form-control form-control-sm" value="{{ item.rank }}" disabled></td>
+            <td><input class="form-control form-control-sm" value="{{ item.delta_s_per_hr }}" disabled></td>
+            <td class="edit-only d-none"><button type="button" class="btn btn-sm btn-danger remove-row">&times;</button></td>
+          </tr>
           {% endfor %}
         </tbody>
+        <tfoot class="edit-only d-none"><tr><td colspan="3"><button type="button" class="btn btn-sm btn-secondary add-row">Add row</button></td></tr></tfoot>
       </table>
     </div>
     <div class="col-lg-4">
       <h2 class="h5">League Points by Rank</h2>
       <table class="table table-sm table-bordered">
-        <thead><tr><th>Rank</th><th>Points</th></tr></thead>
+        <thead>
+          <tr><th>Rank</th><th>Points</th><th class="edit-only d-none"></th></tr>
+        </thead>
         <tbody>
           {% for item in settings.league_points_by_rank %}
-          <tr><td>{{ item.rank }}</td><td><input class="form-control form-control-sm" value="{{ item.points }}"></td></tr>
+          <tr>
+            <td><input class="form-control form-control-sm" value="{{ item.rank }}" disabled></td>
+            <td><input class="form-control form-control-sm" value="{{ item.points }}" disabled></td>
+            <td class="edit-only d-none"><button type="button" class="btn btn-sm btn-danger remove-row">&times;</button></td>
+          </tr>
           {% endfor %}
         </tbody>
+        <tfoot class="edit-only d-none"><tr><td colspan="3"><button type="button" class="btn btn-sm btn-secondary add-row">Add row</button></td></tr></tfoot>
       </table>
     </div>
     <div class="col-lg-4">
       <h2 class="h5">Fleet-size Scaling</h2>
       <table class="table table-sm table-bordered">
-        <thead><tr><th>Finishers</th><th>Factor</th></tr></thead>
+        <thead>
+          <tr><th>Finishers</th><th>Factor</th><th class="edit-only d-none"></th></tr>
+        </thead>
         <tbody>
           {% for item in settings.fleet_size_factor %}
-          <tr><td>{{ item.finishers }}</td><td><input class="form-control form-control-sm" value="{{ item.factor }}"></td></tr>
+          <tr>
+            <td><input class="form-control form-control-sm" value="{{ item.finishers }}" disabled></td>
+            <td><input class="form-control form-control-sm" value="{{ item.factor }}" disabled></td>
+            <td class="edit-only d-none"><button type="button" class="btn btn-sm btn-danger remove-row">&times;</button></td>
+          </tr>
           {% endfor %}
         </tbody>
+        <tfoot class="edit-only d-none"><tr><td colspan="3"><button type="button" class="btn btn-sm btn-secondary add-row">Add row</button></td></tr></tfoot>
       </table>
     </div>
   </div>
   <div class="mt-3">
-    <button class="btn btn-primary">Save settings</button>
+    <button id="saveSettingsBtn" class="btn btn-primary" disabled>Save settings</button>
   </div>
 </form>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  let locked = true;
+  const toggle = document.getElementById('editToggle');
+  const saveBtn = document.getElementById('saveSettingsBtn');
+
+  function updateLocked() {
+    document.querySelectorAll('#settingsForm input').forEach(inp => inp.disabled = locked);
+    document.querySelectorAll('.edit-only').forEach(el => el.classList.toggle('d-none', locked));
+    toggle.textContent = locked ? '🔒' : '🔓';
+    saveBtn.disabled = locked;
+  }
+
+  toggle.addEventListener('click', () => {
+    locked = !locked;
+    updateLocked();
+  });
+
+  function attachRemove(btn) {
+    btn.addEventListener('click', () => {
+      btn.closest('tr').remove();
+    });
+  }
+
+  document.querySelectorAll('.remove-row').forEach(attachRemove);
+
+  document.querySelectorAll('.add-row').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const table = btn.closest('table');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input class="form-control form-control-sm"></td>
+        <td><input class="form-control form-control-sm"></td>
+        <td class="edit-only"><button type="button" class="btn btn-sm btn-danger remove-row">&times;</button></td>
+      `;
+      table.querySelector('tbody').appendChild(tr);
+      attachRemove(tr.querySelector('.remove-row'));
+      updateLocked();
+    });
+  });
+
+  updateLocked();
+});
+</script>
 {% endblock %}
