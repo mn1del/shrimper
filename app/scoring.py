@@ -105,27 +105,44 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
         finishers.append(result)
 
     # Rank by adjusted time (lower is better)
+    # Determine absolute finishing positions based on raw elapsed time
+    finishers.sort(key=lambda r: r["elapsed_seconds"])
+    last_elapsed = None
+    abs_position = 0
+    for idx, result in enumerate(finishers, start=1):
+        if last_elapsed is None or result["elapsed_seconds"] > last_elapsed:
+            abs_position = idx
+            last_elapsed = result["elapsed_seconds"]
+        result["absolute_position"] = abs_position
+
+    # Rank by adjusted time (lower is better) for handicap results
     finishers.sort(key=lambda r: r["adjusted_time_seconds"])
 
     fleet_size = len(finishers)
     factor = _scaling_factor(fleet_size)
 
-    for position, result in enumerate(finishers, start=1):
-        base_delta = _full_delta(position)
+    last_adjusted = None
+    handicap_position = 0
+    for idx, result in enumerate(finishers, start=1):
+        if last_adjusted is None or result["adjusted_time_seconds"] > last_adjusted:
+            handicap_position = idx
+            last_adjusted = result["adjusted_time_seconds"]
+
+        base_delta = _full_delta(handicap_position)
         scaled_delta = base_delta * factor
         actual_delta = int(round(scaled_delta))
-        base_points = _base_points(position)
+        base_points = _base_points(handicap_position)
         race_points = base_points * factor
         result.update(
             {
-                "handicap_position": position,
+                "handicap_position": handicap_position,
                 "full_delta": base_delta,
                 "scaled_delta": scaled_delta,
                 "actual_delta": actual_delta,
                 "revised_handicap": result["initial_handicap"] + actual_delta,
                 "points": race_points,
                 # Traditional scoring assigns points equal to finishing position
-                "traditional_points": position,
+                "traditional_points": handicap_position,
             }
         )
 
