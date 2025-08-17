@@ -52,6 +52,27 @@ if (typeof document !== 'undefined') {
           rows.forEach(row => tbody.appendChild(row));
         });
       });
+
+      const defaultHeader = table.querySelector('th[data-default-sort]');
+      if (defaultHeader) {
+        const direction = defaultHeader.getAttribute('data-default-sort');
+        const index = Array.from(headers).indexOf(defaultHeader);
+        const icon = defaultHeader.querySelector('.sort-icon');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        defaultHeader.setAttribute('data-sort', direction);
+        if (icon) {
+          icon.textContent = direction === 'asc' ? '▲' : '▼';
+        }
+
+        rows.sort(function (a, b) {
+          const textA = a.children[index].innerText.trim();
+          const textB = b.children[index].innerText.trim();
+          return compareValues(textA, textB, direction);
+        });
+        rows.forEach(row => tbody.appendChild(row));
+      }
     });
   });
 }

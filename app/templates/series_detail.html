@@ -28,15 +28,42 @@
   </div>
 </div>
 
-<div class="table-responsive" style="overflow-x: auto;">
-  <table class="table table-bordered table-sm align-middle sortable" style="white-space: nowrap;">
+<style>
+  .race-table-wrapper {
+    max-height: 600px; /* roughly 15 rows */
+    overflow-y: auto;
+  }
+  .race-table-wrapper thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: #f8f9fa;
+    white-space: normal;
+  }
+  .race-table-wrapper tbody td {
+    white-space: nowrap;
+  }
+</style>
+
+<div class="table-responsive race-table-wrapper">
+  <table class="table table-bordered table-sm align-middle sortable">
     <thead class="table-light">
       <tr>
-        <th>Abs Pos</th><th>Hcp Pos</th><th>Sailor</th><th>Boat</th><th>Sail No.</th>
-        <th>Initial Hcp (s/hr)</th><th>Finish Time (hh:mm:ss)</th><th>On Course Time (s)</th>
-        <th>Hcp Allowance (s)</th><th>Adj Time (hh:mm:ss)</th>
-        <th>Full Hcp Change (s/hr)</th><th>Adjusted Hcp Change (s/hr)</th>
-        <th>Revised Hcp (s/hr)</th><th>Race Pts (Traditional)</th><th>League Pts (Adjusted)</th>
+        <th style="width: 60px;">Abs Pos</th>
+        <th style="width: 60px;" data-default-sort="asc">Hcp Pos</th>
+        <th style="width: 150px;">Sailor</th>
+        <th style="width: 150px;">Boat</th>
+        <th style="width: 80px;">Sail No.</th>
+        <th style="width: 110px;">Initial Hcp (s/hr)</th>
+        <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
+        <th style="width: 110px;">On Course Time (s)</th>
+        <th style="width: 110px;">Hcp Allowance (s)</th>
+        <th style="width: 120px;">Adj Time (hh:mm:ss)</th>
+        <th style="width: 120px;">Full Hcp Change (s/hr)</th>
+        <th style="width: 140px;">Adjusted Hcp Change (s/hr)</th>
+        <th style="width: 110px;">Revised Hcp (s/hr)</th>
+        <th style="width: 90px;">Race Pts (Traditional)</th>
+        <th style="width: 100px;">League Pts (Adjusted)</th>
       </tr>
     </thead>
     <tbody>
