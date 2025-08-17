@@ -203,79 +203,143 @@ def series_detail(series_id):
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     if race_id:
-        selected_race = _find_race(race_id)
-        if selected_race:
-            entrants = selected_race.get('entrants', [])
-            start_seconds = _parse_hms(selected_race.get('start_time'))
+        # Load baseline handicaps from fleet register
+        fleet_path = DATA_DIR / 'fleet.json'
+        with fleet_path.open() as f:
+            fleet = json.load(f).get('competitors', [])
+        handicap_map = {
+            comp.get('competitor_id'): comp.get('current_handicap_s_per_hr', 0)
+            for comp in fleet
+            if comp.get('competitor_id')
+        }
 
-            fleet_path = DATA_DIR / 'fleet.json'
-            with fleet_path.open() as f:
-                fleet = json.load(f).get('competitors', [])
+        # Load all races and process them chronologically until target race
+        race_objs = []
+        for race_path in DATA_DIR.rglob('RACE_*.json'):
+            with race_path.open() as rf:
+                race = json.load(rf)
+            race_objs.append(race)
+        race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
 
-            entrants_by_id = {
+        pre_race_handicaps = handicap_map
+        results: dict[str, dict] = {}
+
+        for race in race_objs:
+            start_seconds = _parse_hms(race.get('start_time'))
+            entrants = race.get('entrants', [])
+            entrants_map = {
                 e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
             }
+            snapshot = handicap_map.copy()
 
+            if race.get('race_id') == race_id:
+                # Build entries for full fleet using handicaps prior to this race
+                calc_entries: list[dict] = []
+                for comp in fleet:
+                    cid = comp.get('competitor_id')
+                    if not cid:
+                        continue
+                    entry = {
+                        'competitor_id': cid,
+                        'start': start_seconds or 0,
+                        'initial_handicap': snapshot.get(cid, 0),
+                    }
+                    entrant = entrants_map.get(cid)
+                    if entrant:
+                        ft = _parse_hms(entrant.get('finish_time'))
+                        if ft is not None:
+                            entry['finish'] = ft
+                        status = entrant.get('status')
+                        if status:
+                            entry['status'] = status
+                    calc_entries.append(entry)
+
+                results_list = calculate_race_results(calc_entries)
+                finisher_count = sum(
+                    1 for r in results_list if r.get('finish') is not None
+                )
+                if finisher_count:
+                    fleet_adjustment = int(
+                        round(_scaling_factor(finisher_count) * 100)
+                    )
+                for res in results_list:
+                    cid = res.get('competitor_id')
+                    entrant = entrants_map.get(cid, {})
+                    finish_str = entrant.get('finish_time')
+                    is_non_finisher = res.get('finish') is None
+                    results[cid] = {
+                        'finish_time': finish_str,
+                        'on_course_secs': res.get('elapsed_seconds'),
+                        'abs_pos': res.get('absolute_position'),
+                        'allowance': res.get('allowance_seconds'),
+                        'adj_time_secs': res.get('adjusted_time_seconds'),
+                        'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                        'hcp_pos': res.get('handicap_position'),
+                        'race_pts': res.get('traditional_points')
+                        if res.get('traditional_points') is not None
+                        else (finisher_count + 1 if is_non_finisher else None),
+                        'league_pts': res.get('points')
+                        if res.get('points') is not None
+                        else (0.0 if is_non_finisher else None),
+                        'full_delta': res.get('full_delta')
+                        if res.get('full_delta') is not None
+                        else (0 if is_non_finisher else None),
+                        'scaled_delta': res.get('scaled_delta')
+                        if res.get('scaled_delta') is not None
+                        else (0 if is_non_finisher else None),
+                        'actual_delta': res.get('actual_delta')
+                        if res.get('actual_delta') is not None
+                        else (0 if is_non_finisher else None),
+                        'revised_hcp': res.get('revised_handicap')
+                        if res.get('revised_handicap') is not None
+                        else (
+                            res.get('initial_handicap') if is_non_finisher else None
+                        ),
+                        'place': res.get('status'),
+                    }
+
+                selected_race = race
+                pre_race_handicaps = snapshot
+
+                # Update map for completeness then stop processing
+                for res in results_list:
+                    cid = res.get('competitor_id')
+                    revised = res.get('revised_handicap')
+                    if revised is not None:
+                        handicap_map[cid] = revised
+                break
+
+            # Process prior races to update handicap map
             calc_entries: list[dict] = []
-            for comp in fleet:
-                cid = comp.get('competitor_id')
-                if not cid:
-                    continue
+            for cid, entrant in entrants_map.items():
                 entry = {
                     'competitor_id': cid,
                     'start': start_seconds or 0,
-                    'initial_handicap': comp.get('current_handicap_s_per_hr', 0),
+                    'initial_handicap': snapshot.get(cid, 0),
                 }
-                entrant = entrants_by_id.get(cid)
-                if entrant:
-                    ft = _parse_hms(entrant.get('finish_time'))
-                    if ft is not None:
-                        entry['finish'] = ft
-                    status = entrant.get('status')
-                    if status:
-                        entry['status'] = status
+                ft = _parse_hms(entrant.get('finish_time'))
+                if ft is not None:
+                    entry['finish'] = ft
+                status = entrant.get('status')
+                if status:
+                    entry['status'] = status
                 calc_entries.append(entry)
 
-            results_list = calculate_race_results(calc_entries)
-            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
-            if finisher_count:
-                fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100))
-            results: dict[str, dict] = {}
-            for res in results_list:
+            prior_results = calculate_race_results(calc_entries)
+            for res in prior_results:
                 cid = res.get('competitor_id')
-                entrant = entrants_by_id.get(cid, {})
-                finish_str = entrant.get('finish_time')
+                revised = res.get('revised_handicap')
+                if revised is not None:
+                    handicap_map[cid] = revised
 
-                is_non_finisher = res.get('finish') is None
-                results[cid] = {
-                    'finish_time': finish_str,
-                    'on_course_secs': res.get('elapsed_seconds'),
-                    'abs_pos': res.get('absolute_position'),
-                    'allowance': res.get('allowance_seconds'),
-                    'adj_time_secs': res.get('adjusted_time_seconds'),
-                    'adj_time': _format_hms(res.get('adjusted_time_seconds')),
-                    'hcp_pos': res.get('handicap_position'),
-                    'race_pts': res.get('traditional_points')
-                    if res.get('traditional_points') is not None
-                    else (finisher_count + 1 if is_non_finisher else None),
-                    'league_pts': res.get('points')
-                    if res.get('points') is not None
-                    else (0.0 if is_non_finisher else None),
-                    'full_delta': res.get('full_delta')
-                    if res.get('full_delta') is not None
-                    else (0 if is_non_finisher else None),
-                    'scaled_delta': res.get('scaled_delta')
-                    if res.get('scaled_delta') is not None
-                    else (0 if is_non_finisher else None),
-                    'actual_delta': res.get('actual_delta')
-                    if res.get('actual_delta') is not None
-                    else (0 if is_non_finisher else None),
-                    'revised_hcp': res.get('revised_handicap')
-                    if res.get('revised_handicap') is not None
-                    else (res.get('initial_handicap') if is_non_finisher else None),
-                    'place': res.get('status'),
-                }
+        # Update fleet handicaps for display using pre-race values
+        for comp in fleet:
+            cid = comp.get('competitor_id')
+            comp['current_handicap_s_per_hr'] = pre_race_handicaps.get(
+                cid, comp.get('current_handicap_s_per_hr', 0)
+            )
 
+        if selected_race:
             selected_race['results'] = results
 
     finisher_display = f"Number of Finishers: {finisher_count}"

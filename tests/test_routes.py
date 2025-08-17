@@ -34,7 +34,7 @@ def test_race_page_calculates_results(client):
     html = res.get_data(as_text=True)
     # On course time and adjusted time are calculated
     assert '5261' in html  # on course seconds for first finisher
-    assert '01:25:00' in html  # adjusted time hh:mm:ss
+    assert '01:24:53' in html  # adjusted time hh:mm:ss based on prior handicap
 
 
 def test_race_page_shows_fleet_adjustment(client):
