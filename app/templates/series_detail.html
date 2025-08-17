@@ -28,40 +28,36 @@
   </div>
 </div>
 
-<div class="table-responsive">
-  <table class="table table-bordered table-sm align-middle sortable">
+<div class="table-responsive" style="overflow-x: auto;">
+  <table class="table table-bordered table-sm align-middle sortable" style="white-space: nowrap;">
     <thead class="table-light">
       <tr>
-        <th>Sailor</th><th>Boat</th><th>Sail No.</th>
-        <th>Initial Hcp</th><th>Finish</th><th>On Course (s)</th>
-        <th>Abs Pos</th><th>Allowance</th><th>Adj Time (s)</th>
-        <th>Adj Time</th><th>Hcp Pos</th><th>Race Pts</th>
-        <th>League Pts</th><th>Full Δ</th><th>Scaled Δ</th>
-        <th>Actual Δ</th><th>Revised Hcp</th><th>Place</th>
+        <th>Abs Pos</th><th>Hcp Pos</th><th>Sailor</th><th>Boat</th><th>Sail No.</th>
+        <th>Initial Hcp (s/hr)</th><th>Finish Time (hh:mm:ss)</th><th>On Course Time (s)</th>
+        <th>Hcp Allowance (s)</th><th>Adj Time (hh:mm:ss)</th>
+        <th>Full Hcp Change (s/hr)</th><th>Adjusted Hcp Change (s/hr)</th>
+        <th>Revised Hcp (s/hr)</th><th>Race Pts (Traditional)</th><th>League Pts (Adjusted)</th>
       </tr>
     </thead>
     <tbody>
     {% for comp in fleet %}
       {% set result = (selected_race.results or {}).get(comp.competitor_id, {}) %}
       <tr>
+        <td>{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
+        <td>{{ result.hcp_pos|int if result.hcp_pos is defined and result.hcp_pos is not none else '' }}</td>
         <td>{{ comp.sailor_name }}</td>
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
-        <td>{{ comp.current_handicap_s_per_hr }}</td>
+        <td>{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}</td>
         <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm" value="{{ result.finish_time or '' }}"></td>
-        <td>{{ result.on_course_secs or '' }}</td>
-        <td>{{ result.abs_pos or '' }}</td>
+        <td>{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
         <td>{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
-        <td>{{ result.adj_time_secs|round|int if result.adj_time_secs is defined and result.adj_time_secs is not none else '' }}</td>
         <td>{{ result.adj_time or '' }}</td>
-        <td>{{ result.hcp_pos or '' }}</td>
-        <td>{{ result.race_pts or '' }}</td>
-        <td>{{ result.league_pts or '' }}</td>
-        <td>{{ result.full_delta or '' }}</td>
-        <td>{{ result.scaled_delta or '' }}</td>
-        <td>{{ result.actual_delta or '' }}</td>
-        <td>{{ result.revised_hcp or '' }}</td>
-        <td>{{ result.place or '' }}</td>
+        <td>{{ result.full_delta|round|int if result.full_delta is defined and result.full_delta is not none else '' }}</td>
+        <td>{{ result.actual_delta|round|int if result.actual_delta is defined and result.actual_delta is not none else '' }}</td>
+        <td>{{ result.revised_hcp|round|int if result.revised_hcp is defined and result.revised_hcp is not none else '' }}</td>
+        <td>{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
+        <td>{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
       </tr>
     {% endfor %}
     </tbody>
