@@ -1,9 +1,11 @@
 from flask import Blueprint, redirect, render_template, url_for, abort, request
 import json
+import importlib
 from datetime import datetime
 from pathlib import Path
 
 from .scoring import calculate_race_results
+from . import scoring as scoring_module
 
 
 bp = Blueprint('main', __name__)
@@ -335,6 +337,30 @@ def settings():
     with data_path.open() as f:
         settings_data = json.load(f)
     return render_template('settings.html', title='Settings', breadcrumbs=breadcrumbs, settings=settings_data)
+
+
+@bp.route('/api/settings', methods=['POST'])
+def save_settings():
+    """Persist updated settings to the JSON configuration file."""
+    data_path = DATA_DIR / 'settings.json'
+    payload = request.get_json() or {}
+    # Preserve versioning information and update timestamp
+    try:
+        with data_path.open() as f:
+            existing = json.load(f)
+    except FileNotFoundError:
+        existing = {"version": 0}
+
+    payload["version"] = int(existing.get("version", 0)) + 1
+    payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+    with data_path.open('w') as f:
+        json.dump(payload, f, indent=2)
+
+    # Reload scoring settings so future calculations use the new values
+    importlib.reload(scoring_module)
+
+    return {"status": "ok"}
 
 
 @bp.route('/api/races/<race_id>', methods=['POST'])

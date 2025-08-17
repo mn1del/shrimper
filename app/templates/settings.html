@@ -9,7 +9,7 @@
   <div class="row g-4">
     <div class="col-lg-4">
       <h2 class="h5">Base Handicap Change by Rank</h2>
-      <table class="table table-sm table-bordered">
+      <table id="handicapTable" class="table table-sm table-bordered">
         <thead>
           <tr><th>Rank</th><th>Δ (s/hr)</th><th class="edit-only d-none"></th></tr>
         </thead>
@@ -27,7 +27,7 @@
     </div>
     <div class="col-lg-4">
       <h2 class="h5">League Points by Rank</h2>
-      <table class="table table-sm table-bordered">
+      <table id="leagueTable" class="table table-sm table-bordered">
         <thead>
           <tr><th>Rank</th><th>Points</th><th class="edit-only d-none"></th></tr>
         </thead>
@@ -45,7 +45,7 @@
     </div>
     <div class="col-lg-4">
       <h2 class="h5">Fleet-size Scaling</h2>
-      <table class="table table-sm table-bordered">
+      <table id="fleetTable" class="table table-sm table-bordered">
         <thead>
           <tr><th>Finishers</th><th>Factor</th><th class="edit-only d-none"></th></tr>
         </thead>
@@ -105,6 +105,45 @@ document.addEventListener('DOMContentLoaded', () => {
       attachRemove(tr.querySelector('.remove-row'));
       updateLocked();
     });
+  });
+
+  function toValue(str) {
+    if (str === '') return null;
+    const num = Number(str);
+    return isNaN(num) ? str : num;
+  }
+
+  function parseTable(table, keys) {
+    const rows = [];
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      const inputs = tr.querySelectorAll('input');
+      const first = toValue(inputs[0].value.trim());
+      const second = toValue(inputs[1].value.trim());
+      if (first !== null && second !== null) {
+        const obj = {};
+        obj[keys[0]] = first;
+        obj[keys[1]] = second;
+        rows.push(obj);
+      }
+    });
+    return rows;
+  }
+
+  saveBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const payload = {
+      handicap_delta_by_rank: parseTable(document.getElementById('handicapTable'), ['rank', 'delta_s_per_hr']),
+      league_points_by_rank: parseTable(document.getElementById('leagueTable'), ['rank', 'points']),
+      fleet_size_factor: parseTable(document.getElementById('fleetTable'), ['finishers', 'factor'])
+    };
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      location.reload();
+    }
   });
 
   updateLocked();
