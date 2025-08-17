@@ -44,6 +44,21 @@ def test_race_page_shows_fleet_adjustment(client):
     assert '<td>100</td>' in html
 
 
+def test_race_page_has_dropdown_navigation(client):
+    res = client.get('/series/SER_2025_MYHF?race_id=RACE_2025-07-11_MYHF_1')
+    html = res.get_data(as_text=True)
+    # Breadcrumbs should be absent and replaced with a link and dropdown
+    assert '<ol class="breadcrumb">' not in html
+    assert '<a href="/races">Races</a>' in html
+    assert 'onchange="window.location=this.value"' in html
+    # Dropdown should list races in descending order by date/time
+    assert '2025-09-21 00:00:00 (CastS)' in html
+    assert '2025-09-14 00:00:00 (CastS)' in html
+    assert html.index('2025-09-21 00:00:00 (CastS)') < html.index('2025-09-14 00:00:00 (CastS)')
+    # Currently viewed race should be selected
+    assert 'selected>2025-07-11 18:25:00 (MYHF)</option>' in html
+
+
 def test_series_detail_case_insensitive(client):
     """Series routes should be accessible regardless of ID casing."""
     res = client.get('/series/ser_2025_myhf?race_id=RACE_2025-07-11_MYHF_1')
