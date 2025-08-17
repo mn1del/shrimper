@@ -121,15 +121,18 @@ def _fleet_lookup() -> dict[str, dict]:
     return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
 
 
-def _season_standings(season: int, scoring: str) -> list[dict]:
-    """Compute standings for a season using the requested scoring format."""
+def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]]:
+    """Compute standings and per-race metadata for a season."""
     fleet = _fleet_lookup()
-    race_results: list[list[dict]] = []
+    race_groups: list[dict] = []
+
     for meta_path in _series_meta_paths():
         with meta_path.open() as f:
             series = json.load(f)
         if int(series.get("season", 0)) != int(season):
             continue
+
+        group = {"series_name": series.get("name"), "races": []}
         races_dir = meta_path.parent / "races"
         for race_path in races_dir.glob("*.json"):
             with race_path.open() as rf:
@@ -161,27 +164,46 @@ def _season_standings(season: int, scoring: str) -> list[dict]:
                 )
                 entries.append(entry)
             if entries:
-                race_results.append(calculate_race_results(entries))
+                results = calculate_race_results(entries)
+                group["races"].append(
+                    {
+                        "race_id": race.get("race_id"),
+                        "date": race.get("date"),
+                        "start_time": race.get("start_time"),
+                        "results": results,
+                    }
+                )
+        if group["races"]:
+            group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
+            race_groups.append(group)
+
+    race_groups.sort(key=lambda g: g["series_name"] or "")
 
     aggregates: dict[str, dict] = {}
-    for race in race_results:
-        for res in race:
-            cid = res.get("competitor_id")
-            agg = aggregates.setdefault(
-                cid,
-                {
-                    "sailor": res.get("sailor"),
-                    "boat": res.get("boat"),
-                    "sail_number": res.get("sail_number"),
-                    "race_count": 0,
-                    "league_points": 0.0,
-                    "traditional_points": 0.0,
-                },
-            )
-            if res.get("finish") is not None:
-                agg["race_count"] += 1
-            agg["league_points"] += res.get("points", 0.0)
-            agg["traditional_points"] += res.get("traditional_points", 0.0)
+    for group in race_groups:
+        for race in group["races"]:
+            for res in race["results"]:
+                cid = res.get("competitor_id")
+                agg = aggregates.setdefault(
+                    cid,
+                    {
+                        "sailor": res.get("sailor"),
+                        "boat": res.get("boat"),
+                        "sail_number": res.get("sail_number"),
+                        "race_count": 0,
+                        "league_points": 0.0,
+                        "traditional_points": 0.0,
+                        "race_points": {},
+                    },
+                )
+                if res.get("finish") is not None:
+                    agg["race_count"] += 1
+                league_pts = res.get("points", 0.0)
+                trad_pts = res.get("traditional_points", 0.0)
+                agg["league_points"] += league_pts
+                agg["traditional_points"] += trad_pts
+                pts = league_pts if scoring == "league" else trad_pts
+                agg["race_points"][race["race_id"]] = pts
 
     standings: list[dict] = []
     for agg in aggregates.values():
@@ -192,13 +214,16 @@ def _season_standings(season: int, scoring: str) -> list[dict]:
             if scoring == "league"
             else agg["traditional_points"]
         )
-        standings.append({
-            "sailor": agg["sailor"],
-            "boat": agg["boat"],
-            "sail_number": agg["sail_number"],
-            "race_count": agg["race_count"],
-            "total_points": total,
-        })
+        standings.append(
+            {
+                "sailor": agg["sailor"],
+                "boat": agg["boat"],
+                "sail_number": agg["sail_number"],
+                "race_count": agg["race_count"],
+                "total_points": total,
+                "race_points": agg["race_points"],
+            }
+        )
 
     if scoring == "traditional":
         standings.sort(key=lambda r: (r["total_points"], -r["race_count"], r["sailor"]))
@@ -217,7 +242,7 @@ def _season_standings(season: int, scoring: str) -> list[dict]:
             prev_points = row["total_points"]
             prev_races = row["race_count"]
 
-    return standings
+    return standings, race_groups
 
 
 @bp.route('/')
@@ -506,10 +531,14 @@ def race_sheet(race_id):
 def standings():
     scoring = request.args.get('format', 'league').lower()
     season_param = request.args.get('season')
-    seasons = sorted({int(json.load(p.open()).get('season')) for p in _series_meta_paths()}, reverse=True)
+    seasons = sorted(
+        {int(json.load(p.open()).get('season')) for p in _series_meta_paths()},
+        reverse=True,
+    )
     if not seasons:
         season_val = None
         table = []
+        race_groups = []
     else:
         try:
             season_int = int(season_param) if season_param is not None else None
@@ -519,7 +548,7 @@ def standings():
             season_val = seasons[0]
         else:
             season_val = season_int
-        table = _season_standings(season_val, scoring)
+        table, race_groups = _season_standings(season_val, scoring)
     breadcrumbs = [('Standings', None)]
     return render_template(
         'standings.html',
@@ -529,6 +558,7 @@ def standings():
         selected_season=season_val,
         scoring_format=scoring,
         standings=table,
+        race_groups=race_groups,
     )
 
 
