@@ -152,3 +152,60 @@ def test_races_page_can_filter_by_season(client, tmp_path, monkeypatch):
     html = res.get_data(as_text=True)
     assert '2024-01-01' in html
     assert '2025-01-01' not in html
+
+
+def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatch):
+    from app import routes
+    import json, shutil
+    from pathlib import Path
+
+    # Redirect data directory to a temporary location
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    # Copy settings required for scoring
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    # Create a minimal fleet with a single competitor
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'Test Sailor',
+                'boat_name': 'Test Boat',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 100,
+                'current_handicap_s_per_hr': 100,
+                'active': True,
+                'notes': '',
+            }
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    # Set up a series and race where the entrant has no finish time
+    series_dir = tmp_path / '2025' / 'Test'
+    race_dir = series_dir / 'races'
+    race_dir.mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2025_Test', 'name': 'Test', 'season': 2025})
+    )
+    race_id = 'RACE_2025-01-01_Test_1'
+    race_data = {
+        'race_id': race_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_1',
+        'date': '2025-01-01',
+        'start_time': '00:00:00',
+        'entrants': [
+            {'competitor_id': 'C1', 'initial_handicap': 100}
+        ],
+    }
+    (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
+
+    res = client.get(f'/series/SER_2025_Test?race_id={race_id}')
+    html = res.get_data(as_text=True)
+
+    # Non-finisher row should show default handicap changes and points
+    assert '>0</td>' in html  # Full/adjusted handicap change or league pts
+    assert '>100</td>' in html  # Revised handicap equals initial handicap
+    assert '>1</td>' in html  # Traditional points = finishers + 1 (0 + 1)

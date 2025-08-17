@@ -223,6 +223,7 @@ def series_detail(series_id):
                 calc_entries.append(entry)
 
             results_list = calculate_race_results(calc_entries)
+            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
             results: dict[str, dict] = {}
             for res in results_list:
                 cid = res.get('competitor_id')
@@ -230,6 +231,8 @@ def series_detail(series_id):
                     (e.get('finish_time') for e in entrants if e.get('competitor_id') == cid),
                     None,
                 )
+
+                is_non_finisher = res.get('finish') is None
                 results[cid] = {
                     'finish_time': finish_str,
                     'on_course_secs': res.get('elapsed_seconds'),
@@ -238,17 +241,28 @@ def series_detail(series_id):
                     'adj_time_secs': res.get('adjusted_time_seconds'),
                     'adj_time': _format_hms(res.get('adjusted_time_seconds')),
                     'hcp_pos': res.get('handicap_position'),
-                    'race_pts': res.get('traditional_points'),
-                    'league_pts': res.get('points'),
-                    'full_delta': res.get('full_delta'),
-                    'scaled_delta': res.get('scaled_delta'),
-                    'actual_delta': res.get('actual_delta'),
-                    'revised_hcp': res.get('revised_handicap'),
+                    'race_pts': res.get('traditional_points')
+                    if res.get('traditional_points') is not None
+                    else (finisher_count + 1 if is_non_finisher else None),
+                    'league_pts': res.get('points')
+                    if res.get('points') is not None
+                    else (0.0 if is_non_finisher else None),
+                    'full_delta': res.get('full_delta')
+                    if res.get('full_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'scaled_delta': res.get('scaled_delta')
+                    if res.get('scaled_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'actual_delta': res.get('actual_delta')
+                    if res.get('actual_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'revised_hcp': res.get('revised_handicap')
+                    if res.get('revised_handicap') is not None
+                    else (res.get('initial_handicap') if is_non_finisher else None),
                     'place': res.get('status'),
                 }
 
             selected_race['results'] = results
-            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
 
             fleet_path = DATA_DIR / 'fleet.json'
             with fleet_path.open() as f:
