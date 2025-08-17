@@ -286,7 +286,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
 
     standings: list[dict] = []
     for agg in aggregates.values():
-        if agg["race_count"] == 0:
+        if scoring == "league" and agg["race_count"] == 0:
             continue
         total = (
             agg["league_points"]
