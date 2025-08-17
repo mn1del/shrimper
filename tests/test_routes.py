@@ -34,7 +34,7 @@ def test_race_page_calculates_results(client):
     html = res.get_data(as_text=True)
     # On course time and adjusted time are calculated
     assert '5261' in html  # on course seconds for first finisher
-    assert '01:24:53' in html  # adjusted time hh:mm:ss
+    assert '01:25:00' in html  # adjusted time hh:mm:ss
 
 
 def test_race_page_shows_fleet_adjustment(client):
@@ -216,6 +216,61 @@ def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatc
     assert '>0</td>' in html  # Full/adjusted handicap change or league pts
     assert '>100</td>' in html  # Revised handicap equals initial handicap
     assert '>1</td>' in html  # Traditional points = finishers + 1 (0 + 1)
+
+
+def test_race_page_shows_defaults_for_absent_competitor(client, tmp_path, monkeypatch):
+    """Competitors missing from entrants should still show zeroed fields."""
+    from app import routes
+    import json, shutil, re
+    from pathlib import Path
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'Test Sailor',
+                'boat_name': 'Test Boat',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 100,
+                'current_handicap_s_per_hr': 100,
+                'active': True,
+                'notes': '',
+            }
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2025' / 'Test'
+    race_dir = series_dir / 'races'
+    race_dir.mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2025_Test', 'name': 'Test', 'season': 2025})
+    )
+    race_id = 'RACE_2025-01-02_Test_1'
+    race_data = {
+        'race_id': race_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_1',
+        'date': '2025-01-02',
+        'start_time': '00:00:00',
+        'entrants': [],
+    }
+    (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
+
+    res = client.get(f'/series/SER_2025_Test?race_id={race_id}')
+    html = res.get_data(as_text=True)
+
+    row = re.search(r'Test Sailor.*?</tr>', html, re.DOTALL)
+    assert row is not None
+    row_html = row.group()
+    assert 'value=""' in row_html  # No finish time provided
+    assert '00:00:00' in row_html  # Adjusted time zeroed
+    assert row_html.count('>0</td>') >= 4  # timing/handicap/points zeroed
+    assert '>100</td>' in row_html  # Revised handicap equals initial
+    assert '>1</td>' in row_html  # Traditional points = finishers + 1 (0 + 1)
 
 
 def test_settings_save_updates_json_and_page(client, tmp_path, monkeypatch):

@@ -208,22 +208,32 @@ def series_detail(series_id):
             entrants = selected_race.get('entrants', [])
             start_seconds = _parse_hms(selected_race.get('start_time'))
 
-            calc_entries = []
-            for entrant in entrants:
-                cid = entrant.get('competitor_id')
+            fleet_path = DATA_DIR / 'fleet.json'
+            with fleet_path.open() as f:
+                fleet = json.load(f).get('competitors', [])
+
+            entrants_by_id = {
+                e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
+            }
+
+            calc_entries: list[dict] = []
+            for comp in fleet:
+                cid = comp.get('competitor_id')
                 if not cid:
                     continue
                 entry = {
                     'competitor_id': cid,
                     'start': start_seconds or 0,
-                    'initial_handicap': entrant.get('initial_handicap', 0),
+                    'initial_handicap': comp.get('current_handicap_s_per_hr', 0),
                 }
-                ft = _parse_hms(entrant.get('finish_time'))
-                if ft is not None:
-                    entry['finish'] = ft
-                status = entrant.get('status')
-                if status:
-                    entry['status'] = status
+                entrant = entrants_by_id.get(cid)
+                if entrant:
+                    ft = _parse_hms(entrant.get('finish_time'))
+                    if ft is not None:
+                        entry['finish'] = ft
+                    status = entrant.get('status')
+                    if status:
+                        entry['status'] = status
                 calc_entries.append(entry)
 
             results_list = calculate_race_results(calc_entries)
@@ -233,10 +243,8 @@ def series_detail(series_id):
             results: dict[str, dict] = {}
             for res in results_list:
                 cid = res.get('competitor_id')
-                finish_str = next(
-                    (e.get('finish_time') for e in entrants if e.get('competitor_id') == cid),
-                    None,
-                )
+                entrant = entrants_by_id.get(cid, {})
+                finish_str = entrant.get('finish_time')
 
                 is_non_finisher = res.get('finish') is None
                 results[cid] = {
@@ -269,10 +277,6 @@ def series_detail(series_id):
                 }
 
             selected_race['results'] = results
-
-            fleet_path = DATA_DIR / 'fleet.json'
-            with fleet_path.open() as f:
-                fleet = json.load(f).get('competitors', [])
 
     finisher_display = f"Number of Finishers: {finisher_count}"
 
