@@ -54,7 +54,14 @@ def _load_all_races():
                 "series_id": series_id,
                 "finishers": finishers,
             })
-    races.sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
+
+    def _sort_key(race):
+        """Sort by date then start time with blanks last."""
+        date = race.get("date") or ""
+        start = race.get("start_time") or ""
+        return (date == "", date, start == "", start)
+
+    races.sort(key=_sort_key)
     return races
 
 

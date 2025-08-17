@@ -45,8 +45,16 @@ def test_series_detail_case_insensitive(client):
 def test_races_page_lists_races(client):
     res = client.get('/races')
     html = res.get_data(as_text=True)
-    # earliest race date should appear before a later one
-    assert html.index('2025-04-26') < html.index('2025-05-16')
+    # Table should be sorted by race date, then start time
+    import re
+    tbody = re.search(r'<tbody>(.*?)</tbody>', html, re.S).group(1)
+    rows = re.findall(r'<tr.*?>\s*(.*?)\s*</tr>', tbody, re.S)
+    pairs = []
+    for row_html in rows:
+        cells = re.findall(r'<td>(.*?)</td>', row_html)
+        if cells:
+            pairs.append((cells[1], cells[2]))
+    assert pairs == sorted(pairs)
     # rows link to individual race pages
     assert '/races/RACE_2025-05-23_CastF_2' in html
 

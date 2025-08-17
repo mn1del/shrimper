@@ -52,6 +52,19 @@ if (typeof document !== 'undefined') {
           rows.forEach(row => tbody.appendChild(row));
         });
       });
+
+      const defaultSort = table.getAttribute('data-sort-default');
+      if (defaultSort) {
+        const indices = defaultSort.split(',').map(s => parseInt(s.trim(), 10));
+        indices
+          .slice()
+          .reverse()
+          .forEach(i => {
+            if (headers[i]) {
+              headers[i].click();
+            }
+          });
+      }
     });
   });
 }
