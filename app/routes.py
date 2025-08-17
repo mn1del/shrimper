@@ -60,6 +60,31 @@ def _load_nav_data():
     return nav
 
 
+def _load_all_races():
+    """Return a flat list of all races with series info."""
+    races = []
+    for meta_path in _series_meta_paths():
+        with meta_path.open() as f:
+            series = json.load(f)
+        series_name = series.get("name")
+        series_id = series.get("series_id")
+        races_dir = meta_path.parent / "races"
+        for race_path in races_dir.glob("*.json"):
+            with race_path.open() as rf:
+                race = json.load(rf)
+            finishers = sum(1 for e in race.get("entrants", []) if e.get("finish_time"))
+            races.append({
+                "race_id": race.get("race_id"),
+                "date": race.get("date"),
+                "start_time": race.get("start_time"),
+                "series_name": series_name,
+                "series_id": series_id,
+                "finishers": finishers,
+            })
+    races.sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
+    return races
+
+
 def _find_series(series_id: str):
     """Return (series, races) for the given series id or (None, None).
 
@@ -93,7 +118,14 @@ def inject_nav_data():
 
 @bp.route('/')
 def index():
-    return redirect(url_for('main.series_index'))
+    return redirect(url_for('main.races'))
+
+
+@bp.route('/races')
+def races():
+    race_list = _load_all_races()
+    breadcrumbs = [('Races', None)]
+    return render_template('races.html', title='Races', breadcrumbs=breadcrumbs, races=race_list)
 
 
 @bp.route('/race-series')

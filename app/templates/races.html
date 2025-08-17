@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Races</h1>
+<table class="table table-hover">
+  <thead>
+    <tr><th>Date</th><th>Start time</th><th>Series</th><th># Finishers</th></tr>
+  </thead>
+  <tbody>
+    {% for race in races %}
+    <tr onclick="window.location='{{ url_for('main.race_sheet', race_id=race.race_id) }}'" style="cursor: pointer;">
+      <td>{{ race.date }}</td>
+      <td>{{ race.start_time or '' }}</td>
+      <td>{{ race.series_name }}</td>
+      <td>{{ race.finishers }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
