@@ -150,6 +150,9 @@
     </tbody>
   </table>
   </div>
+  <div class="text-end mt-3">
+    <button type="button" class="btn btn-danger d-none" id="deleteRace">Delete Race</button>
+  </div>
 <div class="modal fade" id="confirmModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
     <div class="modal-content">
@@ -185,8 +188,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const confirmModal = new bootstrap.Modal(confirmModalEl);
   const changeList = document.getElementById('changeList');
   const confirmSave = document.getElementById('confirmSave');
+  const deleteBtn = document.getElementById('deleteRace');
 
   let orig = {};
+  let pendingAction = null;
 
   function captureOrig() {
     orig = {
@@ -242,6 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs].forEach(inp => inp.disabled = locked);
     toggle.textContent = locked ? '🔒' : '🔓';
     updateButtons();
+    deleteBtn.classList.toggle('d-none', locked);
   }
 
   function computeFinishers() {
@@ -327,17 +333,41 @@ document.addEventListener('DOMContentLoaded', () => {
       li.textContent = ch;
       changeList.appendChild(li);
     });
+    pendingAction = 'save';
     confirmModal.show();
   });
 
   confirmSave.addEventListener('click', () => {
-    saveChanges().then(() => {
-      captureOrig();
-      locked = true;
-      updateLocked();
-      confirmModal.hide();
-    });
+    if (pendingAction === 'delete') {
+      deleteRace().then(data => {
+        if (data.redirect) {
+          window.location = data.redirect;
+        }
+      });
+    } else {
+      saveChanges().then(() => {
+        captureOrig();
+        locked = true;
+        updateLocked();
+      });
+    }
+    confirmModal.hide();
   });
+
+  deleteBtn.addEventListener('click', () => {
+    changeList.innerHTML = '';
+    const li = document.createElement('li');
+    li.textContent = 'This race will be permanently deleted.';
+    changeList.appendChild(li);
+    pendingAction = 'delete';
+    confirmModal.show();
+  });
+
+  function deleteRace() {
+    return fetch('{{ url_for('main.delete_race', race_id=selected_race.race_id) }}', {
+      method: 'DELETE'
+    }).then(r => r.json());
+  }
 
   computeFinishers();
   toggleSeries();

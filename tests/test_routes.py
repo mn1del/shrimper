@@ -92,6 +92,33 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     assert race_data['race_id'].startswith('RACE_2030-01-01_Test_')
 
 
+def test_delete_race_removes_file(client, tmp_path, monkeypatch):
+    from app import routes
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    sdir = tmp_path / '2030' / 'Test'
+    (sdir / 'races').mkdir(parents=True)
+    (sdir / 'series_metadata.json').write_text(json.dumps({
+        'series_id': 'SER_2030_Test',
+        'name': 'Test',
+        'season': 2030,
+    }))
+    race_id = 'RACE_2030-01-01_Test_1'
+    race_path = sdir / 'races' / f'{race_id}.json'
+    race_path.write_text(json.dumps({
+        'race_id': race_id,
+        'series_id': 'SER_2030_Test',
+        'name': 'Race',
+        'date': '2030-01-01',
+        'start_time': '10:00:00',
+        'entrants': [],
+    }))
+    res = client.delete(f'/api/races/{race_id}')
+    assert res.status_code == 200
+    assert not race_path.exists()
+    data = res.get_json()
+    assert data['redirect']
+
+
 def test_races_page_can_filter_by_season(client, tmp_path, monkeypatch):
     from app import routes
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
