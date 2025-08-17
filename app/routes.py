@@ -102,6 +102,124 @@ def _race_path(race_id: str):
     return None
 
 
+def _parse_hms(t: str | None) -> int | None:
+    """Return seconds for an ``HH:MM:SS`` timestamp or ``None``."""
+    if not t:
+        return None
+    h, m, s = map(int, t.split(":"))
+    return h * 3600 + m * 60 + s
+
+
+def _fleet_lookup() -> dict[str, dict]:
+    """Return mapping of competitor id to fleet details."""
+    path = DATA_DIR / "fleet.json"
+    try:
+        with path.open() as f:
+            competitors = json.load(f).get("competitors", [])
+    except FileNotFoundError:
+        competitors = []
+    return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
+
+
+def _season_standings(season: int, scoring: str) -> list[dict]:
+    """Compute standings for a season using the requested scoring format."""
+    fleet = _fleet_lookup()
+    race_results: list[list[dict]] = []
+    for meta_path in _series_meta_paths():
+        with meta_path.open() as f:
+            series = json.load(f)
+        if int(series.get("season", 0)) != int(season):
+            continue
+        races_dir = meta_path.parent / "races"
+        for race_path in races_dir.glob("*.json"):
+            with race_path.open() as rf:
+                race = json.load(rf)
+            start_seconds = _parse_hms(race.get("start_time")) or 0
+            entries: list[dict] = []
+            for ent in race.get("entrants", []):
+                cid = ent.get("competitor_id")
+                if not cid:
+                    continue
+                entry = {
+                    "competitor_id": cid,
+                    "start": start_seconds,
+                    "initial_handicap": ent.get("initial_handicap", 0),
+                }
+                ft = ent.get("finish_time")
+                if ft:
+                    entry["finish"] = _parse_hms(ft)
+                status = ent.get("status")
+                if status:
+                    entry["status"] = status
+                info = fleet.get(cid, {})
+                entry.update(
+                    {
+                        "sailor": info.get("sailor_name"),
+                        "boat": info.get("boat_name"),
+                        "sail_number": info.get("sail_no"),
+                    }
+                )
+                entries.append(entry)
+            if entries:
+                race_results.append(calculate_race_results(entries))
+
+    aggregates: dict[str, dict] = {}
+    for race in race_results:
+        for res in race:
+            cid = res.get("competitor_id")
+            agg = aggregates.setdefault(
+                cid,
+                {
+                    "sailor": res.get("sailor"),
+                    "boat": res.get("boat"),
+                    "sail_number": res.get("sail_number"),
+                    "race_count": 0,
+                    "league_points": 0.0,
+                    "traditional_points": 0.0,
+                },
+            )
+            if res.get("finish") is not None:
+                agg["race_count"] += 1
+            agg["league_points"] += res.get("points", 0.0)
+            agg["traditional_points"] += res.get("traditional_points", 0.0)
+
+    standings: list[dict] = []
+    for agg in aggregates.values():
+        if agg["race_count"] == 0:
+            continue
+        total = (
+            agg["league_points"]
+            if scoring == "league"
+            else agg["traditional_points"]
+        )
+        standings.append({
+            "sailor": agg["sailor"],
+            "boat": agg["boat"],
+            "sail_number": agg["sail_number"],
+            "race_count": agg["race_count"],
+            "total_points": total,
+        })
+
+    if scoring == "traditional":
+        standings.sort(key=lambda r: (r["total_points"], -r["race_count"], r["sailor"]))
+    else:
+        standings.sort(key=lambda r: (-r["total_points"], -r["race_count"], r["sailor"]))
+
+    prev_points: float | None = None
+    prev_races: int | None = None
+    prev_place = 0
+    for idx, row in enumerate(standings, start=1):
+        if prev_points is not None and row["total_points"] == prev_points and row["race_count"] == prev_races:
+            row["position"] = f"={prev_place}"
+        else:
+            row["position"] = str(idx)
+            prev_place = idx
+            prev_points = row["total_points"]
+            prev_races = row["race_count"]
+
+    return standings
+
+
 @bp.route('/')
 def index():
     return redirect(url_for('main.races'))
@@ -384,16 +502,34 @@ def race_sheet(race_id):
     return redirect(url_for('main.series_detail', series_id=canonical_id, race_id=race_id))
 
 
-@bp.route('/standings/traditional')
-def standings_traditional():
-    breadcrumbs = [('Standings', None), ('Traditional', None)]
-    return render_template('standings_traditional.html', title='Traditional Standings', breadcrumbs=breadcrumbs)
-
-
-@bp.route('/standings/league')
-def standings_league():
-    breadcrumbs = [('Standings', None), ('League', None)]
-    return render_template('standings_league.html', title='League Standings', breadcrumbs=breadcrumbs)
+@bp.route('/standings')
+def standings():
+    scoring = request.args.get('format', 'league').lower()
+    season_param = request.args.get('season')
+    seasons = sorted({int(json.load(p.open()).get('season')) for p in _series_meta_paths()}, reverse=True)
+    if not seasons:
+        season_val = None
+        table = []
+    else:
+        try:
+            season_int = int(season_param) if season_param is not None else None
+        except ValueError:
+            season_int = None
+        if season_int is None or season_int not in seasons:
+            season_val = seasons[0]
+        else:
+            season_val = season_int
+        table = _season_standings(season_val, scoring)
+    breadcrumbs = [('Standings', None)]
+    return render_template(
+        'standings.html',
+        title='Standings',
+        breadcrumbs=breadcrumbs,
+        seasons=seasons,
+        selected_season=season_val,
+        scoring_format=scoring,
+        standings=table,
+    )
 
 
 @bp.route('/fleet')

@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Standings</h1>
+<form method="get" class="row g-3 mb-3">
+  <div class="col-auto">
+    <label class="form-label" for="season">Season</label>
+    <select name="season" id="season" class="form-select" onchange="this.form.submit()">
+      {% for s in seasons %}
+      <option value="{{ s }}" {% if s == selected_season %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <label class="form-label" for="format">Scoring format</label>
+    <select name="format" id="format" class="form-select" onchange="this.form.submit()">
+      <option value="league" {% if scoring_format == 'league' %}selected{% endif %}>League</option>
+      <option value="traditional" {% if scoring_format == 'traditional' %}selected{% endif %}>Traditional</option>
+    </select>
+  </div>
+</form>
+<div class="table-responsive">
+  <table class="table table-striped table-sm">
+    <thead>
+      <tr>
+        <th>Position</th>
+        <th>Sailor</th>
+        <th>Boat</th>
+        <th>Sail No.</th>
+        <th># Races</th>
+        <th>Total Points</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in standings %}
+      <tr>
+        <td>{{ row.position }}</td>
+        <td>{{ row.sailor }}</td>
+        <td>{{ row.boat }}</td>
+        <td>{{ row.sail_number }}</td>
+        <td>{{ row.race_count }}</td>
+        <td>{{ '%.1f'|format(row.total_points) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted">No data.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
