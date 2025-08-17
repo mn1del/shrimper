@@ -2,17 +2,19 @@
 
 {% block content %}
 <h1>{{ series.name }}</h1>
+{% if selected_race %}
+<h2>{{ selected_race.name }}{% if selected_race.date %} ({{ selected_race.date }}){% endif %}</h2>
+{% else %}
 <form method="get" class="mb-3">
   <select name="race_id" class="form-select" onchange="this.form.submit()">
     <option value="">Select a race</option>
     {% for race in races %}
-      <option value="{{ race.race_id }}" {% if selected_race and selected_race.race_id == race.race_id %}selected{% endif %}>
-        {{ race.name }} ({{ race.date }})
-      </option>
+      <option value="{{ race.race_id }}">{{ race.name }} ({{ race.date }})</option>
     {% endfor %}
     <option value="__new__">Create New Race</option>
   </select>
 </form>
+{% endif %}
 
 {% if selected_race %}
 <div class="card mb-3">
