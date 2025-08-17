@@ -19,12 +19,31 @@
     </select>
   </div>
 </form>
+{% set ns = namespace(count=0) %}
+{% for g in race_groups %}
+  {% set ns.count = ns.count + (g.races|length) %}
+{% endfor %}
+{% set colour_classes = ['bg-primary-subtle','bg-secondary-subtle','bg-success-subtle','bg-info-subtle','bg-warning-subtle','bg-danger-subtle'] %}
+
+<style>
+  .series-boundary {
+    border-left: 2px solid var(--bs-border-color);
+  }
+</style>
+
+<div class="mb-2">
+  {% for group in race_groups %}
+    {% set idx = loop.index0 %}
+    {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
+    <div class="form-check form-check-inline">
+      <input class="form-check-input series-toggle" type="checkbox" id="seriesToggle{{ idx }}" data-series="{{ idx }}" checked>
+      <label class="form-check-label {{ colour_class }} px-1 rounded" for="seriesToggle{{ idx }}">{{ group.series_name }}</label>
+    </div>
+  {% endfor %}
+</div>
+
 <div class="table-responsive">
   <table class="table table-striped table-sm">
-    {% set ns = namespace(count=0) %}
-    {% for g in race_groups %}
-      {% set ns.count = ns.count + (g.races|length) %}
-    {% endfor %}
     <thead>
       <tr>
         <th rowspan="2">Position</th>
@@ -34,17 +53,17 @@
         <th rowspan="2"># Races</th>
         {% for group in race_groups %}
         {% set idx = loop.index0 %}
-        <th class="text-center" colspan="{{ group.races|length }}">
-          <button type="button" class="btn btn-link p-0 series-toggle" data-series="{{ idx }}">{{ group.series_name }}</button>
-        </th>
+        {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
+        <th class="text-center series-{{ idx }} series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" colspan="{{ group.races|length }}">{{ group.series_name }}</th>
         {% endfor %}
         <th rowspan="2">Total Points</th>
       </tr>
       <tr>
         {% for group in race_groups %}
           {% set idx = loop.index0 %}
+          {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
-          <th class="series-{{ idx }}">{{ race.date }} {{ race.start_time }}</th>
+          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
         {% endfor %}
       </tr>
@@ -61,7 +80,7 @@
           {% set idx = loop.index0 %}
           {% for race in group.races %}
             {% set pts = row.race_points.get(race.race_id) %}
-            <td class="series-{{ idx }}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
+            <td class="series-{{ idx }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
           {% endfor %}
         {% endfor %}
         <td>{{ '%.1f'|format(row.total_points) }}</td>
@@ -73,11 +92,11 @@
   </table>
 </div>
 <script>
-  document.querySelectorAll('.series-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = btn.dataset.series;
+  document.querySelectorAll('.series-toggle').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const idx = cb.dataset.series;
       document.querySelectorAll('.series-' + idx).forEach(el => {
-        el.classList.toggle('d-none');
+        el.classList.toggle('d-none', !cb.checked);
       });
     });
   });
