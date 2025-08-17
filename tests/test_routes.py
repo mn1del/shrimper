@@ -68,18 +68,21 @@ def test_race_sheet_redirects_to_canonical_series_id(client):
 def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     from app import routes
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
-    res = client.post('/races/new', data={
+    res = client.post('/api/races/__new__', json={
         'series_id': '__new__',
         'new_series_name': 'Test',
-        'race_date': '2030-01-01',
-        'race_time': '12:30:45',
+        'date': '2030-01-01',
+        'start_time': '12:30:45',
+        'finish_times': [],
     })
-    assert res.status_code == 302
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data['redirect']
     series_meta = tmp_path / '2030' / 'Test' / 'series_metadata.json'
     assert series_meta.exists()
     race_files = list((tmp_path / '2030' / 'Test' / 'races').glob('*.json'))
     assert len(race_files) == 1
-    with (tmp_path / '2030' / 'Test' / 'series_metadata.json').open() as f:
+    with series_meta.open() as f:
         meta = json.load(f)
     assert meta['season'] == 2030
     with race_files[0].open() as f:

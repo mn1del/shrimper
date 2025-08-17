@@ -140,82 +140,32 @@ def _load_series_meta(series_id: str):
     return None, None
 
 
-@bp.route('/races/new', methods=['GET', 'POST'])
+@bp.route('/races/new')
 def race_new():
-    if request.method == 'POST':
-        series_choice = request.form.get('series_id')
-        race_date = request.form.get('race_date')
-        race_time = request.form.get('race_time') or ''
-        if series_choice is None or not race_date:
-            abort(400)
-
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-
-        if series_choice == '__new__':
-            series_name = request.form.get('new_series_name')
-            if not series_name:
-                abort(400)
-            try:
-                season = datetime.strptime(race_date, '%Y-%m-%d').year
-            except ValueError:
-                abort(400)
-            series_id = f"SER_{season}_{series_name}"
-            season_dir = DATA_DIR / str(season)
-            series_dir = season_dir / series_name
-            (series_dir / 'races').mkdir(parents=True, exist_ok=True)
-            series_meta = {
-                'series_id': series_id,
-                'name': series_name,
-                'season': int(season),
-            }
-            with (series_dir / 'series_metadata.json').open('w') as f:
-                json.dump(series_meta, f, indent=2)
-        else:
-            meta_path, series_meta = _load_series_meta(series_choice)
-            if meta_path is None:
-                abort(400)
-            series_id = series_meta.get('series_id')
-            series_dir = meta_path.parent
-
-        if race_time:
-            try:
-                datetime.strptime(race_time, '%H:%M:%S')
-            except ValueError:
-                abort(400)
-
-        races_dir = series_dir / 'races'
-        races_dir.mkdir(parents=True, exist_ok=True)
-        seq = len(list(races_dir.glob('*.json'))) + 1
-        race_id = f"RACE_{race_date}_{series_meta['name']}_{seq}"
-        race_name = f"{series_id}_{seq}"
-
-        race_data = {
-            'race_id': race_id,
-            'series_id': series_id,
-            'name': race_name,
-            'date': race_date,
-            'start_time': race_time,
-            'status': 'draft',
-            'created_at': timestamp,
-            'updated_at': timestamp,
-            'entrants': [],
-            'results': {},
-        }
-
-        with (races_dir / f'{race_id}.json').open('w') as f:
-            json.dump(race_data, f, indent=2)
-
-        return redirect(url_for('main.series_detail', series_id=series_id))
-
     series_list = [entry['series'] for entry in _load_series_entries()]
+    fleet_path = DATA_DIR / 'fleet.json'
+    with fleet_path.open() as f:
+        fleet = json.load(f).get('competitors', [])
+    blank_race = {
+        'race_id': '__new__',
+        'series_id': '',
+        'date': '',
+        'start_time': '',
+        'entrants': [],
+        'results': {},
+    }
     breadcrumbs = [('Races', url_for('main.races')), ('Create New Race', None)]
-    selected_series = request.args.get('series_id')
     return render_template(
-        'race_form.html',
+        'series_detail.html',
         title='Create New Race',
         breadcrumbs=breadcrumbs,
+        series={},
+        races=[],
+        selected_race=blank_race,
+        finisher_display='Number of Finishers: 0',
+        fleet=fleet,
         series_list=series_list,
-        selected_series=selected_series,
+        unlocked=True,
     )
 
 
@@ -227,7 +177,7 @@ def series_detail(series_id):
 
     race_id = request.args.get('race_id')
     if race_id == '__new__':
-        return redirect(url_for('main.race_new', series_id=series.get('series_id')))
+        return redirect(url_for('main.race_new'))
 
     selected_race = None
     finisher_count = 0
@@ -381,6 +331,65 @@ def update_race(race_id):
     race_date = data.get('date')
     start_time = data.get('start_time')
     finish_times = data.get('finish_times', [])
+    if race_id == '__new__':
+        if series_choice is None or not race_date:
+            abort(400)
+        start_time = start_time or ''
+        timestamp = datetime.utcnow().isoformat() + 'Z'
+        if series_choice == '__new__':
+            if not new_series_name:
+                abort(400)
+            try:
+                season = datetime.strptime(race_date, '%Y-%m-%d').year
+            except ValueError:
+                abort(400)
+            series_id = f"SER_{season}_{new_series_name}"
+            season_dir = DATA_DIR / str(season)
+            series_dir = season_dir / new_series_name
+            (series_dir / 'races').mkdir(parents=True, exist_ok=True)
+            series_meta = {
+                'series_id': series_id,
+                'name': new_series_name,
+                'season': int(season),
+            }
+            with (series_dir / 'series_metadata.json').open('w') as f:
+                json.dump(series_meta, f, indent=2)
+        else:
+            meta_path, series_meta = _load_series_meta(series_choice)
+            if not meta_path:
+                abort(400)
+            series_id = series_meta.get('series_id')
+            series_dir = meta_path.parent
+        if start_time:
+            try:
+                datetime.strptime(start_time, '%H:%M:%S')
+            except ValueError:
+                abort(400)
+        races_dir = series_dir / 'races'
+        races_dir.mkdir(parents=True, exist_ok=True)
+        seq = len(list(races_dir.glob('*.json'))) + 1
+        race_id = f"RACE_{race_date}_{series_meta['name']}_{seq}"
+        race_name = f"{series_id}_{seq}"
+        race_data = {
+            'race_id': race_id,
+            'series_id': series_id,
+            'name': race_name,
+            'date': race_date,
+            'start_time': start_time,
+            'status': 'draft',
+            'created_at': timestamp,
+            'updated_at': timestamp,
+            'entrants': [
+                {'competitor_id': ft['competitor_id'], 'finish_time': ft.get('finish_time')}
+                for ft in finish_times
+            ],
+            'results': {},
+        }
+        with (races_dir / f'{race_id}.json').open('w') as f:
+            json.dump(race_data, f, indent=2)
+        finisher_count = sum(1 for ft in finish_times if ft.get('finish_time'))
+        redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
+        return {'finisher_count': finisher_count, 'redirect': redirect_url}
 
     race_path = _race_path(race_id)
     if race_path is None:
