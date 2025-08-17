@@ -63,6 +63,7 @@
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
+
           <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
         {% endfor %}
