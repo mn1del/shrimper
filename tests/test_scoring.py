@@ -114,6 +114,13 @@ def test_traditional_points_and_standings():
     assert [r["traditional_points"] for r in race1] == [1, 2, 3]
     assert [r["traditional_points"] for r in race2] == [1, 2, 3]
 
+    # Non-finishers should retain their handicap and score default points
+    dnf_entry = race1[2]
+    assert dnf_entry["full_delta"] == 0
+    assert dnf_entry["actual_delta"] == 0
+    assert dnf_entry["revised_handicap"] == 300
+    assert dnf_entry["points"] == 0.0
+
     standings = compute_traditional_standings([race1, race2])
     totals = {s["sailor"]: s["total_points"] for s in standings}
     assert totals["A"] == 3

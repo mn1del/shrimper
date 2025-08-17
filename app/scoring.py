@@ -152,9 +152,10 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
         entry.update(
             {
                 "handicap_position": None,
-                "full_delta": None,
-                "scaled_delta": None,
-                "actual_delta": None,
+                # For non-finishers, handicaps and points do not change
+                "full_delta": 0,
+                "scaled_delta": 0,
+                "actual_delta": 0,
                 "revised_handicap": entry.get("initial_handicap"),
                 "points": 0.0,
                 "traditional_points": non_finisher_points,
