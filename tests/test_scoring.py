@@ -127,3 +127,26 @@ def test_traditional_points_and_standings():
     assert totals["B"] == 5
     assert totals["C"] == 4
     assert [s["sailor"] for s in standings] == ["A", "C", "B"]
+
+
+def test_non_finisher_includes_zeroed_fields():
+    entries = [
+        {
+            "sailor": "A",
+            "boat": "",
+            "sail_number": 1,
+            "start": 0,
+            "initial_handicap": 300,
+            "status": "DNF",
+        }
+    ]
+    results = calculate_race_results(entries)
+    res = results[0]
+    assert res["elapsed_seconds"] == 0
+    assert res["allowance_seconds"] == 0.0
+    assert res["adjusted_time_seconds"] == 0.0
+    assert res["full_delta"] == 0
+    assert res["actual_delta"] == 0
+    assert res["revised_handicap"] == 300
+    assert res["points"] == 0.0
+    assert res["traditional_points"] == 1
