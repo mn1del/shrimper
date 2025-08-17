@@ -71,7 +71,6 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     res = client.post('/races/new', data={
         'series_id': '__new__',
         'new_series_name': 'Test',
-        'new_series_season': '2030',
         'race_date': '2030-01-01',
         'race_time': '12:30:45',
     })
@@ -80,6 +79,9 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     assert series_meta.exists()
     race_files = list((tmp_path / '2030' / 'Test' / 'races').glob('*.json'))
     assert len(race_files) == 1
+    with (tmp_path / '2030' / 'Test' / 'series_metadata.json').open() as f:
+        meta = json.load(f)
+    assert meta['season'] == 2030
     with race_files[0].open() as f:
         race_data = json.load(f)
     assert race_data['date'] == '2030-01-01'
