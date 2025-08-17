@@ -54,18 +54,18 @@
         {% for group in race_groups %}
         {% set idx = loop.index0 %}
         {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
-        <th class="text-center series-{{ idx }} series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" colspan="{{ group.races|length }}">{{ group.series_name }}</th>
+        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" colspan="{{ group.races|length + 1 }}">{{ group.series_name }}</th>
         {% endfor %}
-        <th rowspan="2">Total Points</th>
+        <th rowspan="2" class="fw-bold">Total Points</th>
       </tr>
       <tr>
         {% for group in race_groups %}
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
-
           <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
+          <th class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">Total</th>
         {% endfor %}
       </tr>
     </thead>
@@ -79,15 +79,18 @@
         <td>{{ row.race_count }}</td>
         {% for group in race_groups %}
           {% set idx = loop.index0 %}
+          {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
             {% set pts = row.race_points.get(race.race_id) %}
             <td class="series-{{ idx }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
           {% endfor %}
+          {% set total = row.series_totals.get(idx) %}
+          <td class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">{% if total is not none %}{{ '%.1f'|format(total) }}{% else %}&nbsp;{% endif %}</td>
         {% endfor %}
-        <td>{{ '%.1f'|format(row.total_points) }}</td>
+        <td class="fw-bold">{{ '%.1f'|format(row.total_points) }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ 6 + ns.count }}" class="text-muted">No data.</td></tr>
+      <tr><td colspan="{{ 6 + ns.count + (race_groups|length) }}" class="text-muted">No data.</td></tr>
       {% endfor %}
     </tbody>
   </table>
