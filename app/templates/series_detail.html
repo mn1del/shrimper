@@ -170,7 +170,7 @@
 <script src="{{ url_for('static', filename='sortable.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  let locked = true;
+  let locked = {{ 'false' if unlocked else 'true' }};
   const toggle = document.getElementById('editToggle');
   const saveBtn = document.getElementById('saveChanges');
   const cancelBtn = document.getElementById('cancelChanges');
