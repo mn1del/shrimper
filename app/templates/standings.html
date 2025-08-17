@@ -29,18 +29,15 @@
   .series-boundary {
     border-left: 2px solid var(--bs-border-color);
   }
+  .series-group {
+    cursor: pointer;
+  }
+  .rotate-90 {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    white-space: nowrap;
+  }
 </style>
-
-<div class="mb-2">
-  {% for group in race_groups %}
-    {% set idx = loop.index0 %}
-    {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
-    <div class="form-check form-check-inline">
-      <input class="form-check-input series-toggle" type="checkbox" id="seriesToggle{{ idx }}" data-series="{{ idx }}" checked>
-      <label class="form-check-label {{ colour_class }} px-1 rounded" for="seriesToggle{{ idx }}">{{ group.series_name }}</label>
-    </div>
-  {% endfor %}
-</div>
 
 <div class="table-responsive">
   <table class="table table-striped table-sm">
@@ -51,19 +48,19 @@
         <th rowspan="2">Boat</th>
         <th rowspan="2">Sail No.</th>
         <th rowspan="2"># Races</th>
+        <th rowspan="2" class="fw-bold">Total Points</th>
         {% for group in race_groups %}
         {% set idx = loop.index0 %}
         {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
-        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" data-series="{{ idx }}" colspan="{{ group.races|length + 1 }}">{{ group.series_name }}</th>
+        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" data-series="{{ idx }}" colspan="1">{{ group.series_name }}</th>
         {% endfor %}
-        <th rowspan="2" class="fw-bold">Total Points</th>
       </tr>
       <tr>
         {% for group in race_groups %}
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
-          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
+          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %} d-none rotate-90">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
           <th class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">Total</th>
         {% endfor %}
@@ -77,17 +74,17 @@
         <td>{{ row.boat }}</td>
         <td>{{ row.sail_number }}</td>
         <td>{{ row.race_count }}</td>
+        <td class="fw-bold">{{ '%.1f'|format(row.total_points) }}</td>
         {% for group in race_groups %}
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
             {% set pts = row.race_points.get(race.race_id) %}
-            <td class="series-{{ idx }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
+            <td class="series-{{ idx }} d-none{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
           {% endfor %}
           {% set total = row.series_totals.get(idx) %}
           <td class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">{% if total is not none %}{{ '%.1f'|format(total) }}{% else %}&nbsp;{% endif %}</td>
         {% endfor %}
-        <td class="fw-bold">{{ '%.1f'|format(row.total_points) }}</td>
       </tr>
       {% else %}
       <tr><td colspan="{{ 6 + ns.count + (race_groups|length) }}" class="text-muted">No data.</td></tr>
@@ -96,17 +93,15 @@
   </table>
 </div>
 <script>
-  document.querySelectorAll('.series-toggle').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const idx = cb.dataset.series;
-      document.querySelectorAll('.series-' + idx).forEach(el => {
-        el.classList.toggle('d-none', !cb.checked);
-      });
-      const header = document.querySelector('.series-group[data-series="' + idx + '"]');
-      if (header) {
-        const visibleRaces = document.querySelectorAll('th.series-' + idx + ':not(.d-none)').length;
-        header.colSpan = visibleRaces + 1;
-      }
+  document.querySelectorAll('.series-group').forEach(header => {
+    header.addEventListener('click', () => {
+      const idx = header.dataset.series;
+      const raceHeaders = document.querySelectorAll('th.series-' + idx);
+      const raceCells = document.querySelectorAll('td.series-' + idx);
+      const hidden = raceHeaders.length && raceHeaders[0].classList.contains('d-none');
+      raceHeaders.forEach(el => el.classList.toggle('d-none', !hidden));
+      raceCells.forEach(el => el.classList.toggle('d-none', !hidden));
+      header.colSpan = hidden ? raceHeaders.length + 1 : 1;
     });
   });
 </script>
