@@ -22,13 +22,7 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <li class="nav-item"><a class="nav-link" href="{{ url_for('main.races') }}">Races</a></li>
-            <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" id="standingsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Standings</a>
-              <ul class="dropdown-menu" aria-labelledby="standingsDropdown">
-                <li><a class="dropdown-item" href="{{ url_for('main.standings_traditional') }}">Traditional</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('main.standings_league') }}">League</a></li>
-              </ul>
-            </li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('main.standings') }}">Standings</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('main.fleet') }}">Fleet</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('main.rules') }}">Rules</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('main.settings') }}">Settings</a></li>
