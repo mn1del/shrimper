@@ -3,6 +3,8 @@
 {% block content %}
 {% if selected_race %}
 <div class="d-flex justify-content-end mb-2">
+  <button type="button" class="btn btn-success me-2 d-none" id="saveChanges">Save Changes</button>
+  <button type="button" class="btn btn-danger me-2 d-none" id="cancelChanges">Cancel Changes</button>
   <button type="button" class="btn btn-outline-secondary" id="editToggle">🔒</button>
 </div>
 <div class="card mb-3">
@@ -75,6 +77,32 @@
   .race-table-wrapper tbody td {
     white-space: nowrap;
   }
+  #confirmModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  #confirmModal .modal-body {
+    overflow-y: auto;
+  }
+  @media (max-width: 576px) {
+    #confirmModal .modal-dialog {
+      margin: 0;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+    }
+    #confirmModal.fade .modal-dialog {
+      transition: transform .3s ease-out;
+      transform: translateY(100%);
+    }
+    #confirmModal.show .modal-dialog {
+      transform: translateY(0);
+    }
+    #confirmModal .modal-content {
+      border-radius: 0;
+    }
+  }
 </style>
 
 <div class="table-responsive race-table-wrapper">
@@ -108,7 +136,7 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}</td>
-        <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" value="{{ result.finish_time or '' }}" disabled></td>
+        <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled></td>
         <td>{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
         <td>{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
         <td>{{ result.adj_time or '' }}</td>
@@ -121,12 +149,31 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
+<div class="modal fade" id="confirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">You are about to make the following changes:</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul id="changeList" class="mb-0"></ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmSave">Continue</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script src="{{ url_for('static', filename='sortable.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   let locked = true;
   const toggle = document.getElementById('editToggle');
+  const saveBtn = document.getElementById('saveChanges');
+  const cancelBtn = document.getElementById('cancelChanges');
   const seriesSelect = document.getElementById('series_id');
   const newSeriesFields = document.getElementById('new-series-fields');
   const newSeriesName = document.getElementById('new_series_name');
@@ -134,6 +181,54 @@ document.addEventListener('DOMContentLoaded', () => {
   const startTime = document.getElementById('start_time');
   const finishInputs = Array.from(document.querySelectorAll('.finish-time'));
   const finisherDiv = document.getElementById('finisherCount');
+  const confirmModalEl = document.getElementById('confirmModal');
+  const confirmModal = new bootstrap.Modal(confirmModalEl);
+  const changeList = document.getElementById('changeList');
+  const confirmSave = document.getElementById('confirmSave');
+
+  let orig = {};
+
+  function captureOrig() {
+    orig = {
+      series_id: seriesSelect.value,
+      series_name: seriesSelect.selectedOptions[0]?.text || '',
+      new_series_name: newSeriesName.value,
+      race_date: raceDate.value,
+      start_time: startTime.value,
+      finish_times: finishInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value}))
+    };
+  }
+
+  function revertValues() {
+    seriesSelect.value = orig.series_id;
+    newSeriesName.value = orig.new_series_name;
+    raceDate.value = orig.race_date;
+    startTime.value = orig.start_time;
+    orig.finish_times.forEach(o => {
+      const inp = finishInputs.find(i => i.dataset.cid === o.cid);
+      if (inp) inp.value = o.value;
+    });
+    computeFinishers();
+    toggleSeries();
+  }
+
+  function hasChanges() {
+    if (seriesSelect.value !== orig.series_id) return true;
+    if (newSeriesName.value !== orig.new_series_name) return true;
+    if (raceDate.value !== orig.race_date) return true;
+    if (startTime.value !== orig.start_time) return true;
+    for (const o of orig.finish_times) {
+      const cur = finishInputs.find(i => i.dataset.cid === o.cid);
+      if (cur && cur.value !== o.value) return true;
+    }
+    return false;
+  }
+
+  function updateButtons() {
+    const dirty = !locked && hasChanges();
+    saveBtn.classList.toggle('d-none', !dirty);
+    cancelBtn.classList.toggle('d-none', !dirty);
+  }
 
   function toggleSeries() {
     if (seriesSelect.value === '__new__') {
@@ -146,11 +241,35 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateLocked() {
     [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs].forEach(inp => inp.disabled = locked);
     toggle.textContent = locked ? '🔒' : '🔓';
+    updateButtons();
   }
 
   function computeFinishers() {
     const count = finishInputs.filter(inp => inp.value.trim() !== '').length;
     finisherDiv.textContent = `Number of Finishers: ${count}`;
+  }
+
+  function listChanges() {
+    const changes = [];
+    if (seriesSelect.value !== orig.series_id) {
+      changes.push(`Series: "${orig.series_name}" → "${seriesSelect.selectedOptions[0].text}"`);
+    }
+    if (newSeriesName.value !== orig.new_series_name) {
+      changes.push(`New Series Name: "${orig.new_series_name}" → "${newSeriesName.value}"`);
+    }
+    if (raceDate.value !== orig.race_date) {
+      changes.push(`Race Date: "${orig.race_date}" → "${raceDate.value}"`);
+    }
+    if (startTime.value !== orig.start_time) {
+      changes.push(`Start Time: "${orig.start_time}" → "${startTime.value}"`);
+    }
+    orig.finish_times.forEach(o => {
+      const cur = finishInputs.find(i => i.dataset.cid === o.cid);
+      if (cur && cur.value !== o.value) {
+        changes.push(`${o.name} finish time: "${o.value}" → "${cur.value}"`);
+      }
+    });
+    return changes;
   }
 
   function saveChanges() {
@@ -161,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
       start_time: startTime.value,
       finish_times: finishInputs.map(inp => ({competitor_id: inp.dataset.cid, finish_time: inp.value}))
     };
-    fetch('{{ url_for('main.update_race', race_id=selected_race.race_id) }}', {
+    return fetch('{{ url_for('main.update_race', race_id=selected_race.race_id) }}', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
@@ -175,6 +294,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   toggle.addEventListener('click', () => {
     locked = !locked;
+    if (!locked) {
+      captureOrig();
+    }
     updateLocked();
   });
 
@@ -182,16 +304,44 @@ document.addEventListener('DOMContentLoaded', () => {
     inp.addEventListener('change', () => {
       computeFinishers();
       toggleSeries();
-      if (!locked) {
-        saveChanges();
-      }
+      updateButtons();
     });
   });
 
-  finishInputs.forEach(inp => inp.addEventListener('input', computeFinishers));
+  finishInputs.forEach(inp => inp.addEventListener('input', () => {
+    computeFinishers();
+    updateButtons();
+  }));
+
+  cancelBtn.addEventListener('click', () => {
+    revertValues();
+    locked = true;
+    updateLocked();
+  });
+
+  saveBtn.addEventListener('click', () => {
+    const changes = listChanges();
+    changeList.innerHTML = '';
+    changes.forEach(ch => {
+      const li = document.createElement('li');
+      li.textContent = ch;
+      changeList.appendChild(li);
+    });
+    confirmModal.show();
+  });
+
+  confirmSave.addEventListener('click', () => {
+    saveChanges().then(() => {
+      captureOrig();
+      locked = true;
+      updateLocked();
+      confirmModal.hide();
+    });
+  });
 
   computeFinishers();
   toggleSeries();
+  captureOrig();
   updateLocked();
 });
 </script>
