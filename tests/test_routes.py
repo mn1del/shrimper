@@ -216,3 +216,42 @@ def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatc
     assert '>0</td>' in html  # Full/adjusted handicap change or league pts
     assert '>100</td>' in html  # Revised handicap equals initial handicap
     assert '>1</td>' in html  # Traditional points = finishers + 1 (0 + 1)
+
+
+def test_settings_save_updates_json_and_page(client, tmp_path, monkeypatch):
+    from app import routes
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    settings_path = tmp_path / 'settings.json'
+    original = {
+        'version': 1,
+        'updated_at': '2025-01-01T00:00:00Z',
+        'handicap_delta_by_rank': [{'rank': 1, 'delta_s_per_hr': -10}],
+        'league_points_by_rank': [{'rank': 1, 'points': 5}],
+        'fleet_size_factor': [{'finishers': 1, 'factor': 0.5}],
+    }
+    settings_path.write_text(json.dumps(original))
+
+    res = client.get('/settings')
+    html = res.get_data(as_text=True)
+    assert 'value="-10"' in html
+
+    new_data = {
+        'handicap_delta_by_rank': [{'rank': 1, 'delta_s_per_hr': -5}],
+        'league_points_by_rank': [{'rank': 1, 'points': 9}],
+        'fleet_size_factor': [{'finishers': 1, 'factor': 0.9}],
+    }
+    res = client.post('/api/settings', json=new_data)
+    assert res.status_code == 200
+
+    with settings_path.open() as f:
+        saved = json.load(f)
+    assert saved['handicap_delta_by_rank'][0]['delta_s_per_hr'] == -5
+    assert saved['league_points_by_rank'][0]['points'] == 9
+    assert saved['fleet_size_factor'][0]['factor'] == 0.9
+
+    res = client.get('/settings')
+    html = res.get_data(as_text=True)
+    assert 'value="-5"' in html
+    assert 'value="9"' in html
+    assert 'value="0.9"' in html
