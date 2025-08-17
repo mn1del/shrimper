@@ -33,33 +33,6 @@ def _load_series_entries():
     return entries
 
 
-def _load_nav_data():
-    """Return navigation data grouped by season then series.
-
-    Race files may contain a `series_id` whose casing differs from the
-    canonical value in the series metadata. Normalise each race's
-    `series_id` to ensure generated links use the canonical form.
-    """
-    seasons = {}
-    for meta_path in sorted(_series_meta_paths()):
-        season = meta_path.parent.parent.name
-        with meta_path.open() as f:
-            series = json.load(f)
-        races = []
-        races_dir = meta_path.parent / "races"
-        for race_path in sorted(races_dir.glob("*.json")):
-            with race_path.open() as rf:
-                race = json.load(rf)
-            race["series_id"] = series.get("series_id")
-            races.append(race)
-        seasons.setdefault(season, []).append({"series": series, "races": races})
-
-    nav = []
-    for season in sorted(seasons):
-        nav.append({"season": season, "series": seasons[season]})
-    return nav
-
-
 def _load_all_races():
     """Return a flat list of all races with series info."""
     races = []
@@ -110,12 +83,6 @@ def _find_race(race_id: str):
     return None
 
 
-@bp.app_context_processor
-def inject_nav_data():
-    """Expose navigation data for menus."""
-    return {'nav_race_series': _load_nav_data()}
-
-
 @bp.route('/')
 def index():
     return redirect(url_for('main.races'))
@@ -126,26 +93,6 @@ def races():
     race_list = _load_all_races()
     breadcrumbs = [('Races', None)]
     return render_template('races.html', title='Races', breadcrumbs=breadcrumbs, races=race_list)
-
-
-@bp.route('/race-series')
-def series_index():
-    series_list = []
-    for entry in _load_series_entries():
-        series = entry["series"]
-        races = entry["races"]
-        race_dates = [r.get("date") for r in races if r.get("date")]
-        if race_dates:
-            dates = f"{min(race_dates)} - {max(race_dates)}" if len(set(race_dates)) > 1 else race_dates[0]
-        else:
-            dates = ""
-        series_list.append({
-            "series_id": series.get("series_id"),
-            "name": series.get("name"),
-            "dates": dates,
-            "num_races": len(races),
-        })
-    return render_template("race_series.html", title="Series Index", series_list=series_list)
 
 
 def _load_series_meta(series_id: str):
@@ -215,7 +162,7 @@ def race_or_series_new():
         return redirect(url_for('main.series_detail', series_id=series_id))
 
     series_list = [entry['series'] for entry in _load_series_entries()]
-    breadcrumbs = [('Race Series', url_for('main.series_index')), ('Create New Race or Series', None)]
+    breadcrumbs = [('Races', url_for('main.races')), ('Create New Race or Series', None)]
     return render_template('race_or_series_form.html', title='Create New Race or Series', breadcrumbs=breadcrumbs, series_list=series_list)
 
 
@@ -304,7 +251,7 @@ def series_detail(series_id):
             with fleet_path.open() as f:
                 fleet = json.load(f).get('competitors', [])
 
-    breadcrumbs = [('Race Series', url_for('main.series_index')), (series.get('name', series_id), None)]
+    breadcrumbs = [('Races', url_for('main.races')), (series.get('name', series_id), None)]
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
