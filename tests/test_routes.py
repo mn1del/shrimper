@@ -51,6 +51,13 @@ def test_races_page_lists_races(client):
     assert '/races/RACE_2025-05-23_CastF_2' in html
 
 
+def test_races_page_has_create_button(client):
+    res = client.get('/races')
+    html = res.get_data(as_text=True)
+    assert 'Create New Race' in html
+    assert 'href="/race-series/new"' in html
+
+
 def test_race_sheet_redirects_to_canonical_series_id(client):
     res = client.get('/races/RACE_2025-05-23_CastF_2', follow_redirects=False)
     assert res.status_code == 302
