@@ -10,6 +10,18 @@
         max-height: 70vh;
         overflow-y: auto;
       }
+
+      table.sortable th::after {
+        content: '\2195'; /* ↕ indicates sortable */
+        font-size: 0.8em;
+        margin-left: 0.25rem;
+      }
+      table.sortable th[data-sort="asc"]::after {
+        content: '\25B2'; /* ▲ ascending */
+      }
+      table.sortable th[data-sort="desc"]::after {
+        content: '\25BC'; /* ▼ descending */
+      }
     </style>
   </head>
   <body>
