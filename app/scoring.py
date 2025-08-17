@@ -96,8 +96,15 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
         status = entry.get("status")
         finish = entry.get("finish")
         if status in {"DNF", "DNS", "DSQ"} or finish is None:
-            # Record the entry without timing information
-            non_finishers.append({**entry, "status": status})
+            # Record the entry with zeroed timing values so downstream
+            # consumers can display consistent fields for all boats even when
+            # they do not finish.
+            times = {
+                "elapsed_seconds": 0,
+                "allowance_seconds": 0.0,
+                "adjusted_time_seconds": 0.0,
+            }
+            non_finishers.append({**entry, **times, "status": status, "finish": None})
             continue
 
         times = adjusted_time(entry["start"], finish, entry["initial_handicap"])
