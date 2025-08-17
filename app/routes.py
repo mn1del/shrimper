@@ -121,6 +121,83 @@ def _fleet_lookup() -> dict[str, dict]:
     return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
 
 
+def recalculate_handicaps() -> None:
+    """Recompute starting handicaps for all races from revised results.
+
+    The fleet register provides the baseline starting handicaps. Each race is
+    processed in chronological order and the entrants' ``initial_handicap``
+    values are replaced with the current handicap prior to that race. Revised
+    handicaps produced from the race are then fed forward to subsequent races
+    and ultimately written back to the fleet register.
+    """
+
+    fleet_path = DATA_DIR / "fleet.json"
+    try:
+        with fleet_path.open() as f:
+            fleet_data = json.load(f)
+    except FileNotFoundError:
+        return
+
+    competitors = fleet_data.get("competitors", [])
+    handicap_map = {
+        c.get("competitor_id"): c.get("starting_handicap_s_per_hr", 0)
+        for c in competitors
+        if c.get("competitor_id")
+    }
+
+    race_files: list[tuple[dict, Path]] = []
+    for race_path in DATA_DIR.rglob("RACE_*.json"):
+        with race_path.open() as rf:
+            race_files.append((json.load(rf), race_path))
+
+    race_files.sort(key=lambda r: (r[0].get("date"), r[0].get("start_time")))
+
+    for race, race_path in race_files:
+        start_seconds = _parse_hms(race.get("start_time")) or 0
+        calc_entries: list[dict] = []
+        for ent in race.get("entrants", []):
+            cid = ent.get("competitor_id")
+            if not cid:
+                continue
+            initial = handicap_map.get(cid, 0)
+            ent["initial_handicap"] = initial
+            entry = {
+                "competitor_id": cid,
+                "start": start_seconds,
+                "initial_handicap": initial,
+            }
+            ft = ent.get("finish_time")
+            if ft:
+                parsed = _parse_hms(ft)
+                if parsed is not None:
+                    entry["finish"] = parsed
+            status = ent.get("status")
+            if status:
+                entry["status"] = status
+            calc_entries.append(entry)
+
+        if calc_entries:
+            results = calculate_race_results(calc_entries)
+            for res in results:
+                cid = res.get("competitor_id")
+                revised = res.get("revised_handicap")
+                if cid and revised is not None:
+                    handicap_map[cid] = revised
+
+        with race_path.open("w") as rf:
+            json.dump(race, rf, indent=2)
+
+    for comp in competitors:
+        cid = comp.get("competitor_id")
+        if cid:
+            comp["current_handicap_s_per_hr"] = handicap_map.get(
+                cid, comp.get("current_handicap_s_per_hr", 0)
+            )
+
+    with fleet_path.open("w") as f:
+        json.dump(fleet_data, f, indent=2)
+
+
 def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]]:
     """Compute standings and per-race metadata for a season."""
     fleet = _fleet_lookup()
@@ -351,7 +428,7 @@ def series_detail(series_id):
         with fleet_path.open() as f:
             fleet = json.load(f).get('competitors', [])
         handicap_map = {
-            comp.get('competitor_id'): comp.get('current_handicap_s_per_hr', 0)
+            comp.get('competitor_id'): comp.get('starting_handicap_s_per_hr', 0)
             for comp in fleet
             if comp.get('competitor_id')
         }
@@ -675,6 +752,7 @@ def update_race(race_id):
         }
         with (races_dir / f'{race_id}.json').open('w') as f:
             json.dump(race_data, f, indent=2)
+        recalculate_handicaps()
         finisher_count = sum(1 for ft in finish_times if ft.get('finish_time'))
         redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
         return {'finisher_count': finisher_count, 'redirect': redirect_url}
@@ -739,6 +817,7 @@ def update_race(race_id):
     race_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
     with race_path.open('w') as f:
         json.dump(race_data, f, indent=2)
+    recalculate_handicaps()
 
     finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
     return {'finisher_count': finisher_count, 'redirect': redirect_url}
