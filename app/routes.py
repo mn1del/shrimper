@@ -454,3 +454,16 @@ def update_race(race_id):
 
     finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
     return {'finisher_count': finisher_count, 'redirect': redirect_url}
+
+
+@bp.route('/api/races/<race_id>', methods=['DELETE'])
+def delete_race(race_id):
+    race_path = _race_path(race_id)
+    if race_path is None:
+        abort(404)
+    with race_path.open() as f:
+        race_data = json.load(f)
+    series_id = race_data.get('series_id')
+    race_path.unlink()
+    redirect_url = url_for('main.series_detail', series_id=series_id)
+    return {'redirect': redirect_url}
