@@ -2,7 +2,18 @@
 
 {% block content %}
 <h1>Races</h1>
-<a class="btn btn-primary mb-3" href="{{ url_for('main.race_new') }}">Create New Race</a>
+<div class="mb-3 d-flex align-items-center">
+  <form method="get" class="me-auto">
+    <label for="season" class="form-label me-2">Season</label>
+    <select id="season" name="season" class="form-select d-inline w-auto" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for s in seasons %}
+      <option value="{{ s }}" {% if selected_season and s|string == selected_season %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <a class="btn btn-primary" href="{{ url_for('main.race_new') }}">Create New Race</a>
+</div>
 <table class="table table-hover sortable">
   <thead>
     <tr><th>Series</th><th>Date</th><th>Start time</th><th># Finishers</th></tr>
