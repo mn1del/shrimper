@@ -83,6 +83,15 @@ def _find_race(race_id: str):
     return None
 
 
+def _race_path(race_id: str):
+    """Return the Path to a race JSON file or None if not found."""
+    for meta_path in _series_meta_paths():
+        race_path = meta_path.parent / "races" / f"{race_id}.json"
+        if race_path.exists():
+            return race_path
+    return None
+
+
 @bp.route('/')
 def index():
     return redirect(url_for('main.races'))
@@ -271,6 +280,8 @@ def series_detail(series_id):
             with fleet_path.open() as f:
                 fleet = json.load(f).get('competitors', [])
 
+    finisher_display = f"Number of Finishers: {finisher_count}"
+
     breadcrumbs = [('Races', url_for('main.races')), (series.get('name', series_id), None)]
     return render_template(
         'series_detail.html',
@@ -279,7 +290,7 @@ def series_detail(series_id):
         series=series,
         races=races,
         selected_race=selected_race,
-        finisher_count=finisher_count,
+        finisher_display=finisher_display,
         fleet=fleet,
     )
 
@@ -334,3 +345,45 @@ def settings():
     with data_path.open() as f:
         settings_data = json.load(f)
     return render_template('settings.html', title='Settings', breadcrumbs=breadcrumbs, settings=settings_data)
+
+
+@bp.route('/api/races/<race_id>', methods=['POST'])
+def update_race(race_id):
+    data = request.get_json() or {}
+    series_id = data.get('series_id')
+    series_name = data.get('series_name')
+    race_date = data.get('date')
+    start_time = data.get('start_time')
+    finish_times = data.get('finish_times', [])
+
+    # update series name if provided
+    if series_id and series_name is not None:
+        meta_path, series_meta = _load_series_meta(series_id)
+        if meta_path and series_meta.get('name') != series_name:
+            series_meta['name'] = series_name
+            with meta_path.open('w') as f:
+                json.dump(series_meta, f, indent=2)
+
+    race_path = _race_path(race_id)
+    if race_path is None:
+        abort(404)
+    with race_path.open() as f:
+        race_data = json.load(f)
+
+    if race_date is not None:
+        race_data['date'] = race_date
+    if start_time is not None:
+        race_data['start_time'] = start_time
+    if finish_times:
+        ft_map = {ft['competitor_id']: ft.get('finish_time') for ft in finish_times}
+        for entrant in race_data.get('entrants', []):
+            cid = entrant.get('competitor_id')
+            if cid in ft_map:
+                entrant['finish_time'] = ft_map[cid]
+
+    race_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+    with race_path.open('w') as f:
+        json.dump(race_data, f, indent=2)
+
+    finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
+    return {'finisher_count': finisher_count}
