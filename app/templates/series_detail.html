@@ -29,7 +29,7 @@
 </div>
 
 <div class="table-responsive">
-  <table class="table table-bordered table-sm align-middle">
+  <table class="table table-bordered table-sm align-middle sortable">
     <thead class="table-light">
       <tr>
         <th>Sailor</th><th>Boat</th><th>Sail No.</th>
@@ -48,7 +48,7 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>{{ comp.current_handicap_s_per_hr }}</td>
-        <td><input type="text" class="form-control form-control-sm" value="{{ result.finish_time or '' }}"></td>
+        <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm" value="{{ result.finish_time or '' }}"></td>
         <td>{{ result.on_course_secs or '' }}</td>
         <td>{{ result.abs_pos or '' }}</td>
         <td>{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
@@ -67,5 +67,6 @@
     </tbody>
   </table>
 </div>
+<script src="https://www.kryogenix.org/code/browser/sorttable/sorttable.js"></script>
 {% endif %}
 {% endblock %}
