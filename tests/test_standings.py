@@ -56,3 +56,4 @@ def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
     nonfin = next(row for row in standings if row['sailor'] == 'NoFinish')
     assert nonfin['total_points'] == 2
     assert nonfin['race_count'] == 0
+    assert nonfin['race_points']['RACE_2025-01-01_TEST_1'] == 2
