@@ -54,7 +54,13 @@ def _load_all_races():
                 "series_id": series_id,
                 "finishers": finishers,
             })
-    races.sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
+    # Sort races by date and start time in descending order so the most recent
+    # race appears first in the list. Missing dates or times are treated as
+    # empty strings so they sort last.
+    races.sort(
+        key=lambda r: (r["date"] or "", r["start_time"] or ""),
+        reverse=True,
+    )
     return races
 
 
