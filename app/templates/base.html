@@ -21,18 +21,18 @@
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('main.races') }}">Races</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('main.standings') }}">Standings</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('main.fleet') }}">Fleet</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('main.rules') }}">Rules</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('main.settings') }}">Settings</a></li>
+            <li class="nav-item"><a class="nav-link{% if request.path.startswith('/races') or request.path.startswith('/series') %} active{% endif %}" href="{{ url_for('main.races') }}">Races</a></li>
+            <li class="nav-item"><a class="nav-link{% if request.path.startswith('/standings') %} active{% endif %}" href="{{ url_for('main.standings') }}">Standings</a></li>
+            <li class="nav-item"><a class="nav-link{% if request.path.startswith('/fleet') %} active{% endif %}" href="{{ url_for('main.fleet') }}">Fleet</a></li>
+            <li class="nav-item"><a class="nav-link{% if request.path.startswith('/rules') %} active{% endif %}" href="{{ url_for('main.rules') }}">Rules</a></li>
+            <li class="nav-item"><a class="nav-link{% if request.path.startswith('/settings') %} active{% endif %}" href="{{ url_for('main.settings') }}">Settings</a></li>
           </ul>
         </div>
       </div>
     </nav>
 
     <main class="container" style="padding-top: 70px;">
-      {% if breadcrumbs %}
+      {% if breadcrumbs and breadcrumbs|length > 1 %}
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           {% for label, link in breadcrumbs %}
