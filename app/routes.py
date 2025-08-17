@@ -4,7 +4,7 @@ import importlib
 from datetime import datetime
 from pathlib import Path
 
-from .scoring import calculate_race_results
+from .scoring import calculate_race_results, _scaling_factor
 from . import scoring as scoring_module
 
 
@@ -168,6 +168,7 @@ def race_new():
         fleet=fleet,
         series_list=series_list,
         unlocked=True,
+        fleet_adjustment=0,
     )
 
 
@@ -184,6 +185,7 @@ def series_detail(series_id):
     selected_race = None
     finisher_count = 0
     fleet = []
+    fleet_adjustment = 0
 
     def _parse_hms(t: str | None) -> int | None:
         if not t:
@@ -226,6 +228,8 @@ def series_detail(series_id):
 
             results_list = calculate_race_results(calc_entries)
             finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
+            if finisher_count:
+                fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100))
             results: dict[str, dict] = {}
             for res in results_list:
                 cid = res.get('competitor_id')
@@ -284,6 +288,7 @@ def series_detail(series_id):
         finisher_display=finisher_display,
         fleet=fleet,
         series_list=series_list,
+        fleet_adjustment=fleet_adjustment,
     )
 
 

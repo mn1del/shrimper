@@ -37,6 +37,13 @@ def test_race_page_calculates_results(client):
     assert '01:24:53' in html  # adjusted time hh:mm:ss
 
 
+def test_race_page_shows_fleet_adjustment(client):
+    res = client.get('/series/SER_2025_MYHF?race_id=RACE_2025-07-11_MYHF_1')
+    html = res.get_data(as_text=True)
+    assert 'Fleet Adjustment (%)' in html
+    assert '<td>100</td>' in html
+
+
 def test_series_detail_case_insensitive(client):
     """Series routes should be accessible regardless of ID casing."""
     res = client.get('/series/ser_2025_myhf?race_id=RACE_2025-07-11_MYHF_1')
