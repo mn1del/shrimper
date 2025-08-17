@@ -41,6 +41,7 @@ def _load_all_races():
             series = json.load(f)
         series_name = series.get("name")
         series_id = series.get("series_id")
+        season = series.get("season")
         races_dir = meta_path.parent / "races"
         for race_path in races_dir.glob("*.json"):
             with race_path.open() as rf:
@@ -53,6 +54,7 @@ def _load_all_races():
                 "series_name": series_name,
                 "series_id": series_id,
                 "finishers": finishers,
+                "season": season,
             })
     # Sort races by date and start time in descending order so the most recent
     # race appears first in the list. Missing dates or times are treated as
@@ -105,9 +107,22 @@ def index():
 
 @bp.route('/races')
 def races():
-    race_list = _load_all_races()
+    season = request.args.get('season') or None
+    all_races = _load_all_races()
+    seasons = sorted({r.get('season') for r in all_races if r.get('season')}, reverse=True)
+    if season:
+        race_list = [r for r in all_races if str(r.get('season')) == str(season)]
+    else:
+        race_list = all_races
     breadcrumbs = [('Races', None)]
-    return render_template('races.html', title='Races', breadcrumbs=breadcrumbs, races=race_list)
+    return render_template(
+        'races.html',
+        title='Races',
+        breadcrumbs=breadcrumbs,
+        races=race_list,
+        seasons=seasons,
+        selected_season=season,
+    )
 
 
 def _load_series_meta(series_id: str):

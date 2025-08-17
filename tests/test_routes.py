@@ -87,3 +87,38 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     assert race_data['date'] == '2030-01-01'
     assert race_data['start_time'] == '12:30:45'
     assert race_data['race_id'].startswith('RACE_2030-01-01_Test_')
+
+
+def test_races_page_can_filter_by_season(client, tmp_path, monkeypatch):
+    from app import routes
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    def create_season(year: int):
+        sdir = tmp_path / str(year) / f'S{year}'
+        (sdir / 'races').mkdir(parents=True)
+        (sdir / 'series_metadata.json').write_text(json.dumps({
+            'series_id': f'SER_{year}_S{year}',
+            'name': f'S{year}',
+            'season': year,
+        }))
+        (sdir / 'races' / f'RACE_{year}-01-01_S{year}_1.json').write_text(json.dumps({
+            'race_id': f'RACE_{year}-01-01_S{year}_1',
+            'series_id': f'SER_{year}_S{year}',
+            'name': 'Race',
+            'date': f'{year}-01-01',
+            'start_time': '10:00:00',
+            'entrants': [],
+        }))
+
+    create_season(2024)
+    create_season(2025)
+
+    res = client.get('/races')
+    html = res.get_data(as_text=True)
+    assert '<option value="2024"' in html
+    assert '<option value="2025"' in html
+
+    res = client.get('/races?season=2024')
+    html = res.get_data(as_text=True)
+    assert '2024-01-01' in html
+    assert '2025-01-01' not in html
