@@ -46,8 +46,8 @@ def test_series_detail_case_insensitive(client):
 def test_races_page_lists_races(client):
     res = client.get('/races')
     html = res.get_data(as_text=True)
-    # earliest race date should appear before a later one
-    assert html.index('2025-04-26') < html.index('2025-05-16')
+    # most recent race date should appear before earlier ones
+    assert html.index('2025-05-16') < html.index('2025-04-26')
     # rows link to individual race pages
     assert '/races/RACE_2025-05-23_CastF_2' in html
 
