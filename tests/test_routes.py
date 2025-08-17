@@ -42,11 +42,13 @@ def test_series_detail_case_insensitive(client):
     assert res.status_code == 200
 
 
-def test_nav_links_use_canonical_series_id(client):
-    res = client.get('/race-series')
+def test_races_page_lists_races(client):
+    res = client.get('/races')
     html = res.get_data(as_text=True)
-    assert '/series/SER_2025_CASTF?race_id=RACE_2025-05-23_CastF_2' in html
-    assert '/series/SER_2025_CastF?race_id=RACE_2025-05-23_CastF_2' not in html
+    # earliest race date should appear before a later one
+    assert html.index('2025-04-26') < html.index('2025-05-16')
+    # rows link to individual race pages
+    assert '/races/RACE_2025-05-23_CastF_2' in html
 
 
 def test_race_sheet_redirects_to_canonical_series_id(client):
