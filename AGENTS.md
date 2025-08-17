@@ -7,11 +7,14 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
   - `__init__.py` – application factory registering routes and recalculating handicaps
   - `routes.py` – blueprint and data-loading logic for views
   - `scoring.py` – race scoring and handicap utilities
-  - `templates/` – Jinja page templates
+- `templates/` – Jinja page templates
   - `static/` – front-end assets
 - `data/` – sample JSON data for seasons, races and fleet
 - `tests/` – pytest suite for routes, scoring and handicap logic
 - `requirements.txt` – project dependencies
+
+### Front-end notes
+- Standings table: click a series header to toggle its race columns. Race columns are hidden by default and header dates rotate 90° when visible for a compact layout.
 
 ## Workflow
 1. Install dependencies: `pip install -r requirements.txt`
