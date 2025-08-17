@@ -344,7 +344,15 @@ def series_detail(series_id):
 
     finisher_display = f"Number of Finishers: {finisher_count}"
 
-    breadcrumbs = [('Races', url_for('main.races')), (series.get('name', series_id), None)]
+    # When viewing an individual race, suppress breadcrumbs and provide a list
+    # of all races for navigation. Otherwise show the standard breadcrumb trail.
+    if selected_race:
+        breadcrumbs = None
+        all_races = _load_all_races()
+    else:
+        breadcrumbs = [('Races', url_for('main.races')), (series.get('name', series_id), None)]
+        all_races = []
+
     series_list = [entry['series'] for entry in _load_series_entries()]
     return render_template(
         'series_detail.html',
@@ -357,6 +365,7 @@ def series_detail(series_id):
         fleet=fleet,
         series_list=series_list,
         fleet_adjustment=fleet_adjustment,
+        all_races=all_races,
     )
 
 
