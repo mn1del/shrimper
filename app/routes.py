@@ -283,6 +283,7 @@ def series_detail(series_id):
     finisher_display = f"Number of Finishers: {finisher_count}"
 
     breadcrumbs = [('Races', url_for('main.races')), (series.get('name', series_id), None)]
+    series_list = [entry['series'] for entry in _load_series_entries()]
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
@@ -292,6 +293,7 @@ def series_detail(series_id):
         selected_race=selected_race,
         finisher_display=finisher_display,
         fleet=fleet,
+        series_list=series_list,
     )
 
 
@@ -350,25 +352,51 @@ def settings():
 @bp.route('/api/races/<race_id>', methods=['POST'])
 def update_race(race_id):
     data = request.get_json() or {}
-    series_id = data.get('series_id')
-    series_name = data.get('series_name')
+    series_choice = data.get('series_id')
+    new_series_name = data.get('new_series_name')
+    new_series_season = data.get('new_series_season')
     race_date = data.get('date')
     start_time = data.get('start_time')
     finish_times = data.get('finish_times', [])
-
-    # update series name if provided
-    if series_id and series_name is not None:
-        meta_path, series_meta = _load_series_meta(series_id)
-        if meta_path and series_meta.get('name') != series_name:
-            series_meta['name'] = series_name
-            with meta_path.open('w') as f:
-                json.dump(series_meta, f, indent=2)
 
     race_path = _race_path(race_id)
     if race_path is None:
         abort(404)
     with race_path.open() as f:
         race_data = json.load(f)
+
+    redirect_url = None
+    current_series_id = race_data.get('series_id')
+    if series_choice:
+        if series_choice == '__new__':
+            if not new_series_name or not new_series_season:
+                abort(400)
+            season_dir = DATA_DIR / str(new_series_season)
+            series_dir = season_dir / new_series_name
+            (series_dir / 'races').mkdir(parents=True, exist_ok=True)
+            series_id = f"SER_{new_series_season}_{new_series_name}"
+            series_meta = {
+                'series_id': series_id,
+                'name': new_series_name,
+                'season': int(new_series_season),
+            }
+            with (series_dir / 'series_metadata.json').open('w') as f:
+                json.dump(series_meta, f, indent=2)
+        else:
+            series_id = series_choice
+            meta_path, series_meta = _load_series_meta(series_id)
+            if not meta_path:
+                abort(400)
+            series_dir = meta_path.parent
+
+        if series_id != current_series_id:
+            new_races_dir = series_dir / 'races'
+            new_races_dir.mkdir(parents=True, exist_ok=True)
+            new_path = new_races_dir / f'{race_id}.json'
+            race_path.rename(new_path)
+            race_path = new_path
+            race_data['series_id'] = series_id
+            redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
 
     if race_date is not None:
         race_data['date'] = race_date
@@ -386,4 +414,4 @@ def update_race(race_id):
         json.dump(race_data, f, indent=2)
 
     finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
-    return {'finisher_count': finisher_count}
+    return {'finisher_count': finisher_count, 'redirect': redirect_url}
