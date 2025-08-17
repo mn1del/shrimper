@@ -63,7 +63,8 @@
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
-          <th class="series-{{ idx }} {{ colour_class }}{% if loop.first and not loop.parent.first %} series-boundary{% endif %}">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
+
+          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
         {% endfor %}
       </tr>
@@ -80,7 +81,7 @@
           {% set idx = loop.index0 %}
           {% for race in group.races %}
             {% set pts = row.race_points.get(race.race_id) %}
-            <td class="series-{{ idx }}{% if loop.first and not loop.parent.first %} series-boundary{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
+            <td class="series-{{ idx }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
           {% endfor %}
         {% endfor %}
         <td>{{ '%.1f'|format(row.total_points) }}</td>
