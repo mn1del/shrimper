@@ -110,26 +110,23 @@ def _load_series_meta(series_id: str):
     return None, None
 
 
-@bp.route('/race-series/new', methods=['GET', 'POST'])
-def race_or_series_new():
+@bp.route('/races/new', methods=['GET', 'POST'])
+def race_new():
     if request.method == 'POST':
-        existing_series_id = request.form.get('existing_series_id') or None
-        race_id = request.form.get('race_id')
-        race_name = request.form.get('race_name')
+        series_choice = request.form.get('series_id')
         race_date = request.form.get('race_date')
+        race_time = request.form.get('race_time') or ''
+        if series_choice is None or not race_date:
+            abort(400)
+
         timestamp = datetime.utcnow().isoformat() + 'Z'
 
-        if existing_series_id:
-            meta_path, series_meta = _load_series_meta(existing_series_id)
-            if meta_path is None:
-                abort(400)
-            series_id = series_meta.get('series_id')
-            season_dir = meta_path.parent.parent
-            series_dir = meta_path.parent
-        else:
-            series_id = request.form.get('new_series_id')
+        if series_choice == '__new__':
             series_name = request.form.get('new_series_name')
             season = request.form.get('new_series_season')
+            if not series_name or not season:
+                abort(400)
+            series_id = f"SER_{season}_{series_name}"
             season_dir = DATA_DIR / str(season)
             series_dir = season_dir / series_name
             (series_dir / 'races').mkdir(parents=True, exist_ok=True)
@@ -140,13 +137,31 @@ def race_or_series_new():
             }
             with (series_dir / 'series_metadata.json').open('w') as f:
                 json.dump(series_meta, f, indent=2)
+        else:
+            meta_path, series_meta = _load_series_meta(series_choice)
+            if meta_path is None:
+                abort(400)
+            series_id = series_meta.get('series_id')
+            series_dir = meta_path.parent
+
+        if race_time:
+            try:
+                datetime.strptime(race_time, '%H:%M:%S')
+            except ValueError:
+                abort(400)
+
+        races_dir = series_dir / 'races'
+        races_dir.mkdir(parents=True, exist_ok=True)
+        seq = len(list(races_dir.glob('*.json'))) + 1
+        race_id = f"RACE_{race_date}_{series_meta['name']}_{seq}"
+        race_name = f"{series_id}_{seq}"
 
         race_data = {
             'race_id': race_id,
             'series_id': series_id,
             'name': race_name,
             'date': race_date,
-            'start_time': '',
+            'start_time': race_time,
             'status': 'draft',
             'created_at': timestamp,
             'updated_at': timestamp,
@@ -154,16 +169,21 @@ def race_or_series_new():
             'results': {},
         }
 
-        races_dir = series_dir / 'races'
-        races_dir.mkdir(parents=True, exist_ok=True)
         with (races_dir / f'{race_id}.json').open('w') as f:
             json.dump(race_data, f, indent=2)
 
         return redirect(url_for('main.series_detail', series_id=series_id))
 
     series_list = [entry['series'] for entry in _load_series_entries()]
-    breadcrumbs = [('Races', url_for('main.races')), ('Create New Race or Series', None)]
-    return render_template('race_or_series_form.html', title='Create New Race or Series', breadcrumbs=breadcrumbs, series_list=series_list)
+    breadcrumbs = [('Races', url_for('main.races')), ('Create New Race', None)]
+    selected_series = request.args.get('series_id')
+    return render_template(
+        'race_form.html',
+        title='Create New Race',
+        breadcrumbs=breadcrumbs,
+        series_list=series_list,
+        selected_series=selected_series,
+    )
 
 
 @bp.route('/series/<series_id>')
@@ -174,7 +194,7 @@ def series_detail(series_id):
 
     race_id = request.args.get('race_id')
     if race_id == '__new__':
-        return redirect(url_for('main.race_or_series_new'))
+        return redirect(url_for('main.race_new', series_id=series.get('series_id')))
 
     selected_race = None
     finisher_count = 0

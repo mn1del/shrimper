@@ -1,6 +1,7 @@
 import pytest
 import pathlib
 import sys
+import json
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from app import create_app
@@ -55,10 +56,32 @@ def test_races_page_has_create_button(client):
     res = client.get('/races')
     html = res.get_data(as_text=True)
     assert 'Create New Race' in html
-    assert 'href="/race-series/new"' in html
+    assert 'href="/races/new"' in html
 
 
 def test_race_sheet_redirects_to_canonical_series_id(client):
     res = client.get('/races/RACE_2025-05-23_CastF_2', follow_redirects=False)
     assert res.status_code == 302
     assert '/series/SER_2025_CASTF?race_id=RACE_2025-05-23_CastF_2' in res.headers['Location']
+
+
+def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
+    from app import routes
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    res = client.post('/races/new', data={
+        'series_id': '__new__',
+        'new_series_name': 'Test',
+        'new_series_season': '2030',
+        'race_date': '2030-01-01',
+        'race_time': '12:30:45',
+    })
+    assert res.status_code == 302
+    series_meta = tmp_path / '2030' / 'Test' / 'series_metadata.json'
+    assert series_meta.exists()
+    race_files = list((tmp_path / '2030' / 'Test' / 'races').glob('*.json'))
+    assert len(race_files) == 1
+    with race_files[0].open() as f:
+        race_data = json.load(f)
+    assert race_data['date'] == '2030-01-01'
+    assert race_data['start_time'] == '12:30:45'
+    assert race_data['race_id'].startswith('RACE_2030-01-01_Test_')
