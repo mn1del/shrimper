@@ -259,6 +259,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
     aggregates: dict[str, dict] = {}
     for idx, group in enumerate(race_groups):
         for race in group["races"]:
+            finisher_count = sum(1 for r in race["results"] if r.get("finish") is not None)
             for res in race["results"]:
                 cid = res.get("competitor_id")
                 agg = aggregates.setdefault(
@@ -277,7 +278,11 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                 if res.get("finish") is not None:
                     agg["race_count"] += 1
                 league_pts = res.get("points", 0.0)
-                trad_pts = res.get("traditional_points", 0.0)
+                trad_pts = res.get("traditional_points")
+                if trad_pts is None and res.get("finish") is None:
+                    trad_pts = finisher_count + 1
+                elif trad_pts is None:
+                    trad_pts = 0.0
                 agg["league_points"] += league_pts
                 agg["traditional_points"] += trad_pts
                 pts = league_pts if scoring == "league" else trad_pts
@@ -286,7 +291,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
 
     standings: list[dict] = []
     for agg in aggregates.values():
-        if agg["race_count"] == 0:
+        if scoring == "league" and agg["race_count"] == 0:
             continue
         total = (
             agg["league_points"]

@@ -223,9 +223,14 @@ def compute_traditional_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]
     totals: Dict[str, float] = {}
     names: Dict[str, Dict] = {}
     for race in races:
+        finisher_count = sum(1 for r in race if r.get("finish") is not None)
         for res in race:
             sailor = res.get("sailor")
-            points = res.get("traditional_points", 0.0)
+            points = res.get("traditional_points")
+            if points is None and res.get("finish") is None:
+                points = finisher_count + 1
+            elif points is None:
+                points = 0.0
             totals[sailor] = totals.get(sailor, 0.0) + points
             names[sailor] = {
                 "sailor": sailor,
