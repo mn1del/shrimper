@@ -215,41 +215,45 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
             with race_path.open() as rf:
                 race = json.load(rf)
             start_seconds = _parse_hms(race.get("start_time")) or 0
+            entrants_map = {
+                ent.get("competitor_id"): ent
+                for ent in race.get("entrants", [])
+                if ent.get("competitor_id")
+            }
+            if not entrants_map:
+                continue
             entries: list[dict] = []
-            for ent in race.get("entrants", []):
-                cid = ent.get("competitor_id")
-                if not cid:
-                    continue
+            for cid, info in fleet.items():
                 entry = {
                     "competitor_id": cid,
                     "start": start_seconds,
-                    "initial_handicap": ent.get("initial_handicap", 0),
+                    "initial_handicap": entrants_map.get(cid, {}).get(
+                        "initial_handicap",
+                        info.get("current_handicap_s_per_hr")
+                        or info.get("starting_handicap_s_per_hr", 0),
+                    ),
+                    "sailor": info.get("sailor_name"),
+                    "boat": info.get("boat_name"),
+                    "sail_number": info.get("sail_no"),
                 }
-                ft = ent.get("finish_time")
-                if ft:
-                    entry["finish"] = _parse_hms(ft)
-                status = ent.get("status")
-                if status:
-                    entry["status"] = status
-                info = fleet.get(cid, {})
-                entry.update(
-                    {
-                        "sailor": info.get("sailor_name"),
-                        "boat": info.get("boat_name"),
-                        "sail_number": info.get("sail_no"),
-                    }
-                )
+                ent = entrants_map.get(cid)
+                if ent:
+                    ft = ent.get("finish_time")
+                    if ft:
+                        entry["finish"] = _parse_hms(ft)
+                    status = ent.get("status")
+                    if status:
+                        entry["status"] = status
                 entries.append(entry)
-            if entries:
-                results = calculate_race_results(entries)
-                group["races"].append(
-                    {
-                        "race_id": race.get("race_id"),
-                        "date": race.get("date"),
-                        "start_time": race.get("start_time"),
-                        "results": results,
-                    }
-                )
+            results = calculate_race_results(entries)
+            group["races"].append(
+                {
+                    "race_id": race.get("race_id"),
+                    "date": race.get("date"),
+                    "start_time": race.get("start_time"),
+                    "results": results,
+                }
+            )
         if group["races"]:
             group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
             race_groups.append(group)
