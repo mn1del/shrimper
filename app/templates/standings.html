@@ -36,6 +36,7 @@
     writing-mode: vertical-rl;
     transform: rotate(180deg);
     white-space: nowrap;
+    text-align: center;
   }
   .standings-table thead tr:nth-child(2) th:not(.series-group),
   .standings-table thead tr:nth-child(3) th,
@@ -63,6 +64,7 @@
     top: 2.5rem;
     background: var(--bs-body-bg);
     z-index: 2;
+    vertical-align: middle;
   }
   .standings-table thead tr:nth-child(2) th:first-child,
   .standings-table tbody td:first-child {
@@ -101,7 +103,7 @@
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
-          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %} d-none rotate-90">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
+          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %} d-none rotate-90 text-center align-middle">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
           <th class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">Total</th>
         {% endfor %}
