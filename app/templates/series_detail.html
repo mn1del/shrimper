@@ -1,10 +1,31 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1>{{ series.name }}</h1>
 {% if selected_race %}
-<h2>{{ selected_race.name }}{% if selected_race.date %} ({{ selected_race.date }}){% endif %}</h2>
+<div class="d-flex justify-content-end mb-2">
+  <button type="button" class="btn btn-outline-secondary" id="editToggle">🔒</button>
+</div>
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="mb-3">
+      <label class="form-label">Series Name</label>
+      <input type="text" id="series_name" class="form-control" value="{{ series.name }}" disabled>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Race Date</label>
+      <input type="date" id="race_date" class="form-control" value="{{ selected_race.date }}" disabled>
+    </div>
+    <div class="mb-3">
+      <label for="start_time" class="form-label">Start Time</label>
+      <input type="text" id="start_time" class="form-control" value="{{ selected_race.start_time }}" disabled>
+    </div>
+    <div class="mb-3">
+      <div id="finisherCount">{{ finisher_display }}</div>
+    </div>
+  </div>
+</div>
 {% else %}
+<h1>{{ series.name }}</h1>
 <form method="get" class="mb-3">
   <select name="race_id" class="form-select" onchange="this.form.submit()">
     <option value="">Select a race</option>
@@ -17,19 +38,6 @@
 {% endif %}
 
 {% if selected_race %}
-<div class="card mb-3">
-  <div class="card-body">
-    <div class="mb-3">
-      <label for="start_time" class="form-label">Start Time</label>
-      <input type="text" id="start_time" class="form-control" value="{{ selected_race.start_time }}">
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Number of Finishers</label>
-      <input type="text" class="form-control" value="{{ finisher_count }}" readonly>
-    </div>
-  </div>
-</div>
-
 <style>
   .race-table-wrapper {
     max-height: 600px; /* roughly 15 rows */
@@ -78,7 +86,7 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}</td>
-        <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm" value="{{ result.finish_time or '' }}"></td>
+        <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" value="{{ result.finish_time or '' }}" disabled></td>
         <td>{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
         <td>{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
         <td>{{ result.adj_time or '' }}</td>
@@ -93,5 +101,61 @@
   </table>
 </div>
 <script src="{{ url_for('static', filename='sortable.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  let locked = true;
+  const toggle = document.getElementById('editToggle');
+  const seriesName = document.getElementById('series_name');
+  const raceDate = document.getElementById('race_date');
+  const startTime = document.getElementById('start_time');
+  const finishInputs = Array.from(document.querySelectorAll('.finish-time'));
+  const finisherDiv = document.getElementById('finisherCount');
+
+  function updateLocked() {
+    [seriesName, raceDate, startTime, ...finishInputs].forEach(inp => inp.disabled = locked);
+    toggle.textContent = locked ? '🔒' : '🔓';
+  }
+
+  function computeFinishers() {
+    const count = finishInputs.filter(inp => inp.value.trim() !== '').length;
+    finisherDiv.textContent = `Number of Finishers: ${count}`;
+  }
+
+  function saveChanges() {
+    const payload = {
+      series_id: '{{ series.series_id }}',
+      series_name: seriesName.value,
+      date: raceDate.value,
+      start_time: startTime.value,
+      finish_times: finishInputs.map(inp => ({competitor_id: inp.dataset.cid, finish_time: inp.value}))
+    };
+    fetch('{{ url_for('main.update_race', race_id=selected_race.race_id) }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+      finisherDiv.textContent = `Number of Finishers: ${data.finisher_count}`;
+    });
+  }
+
+  toggle.addEventListener('click', () => {
+    locked = !locked;
+    updateLocked();
+  });
+
+  [seriesName, raceDate, startTime, ...finishInputs].forEach(inp => {
+    inp.addEventListener('change', () => {
+      computeFinishers();
+      if (!locked) {
+        saveChanges();
+      }
+    });
+    inp.addEventListener('input', computeFinishers);
+  });
+
+  computeFinishers();
+  updateLocked();
+});
+</script>
 {% endif %}
 {% endblock %}

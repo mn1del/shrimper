@@ -20,7 +20,7 @@ def test_race_page_uses_race_json_data(client):
     html = res.get_data(as_text=True)
     assert 'value="18:25:00"' in html
     assert 'value="19:52:41"' in html
-    assert 'value="8"' in html
+    assert 'Number of Finishers: 8' in html
 
 
 def test_race_sheet_redirects(client):
