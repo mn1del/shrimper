@@ -54,7 +54,7 @@
         {% for group in race_groups %}
         {% set idx = loop.index0 %}
         {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
-        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" colspan="{{ group.races|length + 1 }}">{{ group.series_name }}</th>
+        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" data-series="{{ idx }}" colspan="{{ group.races|length + 1 }}">{{ group.series_name }}</th>
         {% endfor %}
         <th rowspan="2" class="fw-bold">Total Points</th>
       </tr>
@@ -102,6 +102,11 @@
       document.querySelectorAll('.series-' + idx).forEach(el => {
         el.classList.toggle('d-none', !cb.checked);
       });
+      const header = document.querySelector('.series-group[data-series="' + idx + '"]');
+      if (header) {
+        const visibleRaces = document.querySelectorAll('th.series-' + idx + ':not(.d-none)').length;
+        header.colSpan = visibleRaces + 1;
+      }
     });
   });
 </script>
