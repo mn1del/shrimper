@@ -138,8 +138,11 @@ def race_new():
 
         if series_choice == '__new__':
             series_name = request.form.get('new_series_name')
-            season = request.form.get('new_series_season')
-            if not series_name or not season:
+            if not series_name:
+                abort(400)
+            try:
+                season = datetime.strptime(race_date, '%Y-%m-%d').year
+            except ValueError:
                 abort(400)
             series_id = f"SER_{season}_{series_name}"
             season_dir = DATA_DIR / str(season)
@@ -360,7 +363,6 @@ def update_race(race_id):
     data = request.get_json() or {}
     series_choice = data.get('series_id')
     new_series_name = data.get('new_series_name')
-    new_series_season = data.get('new_series_season')
     race_date = data.get('date')
     start_time = data.get('start_time')
     finish_times = data.get('finish_times', [])
@@ -375,16 +377,23 @@ def update_race(race_id):
     current_series_id = race_data.get('series_id')
     if series_choice:
         if series_choice == '__new__':
-            if not new_series_name or not new_series_season:
+            if not new_series_name:
                 abort(400)
-            season_dir = DATA_DIR / str(new_series_season)
+            date_str = race_date or race_data.get('date')
+            if not date_str:
+                abort(400)
+            try:
+                season = datetime.strptime(date_str, '%Y-%m-%d').year
+            except ValueError:
+                abort(400)
+            season_dir = DATA_DIR / str(season)
             series_dir = season_dir / new_series_name
             (series_dir / 'races').mkdir(parents=True, exist_ok=True)
-            series_id = f"SER_{new_series_season}_{new_series_name}"
+            series_id = f"SER_{season}_{new_series_name}"
             series_meta = {
                 'series_id': series_id,
                 'name': new_series_name,
-                'season': int(new_series_season),
+                'season': int(season),
             }
             with (series_dir / 'series_metadata.json').open('w') as f:
                 json.dump(series_meta, f, indent=2)

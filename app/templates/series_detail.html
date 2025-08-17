@@ -25,12 +25,6 @@
           <input type="text" id="new_series_name" class="form-control" disabled>
         </div>
       </div>
-      <div class="row mb-3">
-        <label class="col-md-3 col-form-label">Series Season</label>
-        <div class="col-md-9">
-          <input type="number" id="new_series_season" class="form-control" disabled>
-        </div>
-      </div>
     </div>
     <div class="row mb-3">
       <label class="col-md-3 col-form-label">Race Date</label>
@@ -136,7 +130,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const seriesSelect = document.getElementById('series_id');
   const newSeriesFields = document.getElementById('new-series-fields');
   const newSeriesName = document.getElementById('new_series_name');
-  const newSeriesSeason = document.getElementById('new_series_season');
   const raceDate = document.getElementById('race_date');
   const startTime = document.getElementById('start_time');
   const finishInputs = Array.from(document.querySelectorAll('.finish-time'));
@@ -151,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateLocked() {
-    [seriesSelect, newSeriesName, newSeriesSeason, raceDate, startTime, ...finishInputs].forEach(inp => inp.disabled = locked);
+    [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs].forEach(inp => inp.disabled = locked);
     toggle.textContent = locked ? '🔒' : '🔓';
   }
 
@@ -164,7 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const payload = {
       series_id: seriesSelect.value,
       new_series_name: newSeriesName.value,
-      new_series_season: newSeriesSeason.value,
       date: raceDate.value,
       start_time: startTime.value,
       finish_times: finishInputs.map(inp => ({competitor_id: inp.dataset.cid, finish_time: inp.value}))
@@ -186,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateLocked();
   });
 
-  [seriesSelect, newSeriesName, newSeriesSeason, raceDate, startTime, ...finishInputs].forEach(inp => {
+  [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs].forEach(inp => {
     inp.addEventListener('change', () => {
       computeFinishers();
       toggleSeries();
