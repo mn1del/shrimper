@@ -14,8 +14,8 @@ from app.scoring import (
 
 def test_adjusted_time_and_rank():
     entries = [
-        {"sailor": "A", "boat": "B", "sail_number": 1, "start": 0, "finish": 3600, "initial_handicap": 360},
-        {"sailor": "C", "boat": "D", "sail_number": 2, "start": 0, "finish": 3720, "initial_handicap": 300},
+        {"sailor": "A", "boat": "B", "sail_number": 1, "start": 1, "finish": 3601, "initial_handicap": 360},
+        {"sailor": "C", "boat": "D", "sail_number": 2, "start": 1, "finish": 3721, "initial_handicap": 300},
     ]
     results = calculate_race_results(entries)
     assert results[0]["sailor"] == "A"
@@ -33,8 +33,8 @@ def test_handicap_adjustment_with_fleet_scaling():
             "sailor": f"S{i+1}",
             "boat": "",
             "sail_number": i + 1,
-            "start": 0,
-            "finish": 3600 + i * 40,
+            "start": 1,
+            "finish": 3601 + i * 40,
             "initial_handicap": 300,
         })
     results = calculate_race_results(entries)
@@ -54,8 +54,8 @@ def test_high_positions_capped_and_full_scaling():
                 "sailor": f"H{i+1}",
                 "boat": "",
                 "sail_number": i + 1,
-                "start": 0,
-                "finish": 3600 + i * 10,
+                "start": 1,
+                "finish": 3601 + i * 10,
                 "initial_handicap": 300,
             }
         )
@@ -71,16 +71,16 @@ def test_high_positions_capped_and_full_scaling():
 
 def test_league_points_and_standings():
     race1_entries = [
-        {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3600, "initial_handicap": 300},
-        {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "finish": 3660, "initial_handicap": 300},
-        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3720, "initial_handicap": 300},
-        {"sailor": "D", "boat": "", "sail_number": 4, "start": 0, "finish": 3780, "initial_handicap": 300},
+        {"sailor": "A", "boat": "", "sail_number": 1, "start": 1, "finish": 3601, "initial_handicap": 300},
+        {"sailor": "B", "boat": "", "sail_number": 2, "start": 1, "finish": 3661, "initial_handicap": 300},
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 1, "finish": 3721, "initial_handicap": 300},
+        {"sailor": "D", "boat": "", "sail_number": 4, "start": 1, "finish": 3781, "initial_handicap": 300},
     ]
     race2_entries = [
-        {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3700, "initial_handicap": 300},
-        {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "finish": 3600, "initial_handicap": 300},
-        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3650, "initial_handicap": 300},
-        {"sailor": "D", "boat": "", "sail_number": 4, "start": 0, "finish": 3800, "initial_handicap": 300},
+        {"sailor": "A", "boat": "", "sail_number": 1, "start": 1, "finish": 3701, "initial_handicap": 300},
+        {"sailor": "B", "boat": "", "sail_number": 2, "start": 1, "finish": 3601, "initial_handicap": 300},
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 1, "finish": 3651, "initial_handicap": 300},
+        {"sailor": "D", "boat": "", "sail_number": 4, "start": 1, "finish": 3801, "initial_handicap": 300},
     ]
     race1 = calculate_race_results(race1_entries)
     race2 = calculate_race_results(race2_entries)
@@ -100,14 +100,14 @@ def test_league_points_and_standings():
 
 def test_traditional_points_and_standings():
     race1_entries = [
-        {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3600, "initial_handicap": 300},
-        {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "finish": 3660, "initial_handicap": 300},
-        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "initial_handicap": 300, "status": "DNF"},
+        {"sailor": "A", "boat": "", "sail_number": 1, "start": 1, "finish": 3601, "initial_handicap": 300},
+        {"sailor": "B", "boat": "", "sail_number": 2, "start": 1, "finish": 3661, "initial_handicap": 300},
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 1, "initial_handicap": 300, "status": "DNF"},
     ]
     race2_entries = [
-        {"sailor": "C", "boat": "", "sail_number": 3, "start": 0, "finish": 3600, "initial_handicap": 300},
-        {"sailor": "A", "boat": "", "sail_number": 1, "start": 0, "finish": 3660, "initial_handicap": 300},
-        {"sailor": "B", "boat": "", "sail_number": 2, "start": 0, "initial_handicap": 300, "status": "DNF"},
+        {"sailor": "C", "boat": "", "sail_number": 3, "start": 1, "finish": 3601, "initial_handicap": 300},
+        {"sailor": "A", "boat": "", "sail_number": 1, "start": 1, "finish": 3661, "initial_handicap": 300},
+        {"sailor": "B", "boat": "", "sail_number": 2, "start": 1, "initial_handicap": 300, "status": "DNF"},
     ]
     race1 = calculate_race_results(race1_entries)
     race2 = calculate_race_results(race2_entries)
@@ -132,16 +132,24 @@ def test_traditional_points_and_standings():
 def test_non_finisher_includes_zeroed_fields():
     entries = [
         {
-            "sailor": "A",
+            "sailor": "Finisher",
             "boat": "",
             "sail_number": 1,
-            "start": 0,
+            "start": 1,
+            "finish": 3601,
+            "initial_handicap": 300,
+        },
+        {
+            "sailor": "A",
+            "boat": "",
+            "sail_number": 2,
+            "start": 1,
             "initial_handicap": 300,
             "status": "DNF",
-        }
+        },
     ]
     results = calculate_race_results(entries)
-    res = results[0]
+    res = next(r for r in results if r["sailor"] == "A")
     assert res["elapsed_seconds"] == 0
     assert res["allowance_seconds"] == 0.0
     assert res["adjusted_time_seconds"] == 0.0
@@ -149,4 +157,42 @@ def test_non_finisher_includes_zeroed_fields():
     assert res["actual_delta"] == 0
     assert res["revised_handicap"] == 300
     assert res["points"] == 0.0
-    assert res["traditional_points"] == 1
+    assert res["traditional_points"] == 2
+
+
+def test_traditional_points_zero_when_invalid_race():
+    # Missing start time
+    entries_no_start = [
+        {
+            "sailor": "A",
+            "boat": "",
+            "sail_number": 1,
+            "start": 0,
+            "finish": 3600,
+            "initial_handicap": 300,
+        }
+    ]
+    res1 = calculate_race_results(entries_no_start)
+    assert all(r["traditional_points"] == 0 for r in res1)
+
+    # No finishers
+    entries_no_finishers = [
+        {
+            "sailor": "A",
+            "boat": "",
+            "sail_number": 1,
+            "start": 1,
+            "initial_handicap": 300,
+            "status": "DNF",
+        },
+        {
+            "sailor": "B",
+            "boat": "",
+            "sail_number": 2,
+            "start": 1,
+            "initial_handicap": 300,
+            "status": "DNS",
+        },
+    ]
+    res2 = calculate_race_results(entries_no_finishers)
+    assert all(r["traditional_points"] == 0 for r in res2)
