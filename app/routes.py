@@ -312,10 +312,12 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
             continue
         if scoring == "traditional":
             series_totals: dict[int, float] = {}
+            series_counts: dict[int, int] = {}
             dropped: set[str] = set()
             for sidx, results in agg["series_results"].items():
                 raw_total = sum(r["points"] for r in results)
                 finish_count = sum(1 for r in results if r["finished"])
+                series_counts[sidx] = finish_count
                 if finish_count > 4:
                     drop_n = 2
                 elif finish_count == 4:
@@ -339,6 +341,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     "total_points": total,
                     "race_points": agg["race_points"],
                     "series_totals": series_totals,
+                    "series_counts": series_counts,
                     "dropped_races": dropped,
                 }
             )
@@ -353,6 +356,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     "total_points": total,
                     "race_points": agg["race_points"],
                     "series_totals": agg["series_totals"],
+                    "series_counts": {},
                     "dropped_races": set(),
                 }
             )

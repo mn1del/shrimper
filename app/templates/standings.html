@@ -83,7 +83,7 @@
     <thead>
       <tr>
         <th colspan="6"></th>
-        <th colspan="{{ ns.count + (race_groups|length) }}" class="text-center">Series results (click to see individual race scores):</th>
+        <th colspan="{{ ns.count + (race_groups|length) * (2 if scoring_format == 'traditional' else 1) }}" class="text-center">Series results (click to see individual race scores):</th>
       </tr>
       <tr>
         <th rowspan="2">Position</th>
@@ -95,7 +95,7 @@
         {% for group in race_groups %}
         {% set idx = loop.index0 %}
         {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
-        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" data-series="{{ idx }}" colspan="1">{{ group.series_name }}</th>
+        <th class="text-center series-group {{ colour_class }}{% if not loop.first %} series-boundary{% endif %}" data-series="{{ idx }}" colspan="{{ 2 if scoring_format == 'traditional' else 1 }}">{{ group.series_name }}</th>
         {% endfor %}
       </tr>
       <tr>
@@ -105,7 +105,12 @@
           {% for race in group.races %}
           <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %} d-none rotate-90 text-center align-middle">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
           {% endfor %}
+          {% if scoring_format == 'traditional' %}
+          <th class="count-{{ idx }} {{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}"># Races</th>
+          <th class="{{ colour_class }}">Total</th>
+          {% else %}
           <th class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">Total</th>
+          {% endif %}
         {% endfor %}
       </tr>
     </thead>
@@ -126,26 +131,39 @@
             {% set dropped = scoring_format == 'traditional' and (row.dropped_races and race.race_id in row.dropped_races) %}
             <td class="series-{{ idx }} d-none{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}{% if dropped %} text-muted{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
           {% endfor %}
+          {% if scoring_format == 'traditional' %}
+          <td class="count-{{ idx }} {{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">{{ row.series_counts.get(idx, 0) }}</td>
+          {% set total = row.series_totals.get(idx) %}
+          <td class="{{ colour_class }}">{% if total is not none %}{{ '%.1f'|format(total) }}{% else %}&nbsp;{% endif %}</td>
+          {% else %}
           {% set total = row.series_totals.get(idx) %}
           <td class="{{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">{% if total is not none %}{{ '%.1f'|format(total) }}{% else %}&nbsp;{% endif %}</td>
+          {% endif %}
         {% endfor %}
       </tr>
       {% else %}
-      <tr><td colspan="{{ 6 + ns.count + (race_groups|length) }}" class="text-muted">No data.</td></tr>
+      <tr><td colspan="{{ 6 + ns.count + (race_groups|length) * (2 if scoring_format == 'traditional' else 1) }}" class="text-muted">No data.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 <script>
+  const extraCols = {{ 2 if scoring_format == 'traditional' else 1 }};
   document.querySelectorAll('.series-group').forEach(header => {
     header.addEventListener('click', () => {
       const idx = header.dataset.series;
       const raceHeaders = document.querySelectorAll('th.series-' + idx);
       const raceCells = document.querySelectorAll('td.series-' + idx);
+      const countHeader = document.querySelector('th.count-' + idx);
+      const countCells = document.querySelectorAll('td.count-' + idx);
       const hidden = raceHeaders.length && raceHeaders[0].classList.contains('d-none');
       raceHeaders.forEach(el => el.classList.toggle('d-none', !hidden));
       raceCells.forEach(el => el.classList.toggle('d-none', !hidden));
-      header.colSpan = hidden ? raceHeaders.length + 1 : 1;
+      if (countHeader) {
+        countHeader.classList.toggle('series-boundary', !hidden);
+      }
+      countCells.forEach(el => el.classList.toggle('series-boundary', !hidden));
+      header.colSpan = hidden ? raceHeaders.length + extraCols : extraCols;
     });
   });
 </script>
