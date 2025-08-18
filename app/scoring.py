@@ -92,9 +92,12 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
 
     finishers: List[Dict] = []
     non_finishers: List[Dict] = []
+    race_start: int | None = None
     for entry in entries:
         status = entry.get("status")
         finish = entry.get("finish")
+        if race_start is None:
+            race_start = entry.get("start")
         if status in {"DNF", "DNS", "DSQ"} or finish is None:
             # Record the entry with zeroed timing values so downstream
             # consumers can display consistent fields for all boats even when
@@ -169,7 +172,11 @@ def calculate_race_results(entries: Iterable[Dict]) -> List[Dict]:
             }
         )
 
-    return finishers + non_finishers
+    results = finishers + non_finishers
+    if (race_start in (0, None)) or not finishers:
+        for res in results:
+            res["traditional_points"] = 0.0
+    return results
 
 
 def compute_league_standings(races: Iterable[Iterable[Dict]]) -> List[Dict]:

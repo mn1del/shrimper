@@ -167,3 +167,55 @@ def test_traditional_series_drops_high_scores(tmp_path, monkeypatch):
     assert row['series_totals'][0] == pytest.approx(6)
     assert row['total_points'] == pytest.approx(6)
     assert {'RACE_4', 'RACE_5'} <= row['dropped_races']
+
+
+def test_invalid_race_zero_points(tmp_path, monkeypatch):
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'Solo',
+                'boat_name': 'Boat',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 0,
+            }
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2025' / 'Test'
+    (series_dir / 'races').mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2025_TEST', 'name': 'Test', 'season': 2025})
+    )
+
+    race1 = {
+        'race_id': 'R1',
+        'series_id': 'SER_2025_TEST',
+        'date': '2025-01-01',
+        # Missing start_time
+        'entrants': [
+            {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '00:30:00'}
+        ],
+    }
+    race2 = {
+        'race_id': 'R2',
+        'series_id': 'SER_2025_TEST',
+        'date': '2025-01-02',
+        'start_time': '10:00:00',
+        'entrants': [
+            {'competitor_id': 'C1', 'initial_handicap': 0, 'status': 'DNF'}
+        ],
+    }
+    (series_dir / 'races' / 'R1.json').write_text(json.dumps(race1))
+    (series_dir / 'races' / 'R2.json').write_text(json.dumps(race2))
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    standings, _ = routes._season_standings(2025, 'traditional')
+    row = standings[0]
+    assert row['total_points'] == 0
+    assert row['race_points']['R1'] == 0
+    assert row['race_points']['R2'] == 0
