@@ -2,6 +2,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from app import routes
 
 
@@ -110,3 +112,58 @@ def test_absent_sailors_scored_as_dns(tmp_path, monkeypatch):
     assert dns_row['total_points'] == 2
     assert dns_row['race_count'] == 0
     assert dns_row['race_points']['RACE_2025-01-01_TEST_1'] == 2
+
+
+def test_traditional_series_drops_high_scores(tmp_path, monkeypatch):
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': f'C{i}',
+                'sailor_name': f'S{i}',
+                'boat_name': f'B{i}',
+                'sail_no': str(i),
+                'starting_handicap_s_per_hr': 0,
+            }
+            for i in range(1, 6)
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2024' / 'Test'
+    (series_dir / 'races').mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2024_TEST', 'name': 'Test', 'season': 2024})
+    )
+
+    positions = [1, 2, 3, 4, 5]
+    for i, pos in enumerate(positions, start=1):
+        order = list(range(1, 6))
+        order.remove(1)
+        order.insert(pos - 1, 1)
+        entrants = []
+        for idx, comp in enumerate(order, start=1):
+            entrants.append(
+                {
+                    'competitor_id': f'C{comp}',
+                    'initial_handicap': 0,
+                    'finish_time': f"10:{30 + idx:02d}:00",
+                }
+            )
+        race = {
+            'race_id': f'RACE_{i}',
+            'series_id': 'SER_2024_TEST',
+            'date': f'2024-01-0{i}',
+            'start_time': '10:00:00',
+            'entrants': entrants,
+        }
+        (series_dir / 'races' / f'RACE_{i}.json').write_text(json.dumps(race))
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    standings, _ = routes._season_standings(2024, 'traditional')
+    row = next(r for r in standings if r['sailor'] == 'S1')
+    assert row['series_totals'][0] == pytest.approx(6)
+    assert row['total_points'] == pytest.approx(6)
+    assert {'RACE_4', 'RACE_5'} <= row['dropped_races']
