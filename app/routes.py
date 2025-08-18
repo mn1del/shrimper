@@ -277,9 +277,12 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                         "traditional_points": 0.0,
                         "race_points": {},
                         "series_totals": {},
+                        "series_results": {},
+                        "dropped_races": set(),
                     },
                 )
-                if res.get("finish") is not None:
+                finished = res.get("finish") is not None
+                if finished:
                     agg["race_count"] += 1
                 league_pts = res.get("points", 0.0)
                 trad_pts = res.get("traditional_points")
@@ -289,30 +292,70 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     trad_pts = 0.0
                 agg["league_points"] += league_pts
                 agg["traditional_points"] += trad_pts
-                pts = league_pts if scoring == "league" else trad_pts
-                agg["race_points"][race["race_id"]] = pts
-                agg["series_totals"][idx] = agg["series_totals"].get(idx, 0.0) + pts
+                if scoring == "traditional":
+                    agg["race_points"][race["race_id"]] = trad_pts
+                    series_list = agg["series_results"].setdefault(idx, [])
+                    series_list.append(
+                        {
+                            "race_id": race["race_id"],
+                            "points": trad_pts,
+                            "finished": finished,
+                        }
+                    )
+                else:
+                    agg["race_points"][race["race_id"]] = league_pts
+                    agg["series_totals"][idx] = agg["series_totals"].get(idx, 0.0) + league_pts
 
     standings: list[dict] = []
     for agg in aggregates.values():
         if scoring == "league" and agg["race_count"] == 0:
             continue
-        total = (
-            agg["league_points"]
-            if scoring == "league"
-            else agg["traditional_points"]
-        )
-        standings.append(
-            {
-                "sailor": agg["sailor"],
-                "boat": agg["boat"],
-                "sail_number": agg["sail_number"],
-                "race_count": agg["race_count"],
-                "total_points": total,
-                "race_points": agg["race_points"],
-                "series_totals": agg["series_totals"],
-            }
-        )
+        if scoring == "traditional":
+            series_totals: dict[int, float] = {}
+            dropped: set[str] = set()
+            for sidx, results in agg["series_results"].items():
+                raw_total = sum(r["points"] for r in results)
+                finish_count = sum(1 for r in results if r["finished"])
+                if finish_count > 4:
+                    drop_n = 2
+                elif finish_count == 4:
+                    drop_n = 1
+                else:
+                    drop_n = 0
+                drop_points = 0.0
+                if drop_n:
+                    sorted_res = sorted(results, key=lambda r: r["points"], reverse=True)
+                    to_drop = sorted_res[:drop_n]
+                    drop_points = sum(r["points"] for r in to_drop)
+                    dropped.update(r["race_id"] for r in to_drop)
+                series_totals[sidx] = raw_total - drop_points
+            total = sum(series_totals.values())
+            standings.append(
+                {
+                    "sailor": agg["sailor"],
+                    "boat": agg["boat"],
+                    "sail_number": agg["sail_number"],
+                    "race_count": agg["race_count"],
+                    "total_points": total,
+                    "race_points": agg["race_points"],
+                    "series_totals": series_totals,
+                    "dropped_races": dropped,
+                }
+            )
+        else:
+            total = agg["league_points"]
+            standings.append(
+                {
+                    "sailor": agg["sailor"],
+                    "boat": agg["boat"],
+                    "sail_number": agg["sail_number"],
+                    "race_count": agg["race_count"],
+                    "total_points": total,
+                    "race_points": agg["race_points"],
+                    "series_totals": agg["series_totals"],
+                    "dropped_races": set(),
+                }
+            )
 
     if scoring == "traditional":
         standings.sort(key=lambda r: (r["total_points"], -r["race_count"], r["sailor"]))
