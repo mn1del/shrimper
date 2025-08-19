@@ -325,3 +325,64 @@ def test_settings_save_updates_json_and_page(client, tmp_path, monkeypatch):
     assert 'value="-5"' in html
     assert 'value="9"' in html
     assert 'value="0.9"' in html
+
+
+def test_fleet_update_propagates(client, tmp_path, monkeypatch):
+    from app import routes
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    fleet = {
+        'competitors': [{
+            'competitor_id': 'C1',
+            'sailor_name': 'Old',
+            'boat_name': 'Boat',
+            'sail_no': '1',
+            'starting_handicap_s_per_hr': 100,
+            'current_handicap_s_per_hr': 100,
+            'active': True,
+            'notes': ''
+        }]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2025' / 'Test'
+    race_dir = series_dir / 'races'
+    race_dir.mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(json.dumps({
+        'series_id': 'SER_2025_Test', 'name': 'Test', 'season': 2025
+    }))
+    race_id = 'RACE_2025-01-01_Test_1'
+    race_data = {
+        'race_id': race_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_1',
+        'date': '2025-01-01',
+        'start_time': '00:00:00',
+        'entrants': [
+            {'competitor_id': 'C1', 'initial_handicap': 100, 'finish_time': '00:30:00'}
+        ],
+        'results': {}
+    }
+    (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
+
+    payload = {
+        'competitors': [{
+            'competitor_id': 'C1',
+            'sailor_name': 'New',
+            'boat_name': 'New Boat',
+            'sail_no': '99',
+            'starting_handicap_s_per_hr': 150
+        }]
+    }
+    res = client.post('/api/fleet', json=payload)
+    assert res.status_code == 200
+
+    with (tmp_path / 'fleet.json').open() as f:
+        saved = json.load(f)
+    assert saved['competitors'][0]['sailor_name'] == 'New'
+    assert saved['competitors'][0]['starting_handicap_s_per_hr'] == 150
+
+    with (race_dir / f'{race_id}.json').open() as f:
+        updated = json.load(f)
+    assert updated['entrants'][0]['initial_handicap'] == 150

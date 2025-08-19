@@ -121,6 +121,19 @@ def _fleet_lookup() -> dict[str, dict]:
     return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
 
 
+def _next_competitor_id(existing: set[str]) -> str:
+    """Return a new unique competitor id."""
+    max_id = 0
+    for cid in existing:
+        try:
+            num = int(cid.split("_")[1])
+            if num > max_id:
+                max_id = num
+        except (IndexError, ValueError):
+            continue
+    return f"C_{max_id + 1}"
+
+
 def recalculate_handicaps() -> None:
     """Recompute starting handicaps for all races from revised results.
 
@@ -706,6 +719,56 @@ def fleet():
         data = json.load(f)
     competitors = data.get('competitors', [])
     return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs, fleet=competitors)
+
+
+@bp.route('/api/fleet', methods=['POST'])
+def update_fleet():
+    """Persist fleet edits and refresh handicaps."""
+    fleet_path = DATA_DIR / 'fleet.json'
+    payload = request.get_json() or {}
+    comps = payload.get('competitors', [])
+    try:
+        with fleet_path.open() as f:
+            fleet_data = json.load(f)
+    except FileNotFoundError:
+        fleet_data = {'competitors': []}
+    existing = {
+        c.get('competitor_id'): c
+        for c in fleet_data.get('competitors', [])
+        if c.get('competitor_id')
+    }
+    ids = set(existing.keys())
+    for comp in comps:
+        cid = comp.get('competitor_id')
+        if not cid:
+            cid = _next_competitor_id(ids)
+            ids.add(cid)
+        entry = existing.get(
+            cid,
+            {
+                'competitor_id': cid,
+                'current_handicap_s_per_hr': comp.get('starting_handicap_s_per_hr', 0),
+                'active': True,
+                'notes': '',
+            },
+        )
+        entry.update(
+            {
+                'sailor_name': comp.get('sailor_name', ''),
+                'boat_name': comp.get('boat_name', ''),
+                'sail_no': comp.get('sail_no', ''),
+                'starting_handicap_s_per_hr': comp.get('starting_handicap_s_per_hr', 0),
+            }
+        )
+        if 'current_handicap_s_per_hr' not in entry:
+            entry['current_handicap_s_per_hr'] = entry['starting_handicap_s_per_hr']
+        existing[cid] = entry
+    fleet_data['competitors'] = list(existing.values())
+    fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+    with fleet_path.open('w') as f:
+        json.dump(fleet_data, f, indent=2)
+    recalculate_handicaps()
+    return {'status': 'ok'}
 
 
 @bp.route('/rules')
