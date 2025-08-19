@@ -59,6 +59,7 @@ def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
     assert nonfin['total_points'] == 2
     assert nonfin['race_count'] == 0
     assert nonfin['race_points']['RACE_2025-01-01_TEST_1'] == 2
+    assert nonfin['series_counts'][0] == 0
 
 
 def test_absent_sailors_scored_as_dns(tmp_path, monkeypatch):
@@ -112,6 +113,7 @@ def test_absent_sailors_scored_as_dns(tmp_path, monkeypatch):
     assert dns_row['total_points'] == 2
     assert dns_row['race_count'] == 0
     assert dns_row['race_points']['RACE_2025-01-01_TEST_1'] == 2
+    assert dns_row['series_counts'][0] == 0
 
 
 def test_traditional_series_drops_high_scores(tmp_path, monkeypatch):
@@ -167,6 +169,7 @@ def test_traditional_series_drops_high_scores(tmp_path, monkeypatch):
     assert row['series_totals'][0] == pytest.approx(6)
     assert row['total_points'] == pytest.approx(6)
     assert {'RACE_4', 'RACE_5'} <= row['dropped_races']
+    assert row['series_counts'][0] == 5
 
 
 def test_invalid_race_zero_points(tmp_path, monkeypatch):
