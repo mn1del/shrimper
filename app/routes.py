@@ -763,6 +763,17 @@ def update_fleet():
         if 'current_handicap_s_per_hr' not in entry:
             entry['current_handicap_s_per_hr'] = entry['starting_handicap_s_per_hr']
         existing[cid] = entry
+    # Ensure sail numbers are unique
+    sail_counts: dict[str, int] = {}
+    for c in existing.values():
+        sail_no = c.get('sail_no', '').strip()
+        if not sail_no:
+            continue
+        sail_counts[sail_no] = sail_counts.get(sail_no, 0) + 1
+    duplicates = [sn for sn, count in sail_counts.items() if count > 1]
+    if duplicates:
+        return {'error': f"Duplicate sail numbers: {', '.join(sorted(duplicates))}"}, 400
+
     fleet_data['competitors'] = list(existing.values())
     fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
     with fleet_path.open('w') as f:

@@ -386,3 +386,50 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
     with (race_dir / f'{race_id}.json').open() as f:
         updated = json.load(f)
     assert updated['entrants'][0]['initial_handicap'] == 150
+
+
+def test_fleet_update_rejects_duplicate_sail_numbers(client, tmp_path, monkeypatch):
+    from app import routes
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'A',
+                'boat_name': 'BoatA',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 100,
+                'current_handicap_s_per_hr': 100,
+                'active': True,
+                'notes': ''
+            },
+            {
+                'competitor_id': 'C2',
+                'sailor_name': 'B',
+                'boat_name': 'BoatB',
+                'sail_no': '2',
+                'starting_handicap_s_per_hr': 100,
+                'current_handicap_s_per_hr': 100,
+                'active': True,
+                'notes': ''
+            },
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    payload = {
+        'competitors': [
+            {
+                'competitor_id': 'C2',
+                'sailor_name': 'B',
+                'boat_name': 'BoatB',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 100
+            }
+        ]
+    }
+    res = client.post('/api/fleet', json=payload)
+    assert res.status_code == 400
+    assert 'Duplicate sail numbers' in res.get_json()['error']

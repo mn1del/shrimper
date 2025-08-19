@@ -12,6 +12,7 @@
 <div class="mb-3">
   <button type="button" class="btn btn-primary d-none" id="addCompetitor">Add Competitor</button>
 </div>
+<div id="saveWarning" class="alert alert-warning d-none" role="alert"></div>
 <table class="table table-striped" id="fleetTable">
   <thead>
     <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr>
@@ -61,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const confirmModal = new bootstrap.Modal(confirmModalEl);
   const changeList = document.getElementById('changeList');
   const confirmSave = document.getElementById('confirmSave');
+  const warning = document.getElementById('saveWarning');
   let orig = [];
 
   function captureOrig() {
@@ -90,6 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${o.curr}</td>`;
       tbody.appendChild(tr);
     });
+  }
+
+  function showWarning(msg, type = 'warning') {
+    warning.textContent = msg;
+    warning.className = `alert alert-${type}`;
+    warning.classList.remove('d-none');
+  }
+
+  function clearWarning() {
+    warning.classList.add('d-none');
+    warning.textContent = '';
   }
 
   function updateLocked() {
@@ -127,12 +140,14 @@ document.addEventListener('DOMContentLoaded', () => {
   toggle.addEventListener('click', () => {
     locked = !locked;
     if (!locked) captureOrig();
+    clearWarning();
     updateLocked();
   });
 
   cancelBtn.addEventListener('click', () => {
     revertValues();
     locked = true;
+    clearWarning();
     updateLocked();
   });
 
@@ -163,6 +178,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   saveBtn.addEventListener('click', () => {
+    clearWarning();
+    const data = collectData();
+    const seen = new Set();
+    for (const comp of data) {
+      const sn = comp.sail_no;
+      if (!sn) continue;
+      if (seen.has(sn)) {
+        showWarning(`Duplicate Sail No.: ${sn}`);
+        return;
+      }
+      seen.add(sn);
+    }
     const changes = listChanges();
     changeList.innerHTML = '';
     changes.forEach(ch => {
@@ -182,6 +209,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if (res.ok) {
       location.reload();
+    } else {
+      let msg = 'Error saving fleet';
+      try {
+        const data = await res.json();
+        if (data.error) msg = data.error;
+      } catch {}
+      showWarning(msg, 'danger');
     }
     confirmModal.hide();
   });
