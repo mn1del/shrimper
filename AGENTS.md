@@ -21,6 +21,7 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 - When the Flask app starts, routes are registered and handicaps recalculated from stored race data.
 - Each request loads the relevant JSON and uses `scoring` utilities to compute race results and handicaps on the fly.
 - New races or edits submitted via API endpoints write back to the JSON files and trigger a handicap recalculation.
+- The fleet page lets you edit sailor, boat, sail number and starting handicap; saves post to `/api/fleet`, updating `fleet.json` and recalculating handicaps.
 
 ## Dev Workflow
 1. Install dependencies: `pip install -r requirements.txt`

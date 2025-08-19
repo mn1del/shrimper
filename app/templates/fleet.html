@@ -1,22 +1,29 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1>Fleet</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1>Fleet</h1>
+  <div>
+    <button type="button" class="btn btn-success me-2 d-none" id="saveBtn">Save Changes</button>
+    <button type="button" class="btn btn-danger me-2 d-none" id="cancelBtn">Cancel Changes</button>
+    <button type="button" class="btn btn-outline-secondary" id="editToggle">🔒</button>
+  </div>
+ </div>
 <div class="mb-3">
-  <button class="btn btn-primary">Add Competitor</button>
-</div>
-<table class="table table-striped">
+  <button type="button" class="btn btn-primary d-none" id="addCompetitor">Add Competitor</button>
+ </div>
+<table class="table table-striped" id="fleetTable">
   <thead>
     <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr>
   </thead>
   <tbody>
     {% if fleet %}
       {% for competitor in fleet %}
-        <tr>
-          <td>{{ competitor.sailor_name or '?' }}</td>
-          <td>{{ competitor.boat_name }}</td>
-          <td>{{ competitor.sail_no }}</td>
-          <td>{{ competitor.starting_handicap_s_per_hr }}</td>
+        <tr data-id="{{ competitor.competitor_id }}">
+          <td><input class="form-control" value="{{ competitor.sailor_name or '' }}" disabled></td>
+          <td><input class="form-control" value="{{ competitor.boat_name }}" disabled></td>
+          <td><input class="form-control" value="{{ competitor.sail_no }}" disabled></td>
+          <td><input class="form-control" value="{{ competitor.starting_handicap_s_per_hr }}" disabled></td>
           <td>{{ competitor.current_handicap_s_per_hr }}</td>
         </tr>
       {% endfor %}
@@ -25,4 +32,103 @@
     {% endif %}
   </tbody>
 </table>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  let locked = true;
+  const toggle = document.getElementById('editToggle');
+  const addBtn = document.getElementById('addCompetitor');
+  const saveBtn = document.getElementById('saveBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const tbody = document.querySelector('#fleetTable tbody');
+  let orig = [];
+
+  function captureOrig() {
+    orig = Array.from(tbody.querySelectorAll('tr')).map(tr => {
+      const inputs = tr.querySelectorAll('input');
+      return {
+        cid: tr.dataset.id || null,
+        sailor: inputs[0].value,
+        boat: inputs[1].value,
+        sailno: inputs[2].value,
+        hcp: inputs[3].value,
+        curr: tr.cells[4].textContent.trim()
+      };
+    });
+  }
+
+  function revertValues() {
+    tbody.innerHTML = '';
+    orig.forEach(o => {
+      const tr = document.createElement('tr');
+      if (o.cid) tr.dataset.id = o.cid;
+      tr.innerHTML = `
+        <td><input class="form-control" value="${o.sailor}" disabled></td>
+        <td><input class="form-control" value="${o.boat}" disabled></td>
+        <td><input class="form-control" value="${o.sailno}" disabled></td>
+        <td><input class="form-control" value="${o.hcp}" disabled></td>
+        <td>${o.curr}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function updateLocked() {
+    tbody.querySelectorAll('input').forEach(inp => inp.disabled = locked);
+    addBtn.classList.toggle('d-none', locked);
+    saveBtn.classList.toggle('d-none', locked);
+    cancelBtn.classList.toggle('d-none', locked);
+    toggle.textContent = locked ? '🔒' : '🔓';
+  }
+
+  function collectData() {
+    return Array.from(tbody.querySelectorAll('tr')).map(tr => {
+      const inputs = tr.querySelectorAll('input');
+      return {
+        competitor_id: tr.dataset.id || null,
+        sailor_name: inputs[0].value.trim(),
+        boat_name: inputs[1].value.trim(),
+        sail_no: inputs[2].value.trim(),
+        starting_handicap_s_per_hr: Number(inputs[3].value)
+      };
+    });
+  }
+
+  addBtn.addEventListener('click', () => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="form-control"></td>
+      <td><input class="form-control"></td>
+      <td><input class="form-control"></td>
+      <td><input class="form-control" type="number"></td>
+      <td></td>`;
+    tbody.appendChild(tr);
+  });
+
+  toggle.addEventListener('click', () => {
+    locked = !locked;
+    if (!locked) captureOrig();
+    updateLocked();
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    revertValues();
+    locked = true;
+    updateLocked();
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const payload = {competitors: collectData()};
+    const res = await fetch('/api/fleet', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      location.reload();
+    }
+  });
+
+  captureOrig();
+  updateLocked();
+});
+</script>
 {% endblock %}
