@@ -11,7 +11,7 @@
  </div>
 <div class="mb-3">
   <button type="button" class="btn btn-primary d-none" id="addCompetitor">Add Competitor</button>
- </div>
+</div>
 <table class="table table-striped" id="fleetTable">
   <thead>
     <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr>
@@ -32,6 +32,23 @@
     {% endif %}
   </tbody>
 </table>
+<div class="modal fade" id="confirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">You are about to make the following changes:</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul id="changeList" class="mb-0"></ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmSave">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   let locked = true;
@@ -40,6 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveBtn = document.getElementById('saveBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const tbody = document.querySelector('#fleetTable tbody');
+  const confirmModalEl = document.getElementById('confirmModal');
+  const confirmModal = new bootstrap.Modal(confirmModalEl);
+  const changeList = document.getElementById('changeList');
+  const confirmSave = document.getElementById('confirmSave');
   let orig = [];
 
   function captureOrig() {
@@ -115,7 +136,44 @@ document.addEventListener('DOMContentLoaded', () => {
     updateLocked();
   });
 
-  saveBtn.addEventListener('click', async () => {
+  function listChanges() {
+    const changes = [];
+    const origMap = new Map(orig.map(o => [o.cid, o]));
+    Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+      const inputs = tr.querySelectorAll('input');
+      const cid = tr.dataset.id || null;
+      const cur = {
+        cid,
+        sailor: inputs[0].value,
+        boat: inputs[1].value,
+        sailno: inputs[2].value,
+        hcp: inputs[3].value
+      };
+      const o = origMap.get(cid);
+      if (o) {
+        if (cur.sailor !== o.sailor) changes.push(`${o.sailor || '(no name)'} sailor name: "${o.sailor}" → "${cur.sailor}"`);
+        if (cur.boat !== o.boat) changes.push(`${o.sailor || cur.sailor} boat: "${o.boat}" → "${cur.boat}"`);
+        if (cur.sailno !== o.sailno) changes.push(`${o.sailor || cur.sailor} sail no.: "${o.sailno}" → "${cur.sailno}"`);
+        if (cur.hcp !== o.hcp) changes.push(`${o.sailor || cur.sailor} starting hcp: "${o.hcp}" → "${cur.hcp}"`);
+      } else {
+        changes.push(`New competitor: "${cur.sailor}"`);
+      }
+    });
+    return changes;
+  }
+
+  saveBtn.addEventListener('click', () => {
+    const changes = listChanges();
+    changeList.innerHTML = '';
+    changes.forEach(ch => {
+      const li = document.createElement('li');
+      li.textContent = ch;
+      changeList.appendChild(li);
+    });
+    confirmModal.show();
+  });
+
+  confirmSave.addEventListener('click', async () => {
     const payload = {competitors: collectData()};
     const res = await fetch('/api/fleet', {
       method: 'POST',
@@ -125,6 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (res.ok) {
       location.reload();
     }
+    confirmModal.hide();
   });
 
   captureOrig();
