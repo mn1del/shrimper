@@ -163,6 +163,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   saveBtn.addEventListener('click', () => {
+    const data = collectData();
+    const seen = new Set();
+    for (const comp of data) {
+      if (!comp.sail_no) continue;
+      if (seen.has(comp.sail_no)) {
+        alert(`Duplicate Sail No.: ${comp.sail_no}`);
+        return;
+      }
+      seen.add(comp.sail_no);
+    }
     const changes = listChanges();
     changeList.innerHTML = '';
     changes.forEach(ch => {
@@ -182,6 +192,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if (res.ok) {
       location.reload();
+    } else {
+      let msg = 'Error saving fleet';
+      try {
+        const data = await res.json();
+        if (data.error) msg = data.error;
+      } catch {}
+      alert(msg);
     }
     confirmModal.hide();
   });
