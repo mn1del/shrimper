@@ -144,7 +144,9 @@
         <td>{{ comp.sailor_name }}</td>
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
-        <td>{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}</td>
+        <td>
+          <input type="number" class="form-control form-control-sm handicap-override" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if result.handicap_override is not none else '' }}" disabled>
+        </td>
         <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled></td>
         <td>{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
         <td>{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
@@ -193,6 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const raceDate = document.getElementById('race_date');
   const startTime = document.getElementById('start_time');
   const finishInputs = Array.from(document.querySelectorAll('.finish-time'));
+  const hcpInputs = Array.from(document.querySelectorAll('.handicap-override'));
   const finisherDiv = document.getElementById('finisherCount');
   const confirmModalEl = document.getElementById('confirmModal');
   const confirmModal = new bootstrap.Modal(confirmModalEl);
@@ -210,7 +213,8 @@ document.addEventListener('DOMContentLoaded', () => {
       new_series_name: newSeriesName.value,
       race_date: raceDate.value,
       start_time: startTime.value,
-      finish_times: finishInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value}))
+      finish_times: finishInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value})),
+      handicap_overrides: hcpInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value}))
     };
   }
 
@@ -221,6 +225,10 @@ document.addEventListener('DOMContentLoaded', () => {
     startTime.value = orig.start_time;
     orig.finish_times.forEach(o => {
       const inp = finishInputs.find(i => i.dataset.cid === o.cid);
+      if (inp) inp.value = o.value;
+    });
+    orig.handicap_overrides.forEach(o => {
+      const inp = hcpInputs.find(i => i.dataset.cid === o.cid);
       if (inp) inp.value = o.value;
     });
     computeFinishers();
@@ -234,6 +242,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (startTime.value !== orig.start_time) return true;
     for (const o of orig.finish_times) {
       const cur = finishInputs.find(i => i.dataset.cid === o.cid);
+      if (cur && cur.value !== o.value) return true;
+    }
+    for (const o of orig.handicap_overrides) {
+      const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
       if (cur && cur.value !== o.value) return true;
     }
     return false;
@@ -254,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateLocked() {
-    [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs].forEach(inp => inp.disabled = locked);
+    [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs, ...hcpInputs].forEach(inp => inp.disabled = locked);
     toggle.textContent = locked ? '🔒' : '🔓';
     updateButtons();
     deleteBtn.classList.toggle('d-none', locked);
@@ -285,6 +297,14 @@ document.addEventListener('DOMContentLoaded', () => {
         changes.push(`${o.name} finish time: "${o.value}" → "${cur.value}"`);
       }
     });
+    orig.handicap_overrides.forEach(o => {
+      const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
+      if (cur && cur.value !== o.value) {
+        const oldVal = o.value || '(none)';
+        const newVal = cur.value || '(none)';
+        changes.push(`${o.name} handicap: "${oldVal}" → "${newVal}"`);
+      }
+    });
     return changes;
   }
 
@@ -294,7 +314,8 @@ document.addEventListener('DOMContentLoaded', () => {
       new_series_name: newSeriesName.value,
       date: raceDate.value,
       start_time: startTime.value,
-      finish_times: finishInputs.map(inp => ({competitor_id: inp.dataset.cid, finish_time: inp.value}))
+      finish_times: finishInputs.map(inp => ({competitor_id: inp.dataset.cid, finish_time: inp.value})),
+      handicap_overrides: hcpInputs.map(inp => ({competitor_id: inp.dataset.cid, handicap: inp.value}))
     };
     return fetch('{{ url_for('main.update_race', race_id=selected_race.race_id) }}', {
       method: 'POST',
@@ -316,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateLocked();
   });
 
-  [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs].forEach(inp => {
+  [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs, ...hcpInputs].forEach(inp => {
     inp.addEventListener('change', () => {
       computeFinishers();
       toggleSeries();
@@ -326,6 +347,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   finishInputs.forEach(inp => inp.addEventListener('input', () => {
     computeFinishers();
+    updateButtons();
+  }));
+  hcpInputs.forEach(inp => inp.addEventListener('input', () => {
     updateButtons();
   }));
 
