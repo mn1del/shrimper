@@ -196,6 +196,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const startTime = document.getElementById('start_time');
   const finishInputs = Array.from(document.querySelectorAll('.finish-time'));
   const hcpInputs = Array.from(document.querySelectorAll('.handicap-override'));
+  hcpInputs.forEach(inp => {
+    inp.dataset.base = inp.placeholder;
+  });
   const finisherDiv = document.getElementById('finisherCount');
   const confirmModalEl = document.getElementById('confirmModal');
   const confirmModal = new bootstrap.Modal(confirmModalEl);
@@ -214,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
       race_date: raceDate.value,
       start_time: startTime.value,
       finish_times: finishInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value})),
-      handicap_overrides: hcpInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value, base: inp.placeholder}))
+      handicap_overrides: hcpInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value, base: inp.dataset.base}))
     };
   }
 
@@ -229,7 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     orig.handicap_overrides.forEach(o => {
       const inp = hcpInputs.find(i => i.dataset.cid === o.cid);
-      if (inp) inp.value = o.value;
+      if (inp) {
+        inp.value = o.value;
+        inp.placeholder = inp.dataset.base = o.base;
+      }
     });
     computeFinishers();
     toggleSeries();
@@ -301,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
       if (cur && cur.value !== o.value) {
         const oldVal = o.value || o.base;
-        const newVal = cur.value || o.base;
+        const newVal = cur.value === '' ? cur.dataset.base : cur.value;
         changes.push(`${o.name} SP handicap: "${oldVal}" → "${newVal}"`);
       }
     });
@@ -353,6 +359,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }));
   hcpInputs.forEach(inp => {
     inp.addEventListener('focus', () => {
+      inp.placeholder = '';
+      if (inp.value === '') {
+        inp.value = inp.dataset.base;
+        inp.dataset.fromPlaceholder = '1';
+      }
       inp.select();
     });
     inp.addEventListener('keydown', e => {
@@ -365,6 +376,15 @@ document.addEventListener('DOMContentLoaded', () => {
       updateButtons();
     });
     inp.addEventListener('blur', () => {
+      if (inp.dataset.fromPlaceholder === '1') {
+        if (inp.value === inp.dataset.base) {
+          inp.value = '';
+        }
+        inp.dataset.fromPlaceholder = '';
+      }
+      if (inp.value === '') {
+        inp.placeholder = inp.dataset.base;
+      }
       updateButtons();
     });
   });
