@@ -53,24 +53,24 @@
     min-width: 175px;
     max-width: 175px;
   }
-  .standings-table thead tr:first-child th {
+  .standings-table thead tr:first-child th,
+  .standings-table thead tr:nth-child(2) th,
+  .standings-table thead tr:nth-child(3) th {
     position: sticky;
-    top: 0;
     background: var(--bs-body-bg);
+  }
+  .standings-table thead tr:first-child th {
     z-index: 3;
   }
-  .standings-table thead tr:nth-child(2) th {
-    position: sticky;
-    top: 2.5rem;
-    background: var(--bs-body-bg);
+  .standings-table thead tr:nth-child(2) th,
+  .standings-table thead tr:nth-child(3) th {
     z-index: 2;
   }
   .standings-table thead tr:nth-child(3) th {
-    position: sticky;
-    top: 5rem;
-    background: var(--bs-body-bg);
-    z-index: 2;
     vertical-align: middle;
+  }
+  .standings-table thead tr:first-child th.align-bottom {
+    vertical-align: bottom;
   }
   .standings-table thead tr:nth-child(2) th:first-child,
   .standings-table tbody td:first-child {
@@ -84,12 +84,12 @@
   }
 </style>
 
-<div class="table-responsive">
+<div class="table-responsive standings-wrapper">
   <table class="table table-striped table-sm standings-table">
     <thead>
       <tr>
         <th colspan="6"></th>
-        <th colspan="{{ ns.count + (race_groups|length) * (2 if scoring_format == 'traditional' else 1) }}" class="text-center">Series results (click to see individual race scores):</th>
+        <th colspan="{{ ns.count + (race_groups|length) * (2 if scoring_format == 'traditional' else 1) }}" class="text-center align-bottom">Series results (click to see individual race scores):</th>
       </tr>
       <tr>
         <th rowspan="2">Position</th>
@@ -162,6 +162,24 @@
   </table>
 </div>
 <script>
+  const table = document.querySelector('.standings-table');
+  const headerRows = table.tHead.rows;
+  let offset = 0;
+  Array.from(headerRows).forEach(row => {
+    Array.from(row.cells).forEach(th => {
+      th.style.top = offset + 'px';
+    });
+    offset += row.getBoundingClientRect().height;
+  });
+
+  const wrapper = document.querySelector('.standings-wrapper');
+  const firstBodyRow = table.tBodies[0].rows[0];
+  if (firstBodyRow) {
+    const bodyRowHeight = firstBodyRow.getBoundingClientRect().height;
+    wrapper.style.maxHeight = offset + bodyRowHeight * 20 + 'px';
+    wrapper.style.overflowY = 'auto';
+  }
+
   const extraCols = {{ 2 if scoring_format == 'traditional' else 1 }};
   document.querySelectorAll('.series-group').forEach(header => {
     header.addEventListener('click', () => {
