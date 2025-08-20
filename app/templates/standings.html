@@ -53,15 +53,21 @@
     min-width: 175px;
     max-width: 175px;
   }
-  .standings-table thead tr:nth-child(2) th {
+  .standings-table thead tr:first-child th {
     position: sticky;
     top: 0;
+    background: var(--bs-body-bg);
+    z-index: 3;
+  }
+  .standings-table thead tr:nth-child(2) th {
+    position: sticky;
+    top: 2.5rem;
     background: var(--bs-body-bg);
     z-index: 2;
   }
   .standings-table thead tr:nth-child(3) th {
     position: sticky;
-    top: 2.5rem;
+    top: 5rem;
     background: var(--bs-body-bg);
     z-index: 2;
     vertical-align: middle;
@@ -74,7 +80,7 @@
     z-index: 1;
   }
   .standings-table thead tr:nth-child(2) th:first-child {
-    z-index: 3;
+    z-index: 4;
   }
 </style>
 
@@ -103,7 +109,9 @@
           {% set idx = loop.index0 %}
           {% set colour_class = colour_classes[idx % (colour_classes|length)] %}
           {% for race in group.races %}
-          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %} d-none rotate-90 text-center align-middle">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</th>
+          <th class="series-{{ idx }} {{ colour_class }}{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %} d-none rotate-90 text-center align-middle">
+            <a href="{{ url_for('main.series_detail', series_id=group.series_id, race_id=race.race_id) }}" class="d-block text-decoration-none text-reset">{{ race.date }} {{ race.start_time[:5] if race.start_time }}</a>
+          </th>
           {% endfor %}
           {% if scoring_format == 'traditional' %}
           <th class="count-{{ idx }} {{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}"># Races</th>
@@ -133,7 +141,9 @@
             {% set classes = 'series-' ~ idx ~ ' d-none' %}
             {% if loop.index0 == 0 and idx > 0 %}{% set classes = classes + ' series-boundary' %}{% endif %}
             {% if dropped %}{% set classes = classes + ' text-danger' %}{% elif not finished %}{% set classes = classes + ' text-muted' %}{% endif %}
-            <td class="{{ classes }}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
+            <td class="{{ classes }}">
+              <a href="{{ url_for('main.series_detail', series_id=group.series_id, race_id=race.race_id) }}" class="d-block text-decoration-none text-reset">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</a>
+            </td>
           {% endfor %}
           {% if scoring_format == 'traditional' %}
           <td class="count-{{ idx }} {{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">{{ row.series_counts.get(idx, 0) }}</td>

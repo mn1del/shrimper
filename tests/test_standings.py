@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app import routes
+from app import routes, create_app
 
 
 def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
@@ -312,3 +312,44 @@ def test_race_with_no_entrants_included(tmp_path, monkeypatch):
     row = standings[0]
     assert row['race_points']['R1'] == 0
     assert row['race_finished']['R1'] is False
+
+
+def test_standings_cells_link_to_race(tmp_path, monkeypatch):
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'Solo',
+                'boat_name': 'Boat',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 0,
+            }
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2025' / 'Test'
+    (series_dir / 'races').mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2025_TEST', 'name': 'Test', 'season': 2025})
+    )
+    race = {
+        'race_id': 'RACE_2025-01-01_TEST_1',
+        'series_id': 'SER_2025_TEST',
+        'date': '2025-01-01',
+        'start_time': '10:00:00',
+        'entrants': [
+            {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '10:30:00'}
+        ],
+    }
+    race_id = race['race_id']
+    (series_dir / 'races' / f'{race_id}.json').write_text(json.dumps(race))
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    app = create_app()
+    client = app.test_client()
+    resp = client.get('/standings?season=2025&format=league')
+    assert resp.status_code == 200
+    assert f'href="/series/SER_2025_TEST?race_id={race_id}"' in resp.get_data(as_text=True)

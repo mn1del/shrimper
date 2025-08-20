@@ -222,7 +222,11 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
         if int(series.get("season", 0)) != int(season):
             continue
 
-        group = {"series_name": series.get("name"), "races": []}
+        group = {
+            "series_name": series.get("name"),
+            "series_id": series.get("series_id"),
+            "races": [],
+        }
         races_dir = meta_path.parent / "races"
         for race_path in races_dir.glob("*.json"):
             with race_path.open() as rf:
