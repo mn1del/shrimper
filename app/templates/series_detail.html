@@ -145,7 +145,7 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>
-          <input type="number" class="form-control form-control-sm handicap-override" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if result.handicap_override is not none else '' }}" disabled>
+          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if result.handicap_override is not none else '' }}" disabled>
         </td>
         <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled></td>
         <td>{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
@@ -214,7 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
       race_date: raceDate.value,
       start_time: startTime.value,
       finish_times: finishInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value})),
-      handicap_overrides: hcpInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value}))
+      handicap_overrides: hcpInputs.map(inp => ({cid: inp.dataset.cid, name: inp.dataset.name, value: inp.value, base: inp.placeholder}))
     };
   }
 
@@ -300,9 +300,9 @@ document.addEventListener('DOMContentLoaded', () => {
     orig.handicap_overrides.forEach(o => {
       const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
       if (cur && cur.value !== o.value) {
-        const oldVal = o.value || '(none)';
-        const newVal = cur.value || '(none)';
-        changes.push(`${o.name} handicap: "${oldVal}" → "${newVal}"`);
+        const oldVal = o.value || o.base;
+        const newVal = cur.value || o.base;
+        changes.push(`${o.name} SP handicap: "${oldVal}" → "${newVal}"`);
       }
     });
     return changes;
@@ -325,6 +325,8 @@ document.addEventListener('DOMContentLoaded', () => {
       finisherDiv.textContent = `Number of Finishers: ${data.finisher_count}`;
       if (data.redirect) {
         window.location = data.redirect;
+      } else {
+        window.location.reload();
       }
     });
   }
@@ -349,9 +351,14 @@ document.addEventListener('DOMContentLoaded', () => {
     computeFinishers();
     updateButtons();
   }));
-  hcpInputs.forEach(inp => inp.addEventListener('input', () => {
-    updateButtons();
-  }));
+  hcpInputs.forEach(inp => {
+    inp.addEventListener('focus', () => {
+      inp.value = '';
+    });
+    inp.addEventListener('input', () => {
+      updateButtons();
+    });
+  });
 
   cancelBtn.addEventListener('click', () => {
     revertValues();
@@ -379,11 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     } else {
-      saveChanges().then(() => {
-        captureOrig();
-        locked = true;
-        updateLocked();
-      });
+      saveChanges();
     }
     confirmModal.hide();
   });
