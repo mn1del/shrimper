@@ -172,7 +172,12 @@ def recalculate_handicaps() -> None:
             cid = ent.get("competitor_id")
             if not cid:
                 continue
-            initial = handicap_map.get(cid, 0)
+            override = ent.get("handicap_override")
+            if override is not None:
+                initial = int(override)
+                handicap_map[cid] = initial
+            else:
+                initial = handicap_map.get(cid, 0)
             ent["initial_handicap"] = initial
             entry = {
                 "competitor_id": cid,
@@ -535,12 +540,19 @@ def series_detail(series_id):
                     cid = comp.get('competitor_id')
                     if not cid:
                         continue
+                    entrant = entrants_map.get(cid)
+                    initial = snapshot.get(cid, 0)
+                    if entrant and entrant.get('handicap_override') is not None:
+                        try:
+                            initial = int(entrant['handicap_override'])
+                            snapshot[cid] = initial
+                        except (ValueError, TypeError):
+                            pass
                     entry = {
                         'competitor_id': cid,
                         'start': start_seconds or 0,
-                        'initial_handicap': snapshot.get(cid, 0),
+                        'initial_handicap': initial,
                     }
-                    entrant = entrants_map.get(cid)
                     if entrant:
                         ft = _parse_hms(entrant.get('finish_time'))
                         if ft is not None:
@@ -592,6 +604,7 @@ def series_detail(series_id):
                             res.get('initial_handicap') if is_non_finisher else None
                         ),
                         'place': res.get('status'),
+                        'handicap_override': entrant.get('handicap_override'),
                     }
 
                 selected_race = race
@@ -608,10 +621,17 @@ def series_detail(series_id):
             # Process prior races to update handicap map
             calc_entries: list[dict] = []
             for cid, entrant in entrants_map.items():
+                initial = snapshot.get(cid, 0)
+                if entrant.get('handicap_override') is not None:
+                    try:
+                        initial = int(entrant['handicap_override'])
+                        snapshot[cid] = initial
+                    except (ValueError, TypeError):
+                        pass
                 entry = {
                     'competitor_id': cid,
                     'start': start_seconds or 0,
-                    'initial_handicap': snapshot.get(cid, 0),
+                    'initial_handicap': initial,
                 }
                 ft = _parse_hms(entrant.get('finish_time'))
                 if ft is not None:
@@ -833,6 +853,7 @@ def update_race(race_id):
     race_date = data.get('date')
     start_time = data.get('start_time')
     finish_times = data.get('finish_times', [])
+    handicap_overrides = data.get('handicap_overrides', [])
     if race_id == '__new__':
         if series_choice is None or not race_date:
             abort(400)
@@ -872,6 +893,20 @@ def update_race(race_id):
         seq = len(list(races_dir.glob('*.json'))) + 1
         race_id = f"RACE_{race_date}_{series_meta['name']}_{seq}"
         race_name = f"{series_id}_{seq}"
+        ov_map = {o['competitor_id']: o.get('handicap') for o in handicap_overrides}
+        entrants = []
+        for ft in finish_times:
+            ent = {
+                'competitor_id': ft['competitor_id'],
+                'finish_time': ft.get('finish_time'),
+            }
+            ov = ov_map.get(ft['competitor_id'])
+            if ov not in (None, ''):
+                try:
+                    ent['handicap_override'] = int(ov)
+                except (ValueError, TypeError):
+                    pass
+            entrants.append(ent)
         race_data = {
             'race_id': race_id,
             'series_id': series_id,
@@ -881,10 +916,7 @@ def update_race(race_id):
             'status': 'draft',
             'created_at': timestamp,
             'updated_at': timestamp,
-            'entrants': [
-                {'competitor_id': ft['competitor_id'], 'finish_time': ft.get('finish_time')}
-                for ft in finish_times
-            ],
+            'entrants': entrants,
             'results': {},
         }
         with (races_dir / f'{race_id}.json').open('w') as f:
@@ -950,6 +982,19 @@ def update_race(race_id):
             cid = entrant.get('competitor_id')
             if cid in ft_map:
                 entrant['finish_time'] = ft_map[cid]
+    if handicap_overrides:
+        ov_map = {o['competitor_id']: o.get('handicap') for o in handicap_overrides}
+        for entrant in race_data.get('entrants', []):
+            cid = entrant.get('competitor_id')
+            if cid in ov_map:
+                val = ov_map[cid]
+                if val in (None, ''):
+                    entrant.pop('handicap_override', None)
+                else:
+                    try:
+                        entrant['handicap_override'] = int(val)
+                    except (ValueError, TypeError):
+                        entrant.pop('handicap_override', None)
 
     race_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
     with race_path.open('w') as f:
