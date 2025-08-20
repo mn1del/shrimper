@@ -353,9 +353,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }));
   hcpInputs.forEach(inp => {
     inp.addEventListener('focus', () => {
-      inp.value = '';
+      inp.select();
+    });
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        inp.blur();
+      }
     });
     inp.addEventListener('input', () => {
+      updateButtons();
+    });
+    inp.addEventListener('blur', () => {
       updateButtons();
     });
   });
