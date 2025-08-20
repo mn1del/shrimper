@@ -129,7 +129,11 @@
           {% for race in group.races %}
             {% set pts = row.race_points.get(race.race_id) %}
             {% set dropped = scoring_format == 'traditional' and (row.dropped_races and race.race_id in row.dropped_races) %}
-            <td class="series-{{ idx }} d-none{% if loop.index0 == 0 and idx > 0 %} series-boundary{% endif %}{% if dropped %} text-muted{% endif %}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
+            {% set finished = row.race_finished.get(race.race_id, False) %}
+            {% set classes = 'series-' ~ idx ~ ' d-none' %}
+            {% if loop.index0 == 0 and idx > 0 %}{% set classes = classes + ' series-boundary' %}{% endif %}
+            {% if dropped %}{% set classes = classes + ' text-danger' %}{% elif not finished %}{% set classes = classes + ' text-muted' %}{% endif %}
+            <td class="{{ classes }}">{% if pts is not none %}{{ '%.1f'|format(pts) }}{% else %}&nbsp;{% endif %}</td>
           {% endfor %}
           {% if scoring_format == 'traditional' %}
           <td class="count-{{ idx }} {{ colour_class }}{% if idx > 0 %} series-boundary{% endif %}">{{ row.series_counts.get(idx, 0) }}</td>

@@ -116,6 +116,57 @@ def test_absent_sailors_scored_as_dns(tmp_path, monkeypatch):
     assert dns_row['series_counts'][0] == 0
 
 
+def test_league_includes_absent_sailors(tmp_path, monkeypatch):
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'Finisher',
+                'boat_name': 'Boat 1',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 0,
+            },
+            {
+                'competitor_id': 'C2',
+                'sailor_name': 'Absent',
+                'boat_name': 'Boat 2',
+                'sail_no': '2',
+                'starting_handicap_s_per_hr': 0,
+            },
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2025' / 'Test'
+    (series_dir / 'races').mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2025_TEST', 'name': 'Test', 'season': 2025})
+    )
+    race = {
+        'race_id': 'RACE_2025-01-01_TEST_1',
+        'series_id': 'SER_2025_TEST',
+        'date': '2025-01-01',
+        'start_time': '10:00:00',
+        'entrants': [
+            {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '10:30:00'},
+        ],
+    }
+    (series_dir / 'races' / 'RACE_2025-01-01_TEST_1.json').write_text(json.dumps(race))
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    standings, _ = routes._season_standings(2025, 'league')
+    names = [row['sailor'] for row in standings]
+    assert 'Absent' in names
+    row = next(r for r in standings if r['sailor'] == 'Absent')
+    assert row['total_points'] == 0
+    assert row['race_count'] == 0
+    assert row['race_points']['RACE_2025-01-01_TEST_1'] == 0
+    assert row['race_finished']['RACE_2025-01-01_TEST_1'] is False
+
+
 def test_traditional_series_drops_high_scores(tmp_path, monkeypatch):
     shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
 
@@ -222,3 +273,42 @@ def test_invalid_race_zero_points(tmp_path, monkeypatch):
     assert row['total_points'] == 0
     assert row['race_points']['R1'] == 0
     assert row['race_points']['R2'] == 0
+
+
+def test_race_with_no_entrants_included(tmp_path, monkeypatch):
+    shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+
+    fleet = {
+        'competitors': [
+            {
+                'competitor_id': 'C1',
+                'sailor_name': 'Solo',
+                'boat_name': 'Boat',
+                'sail_no': '1',
+                'starting_handicap_s_per_hr': 0,
+            },
+        ]
+    }
+    (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+
+    series_dir = tmp_path / '2025' / 'Test'
+    (series_dir / 'races').mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(
+        json.dumps({'series_id': 'SER_2025_TEST', 'name': 'Test', 'season': 2025})
+    )
+    race = {
+        'race_id': 'R1',
+        'series_id': 'SER_2025_TEST',
+        'date': '2025-01-01',
+        'start_time': '10:00:00',
+        'entrants': [],
+    }
+    (series_dir / 'races' / 'R1.json').write_text(json.dumps(race))
+
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+
+    standings, race_groups = routes._season_standings(2025, 'league')
+    assert race_groups[0]['races'][0]['race_id'] == 'R1'
+    row = standings[0]
+    assert row['race_points']['R1'] == 0
+    assert row['race_finished']['R1'] is False
