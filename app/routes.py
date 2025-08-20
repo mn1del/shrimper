@@ -222,7 +222,11 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
         if int(series.get("season", 0)) != int(season):
             continue
 
-        group = {"series_name": series.get("name"), "races": []}
+        group = {
+            "series_name": series.get("name"),
+            "series_id": series.get("series_id"),
+            "races": [],
+        }
         races_dir = meta_path.parent / "races"
         for race_path in races_dir.glob("*.json"):
             with race_path.open() as rf:
@@ -233,8 +237,6 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                 for ent in race.get("entrants", [])
                 if ent.get("competitor_id")
             }
-            if not entrants_map:
-                continue
             entries: list[dict] = []
             for cid, info in fleet.items():
                 entry = {
@@ -292,6 +294,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                         "series_totals": {},
                         "series_results": {},
                         "dropped_races": set(),
+                        "race_finished": {},
                     },
                 )
                 finished = res.get("finish") is not None
@@ -318,11 +321,10 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                 else:
                     agg["race_points"][race["race_id"]] = league_pts
                     agg["series_totals"][idx] = agg["series_totals"].get(idx, 0.0) + league_pts
+                agg["race_finished"][race["race_id"]] = finished
 
     standings: list[dict] = []
     for agg in aggregates.values():
-        if scoring == "league" and agg["race_count"] == 0:
-            continue
         if scoring == "traditional":
             series_totals: dict[int, float] = {}
             series_counts: dict[int, int] = {}
@@ -356,6 +358,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     "series_totals": series_totals,
                     "series_counts": series_counts,
                     "dropped_races": dropped,
+                    "race_finished": agg["race_finished"],
                 }
             )
         else:
@@ -371,6 +374,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     "series_totals": agg["series_totals"],
                     "series_counts": {},
                     "dropped_races": set(),
+                    "race_finished": agg["race_finished"],
                 }
             )
 
