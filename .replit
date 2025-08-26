@@ -1,1 +1,3 @@
-run = "flask --app app run --host=0.0.0.0 --port=$PORT --debug"
+[[ports]]
+localPort = 5000   # the port your app listens on
+externalPort = 80  # the port the preview/domain uses
