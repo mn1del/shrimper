@@ -2,4 +2,4 @@
 localPort = 5000   # the port your app listens on
 externalPort = 80  # the port the preview/domain uses
 
-run = "python -m flask --app app run --host=0.0.0.0 --port=5000 --debug"
+run = 'python -c "from app import app; app.run(host='0.0.0.0', port=5000, debug=True)"'
