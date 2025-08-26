@@ -47,6 +47,7 @@ def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
             {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '10:30:00'},
             {'competitor_id': 'C2', 'initial_handicap': 0, 'status': 'DNF'},
         ],
+        'race_no': 1,
     }
     (series_dir / 'races' / 'RACE_2025-01-01_TEST_1.json').write_text(json.dumps(race))
 
@@ -101,6 +102,7 @@ def test_absent_sailors_scored_as_dns(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '10:30:00'},
         ],
+        'race_no': 1,
     }
     (series_dir / 'races' / 'RACE_2025-01-01_TEST_1.json').write_text(json.dumps(race))
 
@@ -152,6 +154,7 @@ def test_league_includes_absent_sailors(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '10:30:00'},
         ],
+        'race_no': 1,
     }
     (series_dir / 'races' / 'RACE_2025-01-01_TEST_1.json').write_text(json.dumps(race))
 
@@ -210,6 +213,7 @@ def test_traditional_series_drops_high_scores(tmp_path, monkeypatch):
             'date': f'2024-01-0{i}',
             'start_time': '10:00:00',
             'entrants': entrants,
+            'race_no': i,
         }
         (series_dir / 'races' / f'RACE_{i}.json').write_text(json.dumps(race))
 
@@ -253,6 +257,7 @@ def test_invalid_race_zero_points(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '00:30:00'}
         ],
+        'race_no': 1,
     }
     race2 = {
         'race_id': 'R2',
@@ -262,6 +267,7 @@ def test_invalid_race_zero_points(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 0, 'status': 'DNF'}
         ],
+        'race_no': 2,
     }
     (series_dir / 'races' / 'R1.json').write_text(json.dumps(race1))
     (series_dir / 'races' / 'R2.json').write_text(json.dumps(race2))
@@ -302,6 +308,7 @@ def test_race_with_no_entrants_included(tmp_path, monkeypatch):
         'date': '2025-01-01',
         'start_time': '10:00:00',
         'entrants': [],
+        'race_no': 1,
     }
     (series_dir / 'races' / 'R1.json').write_text(json.dumps(race))
 
@@ -343,6 +350,7 @@ def test_standings_cells_link_to_race(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 0, 'finish_time': '10:30:00'}
         ],
+        'race_no': 1,
     }
     race_id = race['race_id']
     (series_dir / 'races' / f'{race_id}.json').write_text(json.dumps(race))

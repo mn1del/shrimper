@@ -54,6 +54,7 @@ def test_recalculate_handicaps_uses_revised(tmp_path, monkeypatch):
             {'competitor_id': 'C3', 'initial_handicap': 0, 'finish_time': '00:32:00'},
             {'competitor_id': 'C4', 'initial_handicap': 0, 'finish_time': '00:33:00'},
         ],
+        'race_no': 1,
     }
     race2 = {
         'race_id': race2_id,
@@ -67,6 +68,7 @@ def test_recalculate_handicaps_uses_revised(tmp_path, monkeypatch):
             {'competitor_id': 'C3', 'initial_handicap': 0},
             {'competitor_id': 'C4', 'initial_handicap': 0},
         ],
+        'race_no': 2,
     }
     (race_dir / f'{race1_id}.json').write_text(json.dumps(race1))
     (race_dir / f'{race2_id}.json').write_text(json.dumps(race2))
@@ -148,6 +150,7 @@ def test_handicap_override(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': f'C{i}', 'finish_time': finish_order[i-1]} for i in range(1,5)
         ],
+        'race_no': 1,
     }
     race2 = {
         'race_id': race_ids[1],
@@ -161,6 +164,7 @@ def test_handicap_override(tmp_path, monkeypatch):
             {'competitor_id': 'C3', 'finish_time': finish_order[2]},
             {'competitor_id': 'C4', 'finish_time': finish_order[3]},
         ],
+        'race_no': 2,
     }
     race3 = {
         'race_id': race_ids[2],
@@ -171,6 +175,7 @@ def test_handicap_override(tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': f'C{i}'} for i in range(1,5)
         ],
+        'race_no': 3,
     }
 
     for race in (race1, race2, race3):

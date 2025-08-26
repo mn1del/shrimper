@@ -443,6 +443,57 @@ def _load_series_meta(series_id: str):
     return None, None
 
 
+def _renumber_races(series_dir: Path) -> dict[str, str]:
+    """Renumber races in ``series_dir`` based on date and start time.
+
+    Returns mapping of old race_id to new race_id for the series.
+    """
+    races_dir = series_dir / "races"
+    if not races_dir.exists():
+        return {}
+
+    meta_path = series_dir / "series_metadata.json"
+    try:
+        with meta_path.open() as f:
+            meta = json.load(f)
+    except FileNotFoundError:
+        return {}
+
+    series_name = meta.get("name")
+    series_id = meta.get("series_id")
+
+    race_entries: list[tuple[dict, Path]] = []
+    for path in races_dir.glob("RACE_*.json"):
+        with path.open() as rf:
+            race_entries.append((json.load(rf), path))
+
+    race_entries.sort(key=lambda r: (r[0].get("date") or "", r[0].get("start_time") or ""))
+
+    temp_entries: list[tuple[dict, Path]] = []
+    for data, path in race_entries:
+        tmp = path.with_name(path.name + ".__tmp__")
+        path.rename(tmp)
+        temp_entries.append((data, tmp))
+
+    mapping: dict[str, str] = {}
+    for idx, (data, tmp) in enumerate(temp_entries, start=1):
+        old_id = data.get("race_id")
+        date = data.get("date", "")
+        new_id = f"RACE_{date}_{series_name}_{idx}"
+        data["race_id"] = new_id
+        data["race_no"] = idx
+        if series_id:
+            data["name"] = f"{series_id}_{idx}"
+        new_path = races_dir / f"{new_id}.json"
+        with tmp.open("w") as f:
+            json.dump(data, f, indent=2)
+        tmp.rename(new_path)
+        if old_id:
+            mapping[old_id] = new_id
+
+    return mapping
+
+
 @bp.route('/races/new')
 def race_new():
     series_list = [entry['series'] for entry in _load_series_entries()]
@@ -918,9 +969,12 @@ def update_race(race_id):
             'updated_at': timestamp,
             'entrants': entrants,
             'results': {},
+            'race_no': seq,
         }
         with (races_dir / f'{race_id}.json').open('w') as f:
             json.dump(race_data, f, indent=2)
+        mapping = _renumber_races(series_dir)
+        race_id = mapping.get(race_id, race_id)
         recalculate_handicaps()
         finisher_count = sum(1 for ft in finish_times if ft.get('finish_time'))
         redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
@@ -934,6 +988,7 @@ def update_race(race_id):
 
     redirect_url = None
     current_series_id = race_data.get('series_id')
+    orig_series_dir = race_path.parent.parent
     if series_choice:
         if series_choice == '__new__':
             if not new_series_name:
@@ -972,6 +1027,10 @@ def update_race(race_id):
             race_data['series_id'] = series_id
             redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
 
+    if series_choice is None:
+        series_id = race_data.get('series_id')
+        series_dir = race_path.parent.parent
+
     if race_date is not None:
         race_data['date'] = race_date
     if start_time is not None:
@@ -999,6 +1058,11 @@ def update_race(race_id):
     race_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
     with race_path.open('w') as f:
         json.dump(race_data, f, indent=2)
+    mapping = _renumber_races(series_dir)
+    if series_choice and series_id != current_series_id:
+        _renumber_races(orig_series_dir)
+    race_id = mapping.get(race_data['race_id'], race_data['race_id'])
+    redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
     recalculate_handicaps()
 
     finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
@@ -1013,6 +1077,8 @@ def delete_race(race_id):
     with race_path.open() as f:
         race_data = json.load(f)
     series_id = race_data.get('series_id')
+    series_dir = race_path.parent.parent
     race_path.unlink()
+    _renumber_races(series_dir)
     redirect_url = url_for('main.series_detail', series_id=series_id)
     return {'redirect': redirect_url}
