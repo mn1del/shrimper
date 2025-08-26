@@ -7,7 +7,7 @@
   "entrants": [
     {
       "competitor_id": "C_298",
-      "initial_handicap": -218,
+      "initial_handicap": -227,
       "finish_time": "12:13:17"
     },
     {
@@ -17,7 +17,7 @@
     },
     {
       "competitor_id": "C_503",
-      "initial_handicap": 103,
+      "initial_handicap": 97,
       "finish_time": "12:27:56"
     },
     {
@@ -35,5 +35,6 @@
       "initial_handicap": -90,
       "finish_time": "12:09:42"
     }
-  ]
+  ],
+  "race_no": 6
 }

@@ -22,7 +22,7 @@
     },
     {
       "competitor_id": "C_503",
-      "initial_handicap": 163,
+      "initial_handicap": 207,
       "finish_time": "19:43:45"
     },
     {
@@ -37,7 +37,7 @@
     },
     {
       "competitor_id": "C_889",
-      "initial_handicap": 338,
+      "initial_handicap": 278,
       "finish_time": "19:47:19"
     },
     {
@@ -45,5 +45,6 @@
       "initial_handicap": 150,
       "finish_time": "19:38:03"
     }
-  ]
+  ],
+  "race_no": 3
 }

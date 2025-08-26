@@ -112,6 +112,7 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     assert race_data['date'] == '2030-01-01'
     assert race_data['start_time'] == '12:30:45'
     assert race_data['race_id'].startswith('RACE_2030-01-01_Test_')
+    assert race_data['race_no'] == 1
 
 
 def test_delete_race_removes_file(client, tmp_path, monkeypatch):
@@ -133,6 +134,7 @@ def test_delete_race_removes_file(client, tmp_path, monkeypatch):
         'date': '2030-01-01',
         'start_time': '10:00:00',
         'entrants': [],
+        'race_no': 1,
     }))
     res = client.delete(f'/api/races/{race_id}')
     assert res.status_code == 200
@@ -160,6 +162,7 @@ def test_races_page_can_filter_by_season(client, tmp_path, monkeypatch):
             'date': f'{year}-01-01',
             'start_time': '10:00:00',
             'entrants': [],
+            'race_no': 1,
         }))
 
     create_season(2024)
@@ -221,6 +224,7 @@ def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatc
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 100}
         ],
+        'race_no': 1,
     }
     (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
 
@@ -272,6 +276,7 @@ def test_race_page_shows_defaults_for_absent_competitor(client, tmp_path, monkey
         'date': '2025-01-02',
         'start_time': '00:00:00',
         'entrants': [],
+        'race_no': 1,
     }
     (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
 
@@ -362,7 +367,8 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
         'entrants': [
             {'competitor_id': 'C1', 'initial_handicap': 100, 'finish_time': '00:30:00'}
         ],
-        'results': {}
+        'results': {},
+        'race_no': 1,
     }
     (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
 
@@ -433,3 +439,93 @@ def test_fleet_update_rejects_duplicate_sail_numbers(client, tmp_path, monkeypat
     res = client.post('/api/fleet', json=payload)
     assert res.status_code == 400
     assert 'Duplicate sail numbers' in res.get_json()['error']
+
+
+def test_add_race_renumbers(client, tmp_path, monkeypatch):
+    from app import routes
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    series_dir = tmp_path / '2025' / 'Test'
+    races_dir = series_dir / 'races'
+    races_dir.mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(json.dumps({
+        'series_id': 'SER_2025_Test', 'name': 'Test', 'season': 2025
+    }))
+    r1_id = 'RACE_2025-01-08_Test_1'
+    r2_id = 'RACE_2025-01-15_Test_2'
+    (races_dir / f'{r1_id}.json').write_text(json.dumps({
+        'race_id': r1_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_1',
+        'date': '2025-01-08',
+        'start_time': '00:00:00',
+        'entrants': [],
+        'race_no': 1,
+    }))
+    (races_dir / f'{r2_id}.json').write_text(json.dumps({
+        'race_id': r2_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_2',
+        'date': '2025-01-15',
+        'start_time': '00:00:00',
+        'entrants': [],
+        'race_no': 2,
+    }))
+
+    res = client.post('/api/races/__new__', json={
+        'series_id': 'SER_2025_Test',
+        'date': '2025-01-01',
+        'start_time': '00:00:00',
+        'finish_times': [],
+    })
+    assert res.status_code == 200
+
+    files = sorted(races_dir.glob('RACE_*.json'))
+    data = [json.loads(p.read_text()) for p in files]
+    data.sort(key=lambda d: d['race_no'])
+    assert [d['race_id'] for d in data] == [
+        'RACE_2025-01-01_Test_1',
+        'RACE_2025-01-08_Test_2',
+        'RACE_2025-01-15_Test_3',
+    ]
+
+
+def test_edit_race_renumbers(client, tmp_path, monkeypatch):
+    from app import routes
+    monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    series_dir = tmp_path / '2025' / 'Test'
+    races_dir = series_dir / 'races'
+    races_dir.mkdir(parents=True)
+    (series_dir / 'series_metadata.json').write_text(json.dumps({
+        'series_id': 'SER_2025_Test', 'name': 'Test', 'season': 2025
+    }))
+    r1_id = 'RACE_2025-01-01_Test_1'
+    r2_id = 'RACE_2025-01-08_Test_2'
+    (races_dir / f'{r1_id}.json').write_text(json.dumps({
+        'race_id': r1_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_1',
+        'date': '2025-01-01',
+        'start_time': '00:00:00',
+        'entrants': [],
+        'race_no': 1,
+    }))
+    (races_dir / f'{r2_id}.json').write_text(json.dumps({
+        'race_id': r2_id,
+        'series_id': 'SER_2025_Test',
+        'name': 'SER_2025_Test_2',
+        'date': '2025-01-08',
+        'start_time': '00:00:00',
+        'entrants': [],
+        'race_no': 2,
+    }))
+
+    res = client.post(f'/api/races/{r1_id}', json={'date': '2025-01-10'})
+    assert res.status_code == 200
+
+    files = sorted(races_dir.glob('RACE_*.json'))
+    data = [json.loads(p.read_text()) for p in files]
+    data.sort(key=lambda d: d['race_no'])
+    assert [d['race_id'] for d in data] == [
+        'RACE_2025-01-08_Test_1',
+        'RACE_2025-01-10_Test_2',
+    ]
