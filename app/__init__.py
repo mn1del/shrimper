@@ -7,7 +7,11 @@ def create_app():
     from . import routes
     app.register_blueprint(routes.bp)
 
-    routes.recalculate_handicaps()
+    app.logger.info("Starting handicap recalculation")
+    try:
+        routes.recalculate_handicaps()
+    except Exception:  # pylint: disable=broad-except
+        app.logger.exception("Error recalculating handicaps")
 
     return app
 
