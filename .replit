@@ -1,5 +1,5 @@
 language = "python"
-run = "python -m flask --app app run --host=0.0.0.0 --port=5000 --debug"
+run = "python3 -m flask --app app run --host=0.0.0.0 --port=5000 --debug"
 
 [[ports]]
 localPort = 5000   # the port your app listens on
