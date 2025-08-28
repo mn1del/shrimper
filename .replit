@@ -13,9 +13,6 @@ packager.language = "python3"
 guessImports = true
 packageSearch = true
 
-# your Flask dev server
-run = ["python3","-m","flask","--app","app","run","--host=0.0.0.0","--port=5000","--debug"]
-
 [deployment]
 run = ["python3", "-m", "flask", "--app", "app", "run", "--host=0.0.0.0", "--port=5000"]
 deploymentTarget = "cloudrun"
@@ -23,3 +20,15 @@ deploymentTarget = "cloudrun"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[workflows]
+runButton = "Run Dev Preview"
+
+[[workflows.workflow]]
+name = "Run Dev Preview"
+mode = "sequential"
+author = 40784173
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 -m flask --app app run --host=0.0.0.0 --port=5000 --debug"
