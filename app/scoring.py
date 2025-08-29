@@ -8,8 +8,10 @@ from typing import Dict, Iterable, List, Tuple
 
 SECONDS_PER_HOUR = 3600
 
+#<getdata>
 # Data directory lives at the project root under ``data``.
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+#</getdata>
 
 
 def _build_lookup(entries: List[Dict], key_field: str, value_field: str) -> Tuple[Dict[int, float], float]:
@@ -26,9 +28,11 @@ def _build_lookup(entries: List[Dict], key_field: str, value_field: str) -> Tupl
     return lookup, default
 
 
+#<getdata>
 # Load configuration from settings.json.
 with (DATA_DIR / "settings.json").open() as f:
     _SETTINGS = json.load(f)
+#</getdata>
 
 _HANDICAP_DELTAS, _HANDICAP_DEFAULT = _build_lookup(
     _SETTINGS["handicap_delta_by_rank"], "rank", "delta_s_per_hr"

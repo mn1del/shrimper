@@ -10,16 +10,21 @@ from . import scoring as scoring_module
 
 bp = Blueprint('main', __name__)
 
+#<getdata>
 DATA_DIR = Path(__file__).resolve().parent.parent / 'data'
+#</getdata>
 
 
+#<getdata>
 def _series_meta_paths():
     """Yield paths to all series metadata files across seasons."""
     for season_dir in DATA_DIR.iterdir():
         if season_dir.is_dir():
             yield from season_dir.glob("*/series_metadata.json")
+#</getdata>
 
 
+#<getdata>
 def _load_series_entries():
     """Return list of series with their race data."""
     entries = []
@@ -33,8 +38,10 @@ def _load_series_entries():
                 races.append(json.load(rf))
         entries.append({"series": series, "races": races})
     return entries
+#</getdata>
 
 
+#<getdata>
 def _load_all_races():
     """Return a flat list of all races with series info."""
     races = []
@@ -66,8 +73,10 @@ def _load_all_races():
         reverse=True,
     )
     return races
+#</getdata>
 
 
+#<getdata>
 def _find_series(series_id: str):
     """Return (series, races) for the given series id or (None, None).
 
@@ -80,8 +89,10 @@ def _find_series(series_id: str):
         if sid and sid.lower() == target:
             return entry["series"], entry["races"]
     return None, None
+#</getdata>
 
 
+#<getdata>
 def _find_race(race_id: str):
     """Return race data for the given race id or None if not found."""
     for meta_path in _series_meta_paths():
@@ -91,8 +102,10 @@ def _find_race(race_id: str):
             with race_path.open() as f:
                 return json.load(f)
     return None
+#</getdata>
 
 
+#<getdata>
 def _race_path(race_id: str):
     """Return the Path to a race JSON file or None if not found."""
     for meta_path in _series_meta_paths():
@@ -100,6 +113,7 @@ def _race_path(race_id: str):
         if race_path.exists():
             return race_path
     return None
+#</getdata>
 
 
 def _parse_hms(t: str | None) -> int | None:
@@ -110,6 +124,7 @@ def _parse_hms(t: str | None) -> int | None:
     return h * 3600 + m * 60 + s
 
 
+#<getdata>
 def _fleet_lookup() -> dict[str, dict]:
     """Return mapping of competitor id to fleet details."""
     path = DATA_DIR / "fleet.json"
@@ -119,6 +134,7 @@ def _fleet_lookup() -> dict[str, dict]:
     except FileNotFoundError:
         competitors = []
     return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
+#</getdata>
 
 
 def _next_competitor_id(existing: set[str]) -> str:
@@ -134,6 +150,7 @@ def _next_competitor_id(existing: set[str]) -> str:
     return f"C_{max_id + 1}"
 
 
+#<getdata>
 def recalculate_handicaps() -> None:
     """Recompute starting handicaps for all races from revised results.
 
@@ -214,8 +231,10 @@ def recalculate_handicaps() -> None:
 
     with fleet_path.open("w") as f:
         json.dump(fleet_data, f, indent=2)
+#</getdata>
 
 
+#<getdata>
 def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]]:
     """Compute standings and per-race metadata for a season."""
     fleet = _fleet_lookup()
@@ -401,6 +420,7 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
             prev_races = row["race_count"]
 
     return standings, race_groups
+#</getdata>
 
 
 @bp.route('/')
@@ -411,7 +431,9 @@ def index():
 @bp.route('/races')
 def races():
     season = request.args.get('season') or None
+    #<getdata>
     all_races = _load_all_races()
+    #</getdata>
     seasons = sorted({r.get('season') for r in all_races if r.get('season')}, reverse=True)
     if season:
         race_list = [r for r in all_races if str(r.get('season')) == str(season)]
@@ -428,6 +450,7 @@ def races():
     )
 
 
+#<getdata>
 def _load_series_meta(series_id: str):
     """Return (path, data) for the given series id or (None, None).
 
@@ -441,8 +464,10 @@ def _load_series_meta(series_id: str):
         if sid and sid.lower() == target:
             return meta_path, data
     return None, None
+#</getdata>
 
 
+#<getdata>
 def _renumber_races(series_dir: Path) -> dict[str, str]:
     """Renumber races in ``series_dir`` based on date and start time.
 
@@ -492,8 +517,10 @@ def _renumber_races(series_dir: Path) -> dict[str, str]:
             mapping[old_id] = new_id
 
     return mapping
+#</getdata>
 
 
+#<getdata>
 @bp.route('/races/new')
 def race_new():
     series_list = [entry['series'] for entry in _load_series_entries()]
@@ -522,6 +549,7 @@ def race_new():
         unlocked=True,
         fleet_adjustment=0,
     )
+#</getdata>
 
 
 @bp.route('/series/<series_id>')
@@ -555,6 +583,7 @@ def series_detail(series_id):
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     if race_id:
+        #<getdata>
         # Load baseline handicaps from fleet register
         fleet_path = DATA_DIR / 'fleet.json'
         with fleet_path.open() as f:
@@ -708,6 +737,7 @@ def series_detail(series_id):
 
         if selected_race:
             selected_race['results'] = results
+        #</getdata>
 
     finisher_display = f"Number of Finishers: {finisher_count}"
 
@@ -751,6 +781,7 @@ def race_sheet(race_id):
     return redirect(url_for('main.series_detail', series_id=canonical_id, race_id=race_id))
 
 
+#<getdata>
 @bp.route('/standings')
 def standings():
     scoring = request.args.get('format', 'league').lower()
@@ -784,8 +815,10 @@ def standings():
         standings=table,
         race_groups=race_groups,
     )
+#</getdata>
 
 
+#<getdata>
 @bp.route('/fleet')
 def fleet():
     breadcrumbs = [('Fleet', None)]
@@ -794,8 +827,10 @@ def fleet():
         data = json.load(f)
     competitors = data.get('competitors', [])
     return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs, fleet=competitors)
+#</getdata>
 
 
+#<getdata>
 @bp.route('/api/fleet', methods=['POST'])
 def update_fleet():
     """Persist fleet edits and refresh handicaps."""
@@ -855,6 +890,7 @@ def update_fleet():
         json.dump(fleet_data, f, indent=2)
     recalculate_handicaps()
     return {'status': 'ok'}
+#</getdata>
 
 
 @bp.route('/rules')
@@ -863,6 +899,7 @@ def rules():
     return render_template('rules.html', title='Rules', breadcrumbs=breadcrumbs)
 
 
+#<getdata>
 @bp.route('/settings')
 def settings():
     breadcrumbs = [('Settings', None)]
@@ -870,8 +907,10 @@ def settings():
     with data_path.open() as f:
         settings_data = json.load(f)
     return render_template('settings.html', title='Settings', breadcrumbs=breadcrumbs, settings=settings_data)
+#</getdata>
 
 
+#<getdata>
 @bp.route('/api/settings', methods=['POST'])
 def save_settings():
     """Persist updated settings to the JSON configuration file."""
@@ -894,8 +933,10 @@ def save_settings():
     importlib.reload(scoring_module)
 
     return {"status": "ok"}
+#</getdata>
 
 
+#<getdata>
 @bp.route('/api/races/<race_id>', methods=['POST'])
 def update_race(race_id):
     data = request.get_json() or {}
@@ -1067,8 +1108,10 @@ def update_race(race_id):
 
     finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
     return {'finisher_count': finisher_count, 'redirect': redirect_url}
+#</getdata>
 
 
+#<getdata>
 @bp.route('/api/races/<race_id>', methods=['DELETE'])
 def delete_race(race_id):
     race_path = _race_path(race_id)
@@ -1082,3 +1125,4 @@ def delete_race(race_id):
     _renumber_races(series_dir)
     redirect_url = url_for('main.series_detail', series_id=series_id)
     return {'redirect': redirect_url}
+#</getdata>
