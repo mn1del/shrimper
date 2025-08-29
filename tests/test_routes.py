@@ -100,6 +100,7 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     assert res.status_code == 200
     data = res.get_json()
     assert data['redirect']
+    #<getdata>
     series_meta = tmp_path / '2030' / 'Test' / 'series_metadata.json'
     assert series_meta.exists()
     race_files = list((tmp_path / '2030' / 'Test' / 'races').glob('*.json'))
@@ -113,11 +114,13 @@ def test_create_new_race_creates_files(client, tmp_path, monkeypatch):
     assert race_data['start_time'] == '12:30:45'
     assert race_data['race_id'].startswith('RACE_2030-01-01_Test_')
     assert race_data['race_no'] == 1
+    #</getdata>
 
 
 def test_delete_race_removes_file(client, tmp_path, monkeypatch):
     from app import routes
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    #<getdata>
     sdir = tmp_path / '2030' / 'Test'
     (sdir / 'races').mkdir(parents=True)
     (sdir / 'series_metadata.json').write_text(json.dumps({
@@ -136,6 +139,7 @@ def test_delete_race_removes_file(client, tmp_path, monkeypatch):
         'entrants': [],
         'race_no': 1,
     }))
+    #</getdata>
     res = client.delete(f'/api/races/{race_id}')
     assert res.status_code == 200
     assert not race_path.exists()
@@ -148,6 +152,7 @@ def test_races_page_can_filter_by_season(client, tmp_path, monkeypatch):
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
 
     def create_season(year: int):
+        #<getdata>
         sdir = tmp_path / str(year) / f'S{year}'
         (sdir / 'races').mkdir(parents=True)
         (sdir / 'series_metadata.json').write_text(json.dumps({
@@ -164,6 +169,7 @@ def test_races_page_can_filter_by_season(client, tmp_path, monkeypatch):
             'entrants': [],
             'race_no': 1,
         }))
+        #</getdata>
 
     create_season(2024)
     create_season(2025)
@@ -188,7 +194,9 @@ def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatc
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
 
     # Copy settings required for scoring
+    #<getdata>
     shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+    #</getdata>
 
     # Create a minimal fleet with a single competitor
     fleet = {
@@ -205,9 +213,12 @@ def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatc
             }
         ]
     }
+    #<getdata>
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+    #</getdata>
 
     # Set up a series and race where the entrant has no finish time
+    #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
     race_dir = series_dir / 'races'
     race_dir.mkdir(parents=True)
@@ -227,6 +238,7 @@ def test_race_page_shows_defaults_for_non_finishers(client, tmp_path, monkeypatc
         'race_no': 1,
     }
     (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
+    #</getdata>
 
     res = client.get(f'/series/SER_2025_Test?race_id={race_id}')
     html = res.get_data(as_text=True)
@@ -244,7 +256,9 @@ def test_race_page_shows_defaults_for_absent_competitor(client, tmp_path, monkey
     from pathlib import Path
 
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    #<getdata>
     shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+    #</getdata>
 
     fleet = {
         'competitors': [
@@ -262,6 +276,7 @@ def test_race_page_shows_defaults_for_absent_competitor(client, tmp_path, monkey
     }
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
 
+    #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
     race_dir = series_dir / 'races'
     race_dir.mkdir(parents=True)
@@ -279,6 +294,7 @@ def test_race_page_shows_defaults_for_absent_competitor(client, tmp_path, monkey
         'race_no': 1,
     }
     (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
+    #</getdata>
 
     res = client.get(f'/series/SER_2025_Test?race_id={race_id}')
     html = res.get_data(as_text=True)
@@ -297,6 +313,7 @@ def test_settings_save_updates_json_and_page(client, tmp_path, monkeypatch):
     from app import routes
 
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    #<getdata>
     settings_path = tmp_path / 'settings.json'
     original = {
         'version': 1,
@@ -306,6 +323,7 @@ def test_settings_save_updates_json_and_page(client, tmp_path, monkeypatch):
         'fleet_size_factor': [{'finishers': 1, 'factor': 0.5}],
     }
     settings_path.write_text(json.dumps(original))
+    #</getdata>
 
     res = client.get('/settings')
     html = res.get_data(as_text=True)
@@ -319,8 +337,10 @@ def test_settings_save_updates_json_and_page(client, tmp_path, monkeypatch):
     res = client.post('/api/settings', json=new_data)
     assert res.status_code == 200
 
+    #<getdata>
     with settings_path.open() as f:
         saved = json.load(f)
+    #</getdata>
     assert saved['handicap_delta_by_rank'][0]['delta_s_per_hr'] == -5
     assert saved['league_points_by_rank'][0]['points'] == 9
     assert saved['fleet_size_factor'][0]['factor'] == 0.9
@@ -351,6 +371,7 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
     }
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
 
+    #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
     race_dir = series_dir / 'races'
     race_dir.mkdir(parents=True)
@@ -371,6 +392,7 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
         'race_no': 1,
     }
     (race_dir / f'{race_id}.json').write_text(json.dumps(race_data))
+    #</getdata>
 
     payload = {
         'competitors': [{
@@ -384,6 +406,7 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
     res = client.post('/api/fleet', json=payload)
     assert res.status_code == 200
 
+    #<getdata>
     with (tmp_path / 'fleet.json').open() as f:
         saved = json.load(f)
     assert saved['competitors'][0]['sailor_name'] == 'New'
@@ -392,6 +415,7 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
     with (race_dir / f'{race_id}.json').open() as f:
         updated = json.load(f)
     assert updated['entrants'][0]['initial_handicap'] == 150
+    #</getdata>
 
 
 def test_fleet_update_rejects_duplicate_sail_numbers(client, tmp_path, monkeypatch):
@@ -444,6 +468,7 @@ def test_fleet_update_rejects_duplicate_sail_numbers(client, tmp_path, monkeypat
 def test_add_race_renumbers(client, tmp_path, monkeypatch):
     from app import routes
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
     races_dir = series_dir / 'races'
     races_dir.mkdir(parents=True)
@@ -487,11 +512,13 @@ def test_add_race_renumbers(client, tmp_path, monkeypatch):
         'RACE_2025-01-08_Test_2',
         'RACE_2025-01-15_Test_3',
     ]
+    #</getdata>
 
 
 def test_edit_race_renumbers(client, tmp_path, monkeypatch):
     from app import routes
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
+    #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
     races_dir = series_dir / 'races'
     races_dir.mkdir(parents=True)
@@ -529,3 +556,4 @@ def test_edit_race_renumbers(client, tmp_path, monkeypatch):
         'RACE_2025-01-08_Test_1',
         'RACE_2025-01-10_Test_2',
     ]
+    #</getdata>

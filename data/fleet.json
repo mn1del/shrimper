@@ -47,7 +47,7 @@
       "boat_name": "Pelican",
       "sail_no": "102",
       "starting_handicap_s_per_hr": -118,
-      "current_handicap_s_per_hr": -118,
+      "current_handicap_s_per_hr": -28,
       "active": true,
       "notes": ""
     },
@@ -77,7 +77,7 @@
       "boat_name": "Percy",
       "sail_no": "264",
       "starting_handicap_s_per_hr": 110,
-      "current_handicap_s_per_hr": 110,
+      "current_handicap_s_per_hr": 85,
       "active": true,
       "notes": ""
     },
@@ -87,7 +87,7 @@
       "boat_name": "Ysella",
       "sail_no": "298",
       "starting_handicap_s_per_hr": -298,
-      "current_handicap_s_per_hr": -298,
+      "current_handicap_s_per_hr": -243,
       "active": true,
       "notes": ""
     },
@@ -97,7 +97,7 @@
       "boat_name": "Guilan Dhiu",
       "sail_no": "334",
       "starting_handicap_s_per_hr": 280,
-      "current_handicap_s_per_hr": 280,
+      "current_handicap_s_per_hr": 313,
       "active": true,
       "notes": ""
     },
@@ -107,7 +107,7 @@
       "boat_name": "Salome",
       "sail_no": "346",
       "starting_handicap_s_per_hr": -86,
-      "current_handicap_s_per_hr": -86,
+      "current_handicap_s_per_hr": -30,
       "active": true,
       "notes": ""
     },
@@ -127,7 +127,7 @@
       "boat_name": "Abeleki",
       "sail_no": "383",
       "starting_handicap_s_per_hr": 430,
-      "current_handicap_s_per_hr": 430,
+      "current_handicap_s_per_hr": 550,
       "active": true,
       "notes": ""
     },
@@ -137,7 +137,7 @@
       "boat_name": "Jakana",
       "sail_no": "400",
       "starting_handicap_s_per_hr": 183,
-      "current_handicap_s_per_hr": 183,
+      "current_handicap_s_per_hr": 123,
       "active": true,
       "notes": ""
     },
@@ -147,7 +147,7 @@
       "boat_name": "Alice Rose",
       "sail_no": "417",
       "starting_handicap_s_per_hr": 374,
-      "current_handicap_s_per_hr": 374,
+      "current_handicap_s_per_hr": 394,
       "active": true,
       "notes": ""
     },
@@ -157,7 +157,7 @@
       "boat_name": "Lucy",
       "sail_no": "432",
       "starting_handicap_s_per_hr": 170,
-      "current_handicap_s_per_hr": 170,
+      "current_handicap_s_per_hr": 230,
       "active": true,
       "notes": ""
     },
@@ -177,7 +177,7 @@
       "boat_name": "Sophie",
       "sail_no": "455",
       "starting_handicap_s_per_hr": -92,
-      "current_handicap_s_per_hr": -92,
+      "current_handicap_s_per_hr": -34,
       "active": true,
       "notes": ""
     },
@@ -187,7 +187,7 @@
       "boat_name": "Annie",
       "sail_no": "503",
       "starting_handicap_s_per_hr": 165,
-      "current_handicap_s_per_hr": 165,
+      "current_handicap_s_per_hr": 217,
       "active": true,
       "notes": ""
     },
@@ -197,7 +197,7 @@
       "boat_name": "Sterren Vor",
       "sail_no": "518",
       "starting_handicap_s_per_hr": -226,
-      "current_handicap_s_per_hr": -226,
+      "current_handicap_s_per_hr": -136,
       "active": true,
       "notes": ""
     },
@@ -237,7 +237,7 @@
       "boat_name": "Agnes",
       "sail_no": "650",
       "starting_handicap_s_per_hr": 340,
-      "current_handicap_s_per_hr": 340,
+      "current_handicap_s_per_hr": 320,
       "active": true,
       "notes": ""
     },
@@ -247,7 +247,7 @@
       "boat_name": "Little Tern",
       "sail_no": "678",
       "starting_handicap_s_per_hr": -68,
-      "current_handicap_s_per_hr": -68,
+      "current_handicap_s_per_hr": -7,
       "active": true,
       "notes": ""
     },
@@ -257,7 +257,7 @@
       "boat_name": "Carla Louise",
       "sail_no": "727",
       "starting_handicap_s_per_hr": 98,
-      "current_handicap_s_per_hr": 98,
+      "current_handicap_s_per_hr": 140,
       "active": true,
       "notes": ""
     },
@@ -277,7 +277,7 @@
       "boat_name": "Kiff",
       "sail_no": "770",
       "starting_handicap_s_per_hr": 150,
-      "current_handicap_s_per_hr": 150,
+      "current_handicap_s_per_hr": 170,
       "active": true,
       "notes": ""
     },
@@ -287,7 +287,7 @@
       "boat_name": "Humbug",
       "sail_no": "802",
       "starting_handicap_s_per_hr": 200,
-      "current_handicap_s_per_hr": 200,
+      "current_handicap_s_per_hr": 187,
       "active": true,
       "notes": ""
     },
@@ -297,7 +297,7 @@
       "boat_name": "Moondance",
       "sail_no": "816",
       "starting_handicap_s_per_hr": 197,
-      "current_handicap_s_per_hr": 197,
+      "current_handicap_s_per_hr": 107,
       "active": true,
       "notes": ""
     },
@@ -307,7 +307,7 @@
       "boat_name": "Reward",
       "sail_no": "842",
       "starting_handicap_s_per_hr": 246,
-      "current_handicap_s_per_hr": 246,
+      "current_handicap_s_per_hr": 356,
       "active": true,
       "notes": ""
     },
@@ -317,7 +317,7 @@
       "boat_name": "Dawn of Polruan",
       "sail_no": "889",
       "starting_handicap_s_per_hr": 279,
-      "current_handicap_s_per_hr": 279,
+      "current_handicap_s_per_hr": 358,
       "active": true,
       "notes": ""
     },
@@ -357,7 +357,7 @@
       "boat_name": "Sparrow",
       "sail_no": "1078",
       "starting_handicap_s_per_hr": 180,
-      "current_handicap_s_per_hr": 180,
+      "current_handicap_s_per_hr": 200,
       "active": true,
       "notes": ""
     },
@@ -407,7 +407,7 @@
       "boat_name": "Blackbird",
       "sail_no": "534",
       "starting_handicap_s_per_hr": 110,
-      "current_handicap_s_per_hr": 110,
+      "current_handicap_s_per_hr": 130,
       "active": true,
       "notes": ""
     },
@@ -417,7 +417,7 @@
       "boat_name": "Nir Na Nog",
       "sail_no": "687",
       "starting_handicap_s_per_hr": 280,
-      "current_handicap_s_per_hr": 280,
+      "current_handicap_s_per_hr": 290,
       "active": true,
       "notes": ""
     },
@@ -427,7 +427,7 @@
       "boat_name": "Julia Neal",
       "sail_no": "392",
       "starting_handicap_s_per_hr": -120,
-      "current_handicap_s_per_hr": -120,
+      "current_handicap_s_per_hr": -40,
       "active": true,
       "notes": ""
     },
@@ -437,7 +437,7 @@
       "boat_name": "Stella Maris",
       "sail_no": "1120",
       "starting_handicap_s_per_hr": 360,
-      "current_handicap_s_per_hr": 360,
+      "current_handicap_s_per_hr": 400,
       "active": true,
       "notes": ""
     },

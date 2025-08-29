@@ -9,7 +9,9 @@ from app import routes, create_app
 
 def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
     # Copy settings required for scoring
+    #<getdata>
     shutil.copy(Path('data/settings.json'), tmp_path / 'settings.json')
+    #</getdata>
 
     # Minimal fleet with one finisher and one non-finisher
     fleet = {
@@ -30,9 +32,12 @@ def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
             },
         ]
     }
+    #<getdata>
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+    #</getdata>
 
     # Series and race with a single DNF
+    #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
     (series_dir / 'races').mkdir(parents=True)
     (series_dir / 'series_metadata.json').write_text(
@@ -50,6 +55,7 @@ def test_traditional_standings_include_non_finishers(tmp_path, monkeypatch):
         'race_no': 1,
     }
     (series_dir / 'races' / 'RACE_2025-01-01_TEST_1.json').write_text(json.dumps(race))
+    #</getdata>
 
     monkeypatch.setattr(routes, 'DATA_DIR', tmp_path)
 
