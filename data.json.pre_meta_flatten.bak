@@ -4,6 +4,11 @@
                         "year":  2025,
                         "series":  [
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_CASTF",
+                                                                   "name":  "CastF",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-05-16_CastF_1",
@@ -310,12 +315,14 @@
                                                                           },
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_CASTF",
-                                           "name":  "CastF",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_CASTS",
+                                                                   "name":  "CastS",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-27_CastS_1",
@@ -416,12 +423,14 @@
                                                                           },
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_CASTS",
-                                           "name":  "CastS",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_CUPS",
+                                                                   "name":  "Cups",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-04_Cups_1",
@@ -493,17 +502,19 @@
                                                                           },
                                                              "race_no":  1
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_CUPS",
-                                           "name":  "Cups",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_MC\u0026R",
+                                                                   "name":  "MC\u0026R",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
-                                                             "race_id":  "RACE_2025-04-26_MCandR_1",
-                                                             "series_id":  "SER_2025_MCandR",
-                                                             "name":  "SER_2025_MCandR_1",
+                                                             "race_id":  "RACE_2025-04-26_MC\u0026R_1",
+                                                             "series_id":  "SER_2025_MC\u0026R",
+                                                             "name":  "SER_2025_MC\u0026R_1",
                                                              "date":  "2025-04-26",
                                                              "start_time":  "10:30:00",
                                                              "entrants":  {
@@ -531,9 +542,9 @@
                                                              "race_no":  1
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-04-26_MCandR_2",
-                                                             "series_id":  "SER_2025_MCandR",
-                                                             "name":  "SER_2025_MCandR_2",
+                                                             "race_id":  "RACE_2025-04-26_MC\u0026R_2",
+                                                             "series_id":  "SER_2025_MC\u0026R",
+                                                             "name":  "SER_2025_MC\u0026R_2",
                                                              "date":  "2025-04-26",
                                                              "start_time":  "11:25:00",
                                                              "entrants":  {
@@ -561,9 +572,9 @@
                                                              "race_no":  2
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-05-03_MCandR_3",
-                                                             "series_id":  "SER_2025_MCandR",
-                                                             "name":  "SER_2025_MCandR_3",
+                                                             "race_id":  "RACE_2025-05-03_MC\u0026R_3",
+                                                             "series_id":  "SER_2025_MC\u0026R",
+                                                             "name":  "SER_2025_MC\u0026R_3",
                                                              "date":  "2025-05-03",
                                                              "start_time":  "00:00:00",
                                                              "entrants":  {
@@ -572,9 +583,9 @@
                                                              "race_no":  3
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-05-03_MCandR_4",
-                                                             "series_id":  "SER_2025_MCandR",
-                                                             "name":  "SER_2025_MCandR_4",
+                                                             "race_id":  "RACE_2025-05-03_MC\u0026R_4",
+                                                             "series_id":  "SER_2025_MC\u0026R",
+                                                             "name":  "SER_2025_MC\u0026R_4",
                                                              "date":  "2025-05-03",
                                                              "start_time":  "00:00:00",
                                                              "entrants":  {
@@ -583,9 +594,9 @@
                                                              "race_no":  4
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-05-10_MCandR_5",
-                                                             "series_id":  "SER_2025_MCandR",
-                                                             "name":  "SER_2025_MCandR_5",
+                                                             "race_id":  "RACE_2025-05-10_MC\u0026R_5",
+                                                             "series_id":  "SER_2025_MC\u0026R",
+                                                             "name":  "SER_2025_MC\u0026R_5",
                                                              "date":  "2025-05-10",
                                                              "start_time":  "10:30:00",
                                                              "entrants":  {
@@ -603,9 +614,9 @@
                                                              "race_no":  5
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-05-10_MCandR_6",
-                                                             "series_id":  "SER_2025_MCandR",
-                                                             "name":  "SER_2025_MCandR_6",
+                                                             "race_id":  "RACE_2025-05-10_MC\u0026R_6",
+                                                             "series_id":  "SER_2025_MC\u0026R",
+                                                             "name":  "SER_2025_MC\u0026R_6",
                                                              "date":  "2025-05-10",
                                                              "start_time":  "11:50:00",
                                                              "entrants":  {
@@ -627,17 +638,19 @@
                                                                           },
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_MCandR",
-                                           "name":  "MCandR",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_MC\u0026RS",
+                                                                   "name":  "MC\u0026RS",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
-                                                             "race_id":  "RACE_2025-07-06_MCandRS_1",
-                                                             "series_id":  "SER_2025_MCandRS",
-                                                             "name":  "SER_2025_MCandRS_1",
+                                                             "race_id":  "RACE_2025-07-06_MC\u0026RS_1",
+                                                             "series_id":  "SER_2025_MC\u0026RS",
+                                                             "name":  "SER_2025_MC\u0026RS_1",
                                                              "date":  "2025-07-06",
                                                              "start_time":  "10:30:00",
                                                              "entrants":  {
@@ -660,9 +673,9 @@
                                                              "race_no":  1
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-07-06_MCandRS_2",
-                                                             "series_id":  "SER_2025_MCandRS",
-                                                             "name":  "SER_2025_MCandRS_2",
+                                                             "race_id":  "RACE_2025-07-06_MC\u0026RS_2",
+                                                             "series_id":  "SER_2025_MC\u0026RS",
+                                                             "name":  "SER_2025_MC\u0026RS_2",
                                                              "date":  "2025-07-06",
                                                              "start_time":  "11:35:00",
                                                              "entrants":  {
@@ -685,9 +698,9 @@
                                                              "race_no":  2
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-07-13_MCandRS_3",
-                                                             "series_id":  "SER_2025_MCandRS",
-                                                             "name":  "SER_2025_MCandRS_4",
+                                                             "race_id":  "RACE_2025-07-13_MC\u0026RS_3",
+                                                             "series_id":  "SER_2025_MC\u0026RS",
+                                                             "name":  "SER_2025_MC\u0026RS_4",
                                                              "date":  "2025-07-13",
                                                              "start_time":  "10:30:00",
                                                              "entrants":  {
@@ -730,9 +743,9 @@
                                                              "race_no":  3
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-07-13_MCandRS_4",
-                                                             "series_id":  "SER_2025_MCandRS",
-                                                             "name":  "SER_2025_MCandRS_4",
+                                                             "race_id":  "RACE_2025-07-13_MC\u0026RS_4",
+                                                             "series_id":  "SER_2025_MC\u0026RS",
+                                                             "name":  "SER_2025_MC\u0026RS_4",
                                                              "date":  "2025-07-13",
                                                              "start_time":  "11:45:00",
                                                              "entrants":  {
@@ -775,9 +788,9 @@
                                                              "race_no":  4
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-07-20_MCandRS_5",
-                                                             "series_id":  "SER_2025_MCandRS",
-                                                             "name":  "SER_2025_MCandRS_5",
+                                                             "race_id":  "RACE_2025-07-20_MC\u0026RS_5",
+                                                             "series_id":  "SER_2025_MC\u0026RS",
+                                                             "name":  "SER_2025_MC\u0026RS_5",
                                                              "date":  "2025-07-20",
                                                              "start_time":  "10:30:00",
                                                              "entrants":  {
@@ -800,9 +813,9 @@
                                                              "race_no":  5
                                                          },
                                                          {
-                                                             "race_id":  "RACE_2025-07-20_MCandRS_6",
-                                                             "series_id":  "SER_2025_MCandRS",
-                                                             "name":  "SER_2025_MCandRS_6",
+                                                             "race_id":  "RACE_2025-07-20_MC\u0026RS_6",
+                                                             "series_id":  "SER_2025_MC\u0026RS",
+                                                             "name":  "SER_2025_MC\u0026RS_6",
                                                              "date":  "2025-07-20",
                                                              "start_time":  "12:00:00",
                                                              "entrants":  {
@@ -824,12 +837,14 @@
                                                                           },
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_MCandRS",
-                                           "name":  "MCandRS",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_MYHF",
+                                                                   "name":  "MYHF",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-11_MYHF_1",
@@ -1102,12 +1117,14 @@
                                                                           },
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_MYHF",
-                                           "name":  "MYHF",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_metadata":  {
+                                                                   "series_id":  "SER_2025_PEND",
+                                                                   "name":  "PenD",
+                                                                   "season":  2025
+                                                               },
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-05-18_PenD_1",
@@ -1290,10 +1307,7 @@
                                                                           },
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_PEND",
-                                           "name":  "PenD",
-                                           "season":  2025
+                                                     ]
                                        }
                                    ]
                     }
