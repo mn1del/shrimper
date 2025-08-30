@@ -274,7 +274,9 @@ def test_race_page_shows_defaults_for_absent_competitor(client, tmp_path, monkey
             }
         ]
     }
+    #<getdata>
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+    #</getdata>
 
     #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
@@ -369,7 +371,9 @@ def test_fleet_update_propagates(client, tmp_path, monkeypatch):
             'notes': ''
         }]
     }
+    #<getdata>
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+    #</getdata>
 
     #<getdata>
     series_dir = tmp_path / '2025' / 'Test'
@@ -447,7 +451,9 @@ def test_fleet_update_rejects_duplicate_sail_numbers(client, tmp_path, monkeypat
             },
         ]
     }
+    #<getdata>
     (tmp_path / 'fleet.json').write_text(json.dumps(fleet))
+    #</getdata>
 
     payload = {
         'competitors': [
