@@ -4,6 +4,9 @@
                         "year":  2025,
                         "series":  [
                                        {
+                                           "series_id":  "SER_2025_CASTF",
+                                           "name":  "CastF",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-05-16_CastF_1",
@@ -310,12 +313,12 @@
                                                                              ],
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_CASTF",
-                                           "name":  "CastF",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_id":  "SER_2025_CASTS",
+                                           "name":  "CastS",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-27_CastS_1",
@@ -416,12 +419,12 @@
                                                                              ],
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_CASTS",
-                                           "name":  "CastS",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_id":  "SER_2025_CUPS",
+                                           "name":  "Cups",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-04_Cups_1",
@@ -493,12 +496,12 @@
                                                                              ],
                                                              "race_no":  1
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_CUPS",
-                                           "name":  "Cups",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_id":  "SER_2025_MCandR",
+                                           "name":  "MCandR",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-04-26_MCandR_1",
@@ -627,12 +630,12 @@
                                                                              ],
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_MCandR",
-                                           "name":  "MCandR",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_id":  "SER_2025_MCandRS",
+                                           "name":  "MCandRS",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-06_MCandRS_1",
@@ -824,12 +827,12 @@
                                                                              ],
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_MCandRS",
-                                           "name":  "MCandRS",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_id":  "SER_2025_MYHF",
+                                           "name":  "MYHF",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-07-11_MYHF_1",
@@ -1102,12 +1105,12 @@
                                                                              ],
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_MYHF",
-                                           "name":  "MYHF",
-                                           "season":  2025
+                                                     ]
                                        },
                                        {
+                                           "series_id":  "SER_2025_PEND",
+                                           "name":  "PenD",
+                                           "season":  2025,
                                            "races":  [
                                                          {
                                                              "race_id":  "RACE_2025-05-18_PenD_1",
@@ -1290,10 +1293,7 @@
                                                                              ],
                                                              "race_no":  6
                                                          }
-                                                     ],
-                                           "series_id":  "SER_2025_PEND",
-                                           "name":  "PenD",
-                                           "season":  2025
+                                                     ]
                                        }
                                    ]
                     }
