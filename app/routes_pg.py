@@ -17,7 +17,7 @@ How to enable:
 from . import routes as _base
 from . import datastore_pg as _pg
 from . import scoring as _scoring
-from importlib import reload
+import importlib as _importlib
 
 
 # Swap datastore functions used by route handlers
@@ -35,9 +35,45 @@ _base.ds_get_settings = _pg.get_settings
 _base.ds_set_settings = _pg.set_settings
 
 
-# Ensure scoring module reads settings from PostgreSQL
-_scoring.get_settings = _pg.get_settings
-reload(_scoring)
+# Ensure scoring constants reflect PostgreSQL settings
+_settings = _pg.get_settings()
+_scoring._SETTINGS = _settings  # type: ignore[attr-defined]
+_HANDICAP_DELTAS, _HANDICAP_DEFAULT = _scoring._build_lookup(  # type: ignore[attr-defined]
+    _settings.get("handicap_delta_by_rank", []), "rank", "delta_s_per_hr"
+)
+_LEAGUE_POINTS, _POINTS_DEFAULT = _scoring._build_lookup(  # type: ignore[attr-defined]
+    _settings.get("league_points_by_rank", []), "rank", "points"
+)
+_FLEET_FACTORS, _FLEET_DEFAULT = _scoring._build_lookup(  # type: ignore[attr-defined]
+    _settings.get("fleet_size_factor", []), "finishers", "factor"
+)
+_scoring._HANDICAP_DELTAS = _HANDICAP_DELTAS  # type: ignore[attr-defined]
+_scoring._HANDICAP_DEFAULT = _HANDICAP_DEFAULT  # type: ignore[attr-defined]
+_scoring._LEAGUE_POINTS = _LEAGUE_POINTS  # type: ignore[attr-defined]
+_scoring._POINTS_DEFAULT = _POINTS_DEFAULT  # type: ignore[attr-defined]
+_scoring._FLEET_FACTORS = _FLEET_FACTORS  # type: ignore[attr-defined]
+_scoring._FLEET_DEFAULT = _FLEET_DEFAULT  # type: ignore[attr-defined]
+
+
+def _reload_and_patch(mod):
+    res = _importlib.reload(mod)
+    if getattr(mod, "__name__", "") == _scoring.__name__:
+        settings = _pg.get_settings()
+        mod._SETTINGS = settings  # type: ignore[attr-defined]
+        hd, hd_def = mod._build_lookup(settings.get("handicap_delta_by_rank", []), "rank", "delta_s_per_hr")  # type: ignore[attr-defined]
+        lp, lp_def = mod._build_lookup(settings.get("league_points_by_rank", []), "rank", "points")  # type: ignore[attr-defined]
+        ff, ff_def = mod._build_lookup(settings.get("fleet_size_factor", []), "finishers", "factor")  # type: ignore[attr-defined]
+        mod._HANDICAP_DELTAS = hd  # type: ignore[attr-defined]
+        mod._HANDICAP_DEFAULT = hd_def  # type: ignore[attr-defined]
+        mod._LEAGUE_POINTS = lp  # type: ignore[attr-defined]
+        mod._POINTS_DEFAULT = lp_def  # type: ignore[attr-defined]
+        mod._FLEET_FACTORS = ff  # type: ignore[attr-defined]
+        mod._FLEET_DEFAULT = ff_def  # type: ignore[attr-defined]
+    return res
+
+
+# Monkeypatch routes.importlib.reload so settings updates keep PG constants
+_base.importlib.reload = _reload_and_patch  # type: ignore[attr-defined]
 
 
 # Re-export the blueprint and recalculation entry point
