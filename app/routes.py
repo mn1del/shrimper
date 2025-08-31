@@ -680,7 +680,19 @@ def series_detail(series_id):
             )
 
         if selected_race:
+            # Primary path: full results computed above
             selected_race['results'] = results
+            # Fallback: if for any reason results is empty, at least surface finish times
+            if not selected_race['results']:
+                basic: dict[str, dict] = {}
+                for ent in selected_race.get('competitors', []) or []:
+                    cid = ent.get('competitor_id')
+                    if not cid:
+                        continue
+                    basic[cid] = {
+                        'finish_time': ent.get('finish_time')
+                    }
+                selected_race['results'] = basic
         #</getdata>
 
     finisher_display = f"Number of Finishers: {finisher_count}"
