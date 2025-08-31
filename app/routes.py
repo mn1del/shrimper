@@ -11,6 +11,7 @@ from .datastore import (
     save_data,
     list_all_races as ds_list_all_races,
     list_seasons as ds_list_seasons,
+    list_series as ds_list_series,
     find_series as ds_find_series,
     find_race as ds_find_race,
     ensure_series as ds_ensure_series,
@@ -232,12 +233,13 @@ def _series_meta_paths():
 #<getdata>
 def _load_series_entries():
     """Return list of series (metadata + races) from data.json."""
-    data = load_data()
+    # Use datastore helper to avoid materializing the full dataset
+    series_list = ds_list_series()
     entries = []
-    for season in data.get("seasons", []):
-        for series in season.get("series", []):
-            meta = {"series_id": series.get("series_id"), "name": series.get("name"), "season": series.get("season")}
-            entries.append({"series": meta, "races": list(series.get("races", []))})
+    for s in series_list:
+        meta = {"series_id": s.get("series_id"), "name": s.get("name"), "season": s.get("season")}
+        # For callers that only need metadata (e.g. race_new), keep races empty
+        entries.append({"series": meta, "races": []})
     return entries
 #</getdata>
 
@@ -1179,8 +1181,9 @@ def race_sheet(race_id):
 def standings():
     scoring = request.args.get('format', 'league').lower()
     season_param = request.args.get('season')
-    data = load_data()
-    seasons = sorted({int(season.get('year')) for season in data.get('seasons', [])}, reverse=True)
+    # Avoid full-tree load: get just the season years
+    seasons_meta = ds_list_seasons()
+    seasons = sorted({int(s.get('year')) for s in (seasons_meta or []) if s.get('year') is not None}, reverse=True)
     if not seasons:
         season_val = None
         table = []
