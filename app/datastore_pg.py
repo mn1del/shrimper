@@ -509,24 +509,127 @@ def renumber_races(series: Dict[str, Any]) -> Dict[str, str]:
 
 
 def get_fleet(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = load_data() if data is None else data
-    return d.get("fleet", {"competitors": []})
+    # Targeted SELECT to avoid materializing all data
+    if data is not None:
+        return data.get("fleet", {"competitors": []})
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute(
+                """
+                SELECT competitor_id, sailor_name, boat_name, sail_no,
+                       starting_handicap_s_per_hr, current_handicap_s_per_hr
+                FROM competitors
+                ORDER BY sail_no NULLS LAST, competitor_id
+                """
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return {"competitors": []}
+            raise
+        comps: List[Dict[str, Any]] = []
+        for r in cur.fetchall():
+            comps.append(
+                {
+                    "competitor_id": r.get("competitor_id"),
+                    "sailor_name": r.get("sailor_name"),
+                    "boat_name": r.get("boat_name"),
+                    "sail_no": r.get("sail_no"),
+                    "starting_handicap_s_per_hr": r.get("starting_handicap_s_per_hr") or 0,
+                    "current_handicap_s_per_hr": r.get("current_handicap_s_per_hr") or r.get("starting_handicap_s_per_hr") or 0,
+                }
+            )
+        return {"competitors": comps}
 
 
 def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = data or load_data()
-    d["fleet"] = fleet
-    save_data(d)
-    return d
+    # Replace competitors table content to match provided fleet
+    competitors = (fleet or {}).get("competitors", [])
+    with _get_conn() as conn, conn.cursor() as cur:
+        try:
+            cur.execute("DELETE FROM competitors")
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+        for comp in competitors:
+            cur.execute(
+                """
+                INSERT INTO competitors (
+                    competitor_id, sailor_name, boat_name, sail_no,
+                    starting_handicap_s_per_hr, current_handicap_s_per_hr
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (competitor_id) DO UPDATE SET
+                    sailor_name = EXCLUDED.sailor_name,
+                    boat_name = EXCLUDED.boat_name,
+                    sail_no = EXCLUDED.sail_no,
+                    starting_handicap_s_per_hr = EXCLUDED.starting_handicap_s_per_hr,
+                    current_handicap_s_per_hr = EXCLUDED.current_handicap_s_per_hr
+                """,
+                (
+                    comp.get("competitor_id"),
+                    comp.get("sailor_name"),
+                    comp.get("boat_name"),
+                    comp.get("sail_no"),
+                    comp.get("starting_handicap_s_per_hr") or 0,
+                    comp.get("current_handicap_s_per_hr") or comp.get("starting_handicap_s_per_hr") or 0,
+                ),
+            )
+        conn.commit()
+    return {"competitors": competitors}
 
 
 def get_settings(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = load_data() if data is None else data
-    return d.get("settings", {})
+    if data is not None:
+        return data.get("settings", {})
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute("SELECT config FROM settings ORDER BY id DESC LIMIT 1")
+            row = cur.fetchone()
+            if row and row.get("config"):
+                return row["config"]
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+        # Fallback on older split columns
+        try:
+            cur.execute(
+                "SELECT handicap_delta_by_rank, league_points_by_rank, fleet_size_factor FROM settings ORDER BY id DESC LIMIT 1"
+            )
+            r2 = cur.fetchone() or {}
+            return {
+                "handicap_delta_by_rank": r2.get("handicap_delta_by_rank") or [],
+                "league_points_by_rank": r2.get("league_points_by_rank") or [],
+                "fleet_size_factor": r2.get("fleet_size_factor") or [],
+            }
+        except Exception:
+            return {}
 
 
 def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = data or load_data()
-    d["settings"] = settings
-    save_data(d)
-    return d
+    with _get_conn() as conn, conn.cursor() as cur:
+        try:
+            cur.execute("DELETE FROM settings")
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+        try:
+            cur.execute(
+                """
+                INSERT INTO settings (version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor, config)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    settings.get("version"),
+                    settings.get("updated_at"),
+                    json.dumps(settings.get("handicap_delta_by_rank", [])),
+                    json.dumps(settings.get("league_points_by_rank", [])),
+                    json.dumps(settings.get("fleet_size_factor", [])),
+                    json.dumps(settings),
+                ),
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())) or isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
+            else:
+                raise
+        conn.commit()
+    return settings

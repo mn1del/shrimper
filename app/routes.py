@@ -66,6 +66,157 @@ def health_db():
             'error': str(e),
         }
 
+@bp.route('/health/indexes')
+def health_indexes():
+    """Report presence of recommended indexes for performance.
+
+    Checks for common lookup indexes on foreign keys and date ordering.
+    """
+    import os
+    url = os.environ.get('DATABASE_URL')
+    if not url:
+        return {
+            'connected': False,
+            'status': 'no_database_url',
+            'message': 'DATABASE_URL is not set; cannot inspect PostgreSQL indexes.'
+        }
+    try:
+        import psycopg2  # type: ignore
+        with psycopg2.connect(url, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT tablename, indexname, indexdef
+                    FROM pg_indexes
+                    WHERE schemaname = 'public'
+                      AND tablename IN ('seasons','series','races','race_results','competitors','settings')
+                    ORDER BY tablename, indexname
+                    """
+                )
+                idx = cur.fetchall()
+        # Helper to find an index by exact leading column list
+        def has_index(table: str, cols: str) -> bool:
+            cols_norm = cols.replace(' ', '')
+            for t, _name, defn in idx:
+                if t != table:
+                    continue
+                # Normalize definition
+                d = (defn or '').lower().replace(' ', '')
+                # Match "(col1,col2,...)" anywhere in def
+                if f'({cols_norm})' in d:
+                    return True
+            return False
+
+        checks = {
+            'series(season_id)': has_index('series', 'season_id'),
+            'races(series_id)': has_index('races', 'series_id'),
+            'races(date,start_time)': has_index('races', 'date, start_time'),
+            'races(series_id,date,start_time)': has_index('races', 'series_id, date, start_time'),
+            # For race_results, (race_id, competitor_id) unique index covers race_id lookups
+            'race_results(race_id)': (
+                has_index('race_results', 'race_id') or has_index('race_results', 'race_id, competitor_id')
+            ),
+            'race_results(competitor_id)': (
+                has_index('race_results', 'competitor_id') or has_index('race_results', 'competitor_id, race_id')
+            ),
+        }
+        missing = [k for k, v in checks.items() if not v]
+        suggestions = []
+        if 'series(season_id)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_series_season ON public.series(season_id);')
+        if 'races(series_id)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series ON public.races(series_id);')
+        if 'races(date,start_time)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_date_time ON public.races(date, start_time);')
+        if 'races(series_id,date,start_time)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series_date_time ON public.races(series_id, date, start_time);')
+        if 'race_results(race_id)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_race ON public.race_results(race_id);')
+        if 'race_results(competitor_id)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor ON public.race_results(competitor_id);')
+
+        return {
+            'connected': True,
+            'status': 'ok',
+            'indexes_present': checks,
+            'missing': missing,
+            'suggestions': suggestions,
+        }
+    except ImportError:
+        return {
+            'connected': False,
+            'status': 'client_missing',
+            'error': 'psycopg2 is not installed in this environment.'
+        }
+    except Exception as e:  # pragma: no cover
+        return {
+            'connected': False,
+            'status': 'error',
+            'error': str(e),
+        }
+
+@bp.route('/admin/indexes/apply', methods=['POST'])
+def apply_missing_indexes():
+    """Create recommended indexes if missing.
+
+    Runs CREATE INDEX CONCURRENTLY IF NOT EXISTS statements for each missing
+    index detected by the same logic as /health/indexes.
+    """
+    import os
+    url = os.environ.get('DATABASE_URL')
+    if not url:
+        return {'ok': False, 'status': 'no_database_url'}
+    try:
+        import psycopg2  # type: ignore
+        with psycopg2.connect(url, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                # Inspect existing indexes
+                cur.execute(
+                    """
+                    SELECT tablename, indexname, indexdef
+                    FROM pg_indexes
+                    WHERE schemaname = 'public'
+                      AND tablename IN ('seasons','series','races','race_results','competitors','settings')
+                    ORDER BY tablename, indexname
+                    """
+                )
+                idx = cur.fetchall()
+
+                def has_index(table: str, cols: str) -> bool:
+                    cols_norm = cols.replace(' ', '')
+                    for t, _name, defn in idx:
+                        if t != table:
+                            continue
+                        d = (defn or '').lower().replace(' ', '')
+                        if f'({cols_norm})' in d:
+                            return True
+                    return False
+
+                statements: list[str] = []
+                if not has_index('series', 'season_id'):
+                    statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_series_season ON public.series(season_id);')
+                # If series_id,date,start_time composite exists, plain series_id is optional
+                if not has_index('races', 'series_id, date, start_time'):
+                    if not has_index('races', 'series_id'):
+                        statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series ON public.races(series_id);')
+                if not has_index('races', 'date, start_time'):
+                    statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_date_time ON public.races(date, start_time);')
+                if not has_index('races', 'series_id, date, start_time'):
+                    statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series_date_time ON public.races(series_id, date, start_time);')
+                if not has_index('race_results', 'competitor_id') and not has_index('race_results', 'competitor_id, race_id'):
+                    statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor ON public.race_results(competitor_id);')
+
+                applied: list[str] = []
+                for sql in statements:
+                    cur.execute(sql)
+                    applied.append(sql)
+            conn.commit()
+        return {'ok': True, 'applied': applied}
+    except ImportError:
+        return {'ok': False, 'status': 'client_missing'}
+    except Exception as e:  # pragma: no cover
+        return {'ok': False, 'status': 'error', 'error': str(e)}
+
 
 #<getdata>
 def _series_meta_paths():
@@ -595,25 +746,145 @@ def series_detail(series_id):
             if comp.get('competitor_id')
         }
 
-        # Load all races from data.json and process them chronologically until target race
-        data = load_data()
-        race_objs: list[dict] = []
-        for season in data.get('seasons', []):
-            for s in season.get('series', []):
-                for r in s.get('races', []):
-                    race_objs.append(r)
-        race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
-
-        pre_race_handicaps = handicap_map
-        results: dict[str, dict] = {}
-
-        for race in race_objs:
-            start_seconds = _parse_hms(race.get('start_time'))
-            entrants = race.get('competitors', [])
+        # Fast path: compute only the selected race without scanning all races
+        skip_heavy = False
+        race = _find_race(race_id)
+        if race is not None:
+            start_seconds = _parse_hms(race.get('start_time')) or 0
+            entrants = race.get('competitors', []) or []
             entrants_map = {
                 e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
             }
-            snapshot = handicap_map.copy()
+            fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
+
+            ordered_ids: list[str] = []
+            for idx, comp in enumerate(fleet):
+                raw_cid = comp.get('competitor_id')
+                sail = (comp.get('sail_no') or '').strip()
+                cid_guess = f'C_{sail}' if (not raw_cid and sail) else raw_cid
+                if cid_guess and cid_guess in entrants_map:
+                    cid = cid_guess
+                elif raw_cid:
+                    cid = raw_cid
+                elif sail:
+                    cid = f'C_UNK_{sail}'
+                else:
+                    cid = f'C_UNK_{idx+1}'
+                ordered_ids.append(cid)
+
+            for cid in entrants_map.keys():
+                if cid not in ordered_ids:
+                    ordered_ids.append(cid)
+
+            calc_entries: list[dict] = []
+            pre_race_handicaps = {}
+            for cid in ordered_ids:
+                ent = entrants_map.get(cid, {})
+                comp = None
+                if cid.startswith('C_') and '_' in cid:
+                    sail = cid.split('_', 1)[1]
+                    comp = fleet_by_sail.get(sail)
+                initial = None
+                if ent.get('handicap_override') is not None:
+                    try:
+                        initial = int(ent['handicap_override'])
+                    except (ValueError, TypeError):
+                        initial = None
+                if initial is None:
+                    ih = ent.get('initial_handicap')
+                    if ih is not None:
+                        try:
+                            initial = int(ih)
+                        except (ValueError, TypeError):
+                            initial = None
+                if initial is None and comp is not None:
+                    initial = (
+                        comp.get('current_handicap_s_per_hr')
+                        or comp.get('starting_handicap_s_per_hr')
+                        or 0
+                    )
+                if initial is None:
+                    initial = 0
+                pre_race_handicaps[cid] = int(initial)
+                entry = {
+                    'competitor_id': cid,
+                    'start': start_seconds,
+                    'initial_handicap': int(initial),
+                }
+                ft = _parse_hms(ent.get('finish_time')) if ent else None
+                if ft is not None:
+                    entry['finish'] = ft
+                status = ent.get('status') if ent else None
+                if status:
+                    entry['status'] = status
+                calc_entries.append(entry)
+
+            results_list = calculate_race_results(calc_entries)
+            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
+            if finisher_count:
+                fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100))
+
+            results: dict[str, dict] = {}
+            for res in results_list:
+                cid = res.get('competitor_id')
+                entrant = entrants_map.get(cid, {})
+                finish_str = entrant.get('finish_time')
+                is_non_finisher = res.get('finish') is None
+                results[cid] = {
+                    'finish_time': finish_str,
+                    'on_course_secs': res.get('elapsed_seconds'),
+                    'abs_pos': res.get('absolute_position'),
+                    'allowance': res.get('allowance_seconds'),
+                    'adj_time_secs': res.get('adjusted_time_seconds'),
+                    'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                    'hcp_pos': res.get('handicap_position'),
+                    'race_pts': res.get('traditional_points')
+                    if res.get('traditional_points') is not None
+                    else (finisher_count + 1 if is_non_finisher else None),
+                    'league_pts': res.get('points')
+                    if res.get('points') is not None
+                    else (0.0 if is_non_finisher else None),
+                    'full_delta': res.get('full_delta')
+                    if res.get('full_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'scaled_delta': res.get('scaled_delta')
+                    if res.get('scaled_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'actual_delta': res.get('actual_delta')
+                    if res.get('actual_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'revised_hcp': res.get('revised_handicap')
+                    if res.get('revised_handicap') is not None
+                    else (
+                        res.get('initial_handicap') if is_non_finisher else None
+                    ),
+                    'place': res.get('status'),
+                    'handicap_override': entrant.get('handicap_override'),
+                }
+
+            selected_race = race
+            skip_heavy = True
+
+        if not skip_heavy:
+            # Load all races from data.json and process them chronologically until target race
+            data = load_data()
+            race_objs: list[dict] = []
+            for season in data.get('seasons', []):
+                for s in season.get('series', []):
+                    for r in s.get('races', []):
+                        race_objs.append(r)
+            race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
+
+            pre_race_handicaps = handicap_map
+            results: dict[str, dict] = {}
+
+            for race in race_objs:
+                start_seconds = _parse_hms(race.get('start_time'))
+                entrants = race.get('competitors', [])
+                entrants_map = {
+                    e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
+                }
+                snapshot = handicap_map.copy()
 
             if race.get('race_id') == race_id:
                 # Build entries for the full fleet order, enriching with any
@@ -949,8 +1220,10 @@ def update_fleet():
     """Persist fleet edits and refresh handicaps."""
     payload = request.get_json() or {}
     comps = payload.get('competitors', [])
-    data = load_data()
-    fleet_data = data.get('fleet', {'competitors': []})
+    # Load existing fleet only (avoid full dataset materialization)
+    fleet_data = ds_get_fleet()
+    if not fleet_data:
+        fleet_data = {'competitors': []}
     existing = {
         c.get('competitor_id'): c
         for c in fleet_data.get('competitors', [])
@@ -995,8 +1268,8 @@ def update_fleet():
 
     fleet_data['competitors'] = list(existing.values())
     fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-    data['fleet'] = fleet_data
-    save_data(data)
+    # Persist only fleet changes via datastore helper
+    ds_set_fleet(fleet_data)
     recalculate_handicaps()
     return {'status': 'ok'}
 #</getdata>
@@ -1028,9 +1301,8 @@ def save_settings():
     payload["version"] = int(existing.get("version", 0)) + 1
     payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
 
-    data = load_data()
-    data['settings'] = payload
-    save_data(data)
+    # Persist only settings via datastore helper
+    ds_set_settings(payload)
 
     # Reload scoring settings so future calculations use the new values
     importlib.reload(scoring_module)
