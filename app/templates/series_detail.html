@@ -145,7 +145,7 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>
-          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if result.handicap_override is not none else '' }}" disabled>
+          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
         </td>
         <td sorttable_customkey="{{ result.finish_time or '' }}"><input type="text" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled></td>
         <td>{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
