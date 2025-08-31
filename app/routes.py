@@ -709,41 +709,48 @@ def series_detail(series_id):
         # fleet, plus any entrants not present in the fleet register. This
         # ensures the race page serves as the full data entry point and shows
         # all boats even without a recorded finish time.
-        fleet_by_id = {c.get('competitor_id'): c for c in fleet if c.get('competitor_id')}
         display_list: list[dict] = []
         if selected_race:
-            # All competitor ids to include = fleet ids ∪ entrant ids
-            entrant_ids = [
-                e.get('competitor_id')
+            # Build map of this race's entrants
+            local_entrants_map = {
+                e.get('competitor_id'): e
                 for e in (selected_race.get('competitors', []) or [])
                 if e.get('competitor_id')
-            ]
-            fleet_ids = [cid for cid in fleet_by_id.keys()]
-            extra_ids = [cid for cid in entrant_ids if cid not in fleet_by_id]
-            ordered_ids = [*fleet_ids, *extra_ids]
+            }
 
-            # Map competitor_id -> entrant details for this race (if any)
-            # `entrants_map` is created earlier in the loop while locating the
-            # selected race; it refers to the selected race's entrants here.
-            local_entrants_map = {}
-            try:
-                local_entrants_map = entrants_map  # type: ignore[name-defined]
-            except NameError:
-                # Fallback (shouldn't generally happen) – rebuild a map
-                local_entrants_map = {
-                    e.get('competitor_id'): e
-                    for e in (selected_race.get('competitors', []) or [])
-                    if e.get('competitor_id')
-                }
+            seen: set[str] = set()
 
-            for cid in ordered_ids:
-                f = fleet_by_id.get(cid, {})
+            # 1) Add every fleet record, even if competitor_id is missing.
+            #    Use a stable fallback id based on sail number when needed.
+            for idx, f in enumerate(fleet):
+                cid = f.get('competitor_id')
+                if not cid:
+                    sail = (f.get('sail_no') or '').strip()
+                    cid = f'C_UNK_{sail}' if sail else f'C_UNK_{idx+1}'
+                seen.add(cid)
                 ent = local_entrants_map.get(cid, {})
                 display_list.append({
                     'competitor_id': cid,
                     'sailor_name': f.get('sailor_name', ''),
                     'boat_name': f.get('boat_name', ''),
                     'sail_no': f.get('sail_no', ''),
+                    'current_handicap_s_per_hr': (
+                        pre_race_handicaps.get(cid)
+                        if cid in pre_race_handicaps
+                        else f.get('current_handicap_s_per_hr')
+                        or f.get('starting_handicap_s_per_hr', 0)
+                    ),
+                })
+
+            # 2) Include any entrants not present in the fleet list
+            for cid, ent in local_entrants_map.items():
+                if cid in seen:
+                    continue
+                display_list.append({
+                    'competitor_id': cid,
+                    'sailor_name': '',
+                    'boat_name': '',
+                    'sail_no': '',
                     'current_handicap_s_per_hr': pre_race_handicaps.get(
                         cid,
                         ent.get('initial_handicap', 0),
@@ -1075,6 +1082,23 @@ def update_race(race_id):
         entrants_list = race_obj.setdefault('competitors', [])
         existing = {e.get('competitor_id'): e for e in entrants_list if e.get('competitor_id')}
 
+        # Helper: lookup baseline handicap by sail number when using fallback ids
+        fleet = ds_get_fleet().get('competitors', [])
+        by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
+        def _baseline_for_cid(cid: str) -> int | None:
+            if not cid:
+                return None
+            if cid.startswith('C_UNK_'):
+                sail = cid[6:]
+                comp = by_sail.get(sail)
+                if comp:
+                    return (
+                        comp.get('current_handicap_s_per_hr')
+                        or comp.get('starting_handicap_s_per_hr')
+                        or 0
+                    )
+            return None
+
         # Update existing entrants with new finish times
         for cid, entrant in list(existing.items()):
             if cid in ft_map:
@@ -1083,14 +1107,22 @@ def update_race(race_id):
         # Add new entrants that now have a finish time or an override
         for cid, finish in ft_map.items():
             if cid and cid not in existing and (finish not in (None, '')):
-                entrants_list.append({'competitor_id': cid, 'finish_time': finish})
-                existing[cid] = entrants_list[-1]
+                ent = {'competitor_id': cid, 'finish_time': finish}
+                base = _baseline_for_cid(cid)
+                if base is not None:
+                    ent['initial_handicap'] = int(base)
+                entrants_list.append(ent)
+                existing[cid] = ent
 
         # Also add entrants that only have a handicap override
         for cid, handicap in ov_map.items():
             if cid and cid not in existing and (handicap not in (None, '')):
-                entrants_list.append({'competitor_id': cid})
-                existing[cid] = entrants_list[-1]
+                ent = {'competitor_id': cid}
+                base = _baseline_for_cid(cid)
+                if base is not None:
+                    ent['initial_handicap'] = int(base)
+                entrants_list.append(ent)
+                existing[cid] = ent
 
         # Apply overrides across the (possibly expanded) entrant list
         _apply_overrides(entrants_list)
