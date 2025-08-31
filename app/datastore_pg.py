@@ -151,95 +151,95 @@ def load_data() -> Dict[str, Any]:
             if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
 
-        # Seasons -> Series -> Races -> Entrants
+        # Seasons + Series + Races -> Entrants (optimized in 2 round-trips)
+        joined_rows: List[Dict[str, Any]] = []
         try:
-            cur.execute("SELECT id, year FROM seasons ORDER BY year")
-            seasons = cur.fetchall()
+            cur.execute(
+                """
+                SELECT s.year AS season_year,
+                       se.series_id AS series_id,
+                       se.name AS series_name,
+                       COALESCE(se.year, s.year) AS series_year,
+                       r.race_id AS race_id,
+                       r.name AS race_name,
+                       r.date AS race_date,
+                       r.start_time AS start_time,
+                       r.race_no AS race_no
+                FROM seasons s
+                LEFT JOIN series se ON se.season_id = s.id
+                LEFT JOIN races r ON r.series_id = se.series_id
+                ORDER BY s.year, se.name, r.date NULLS LAST, r.start_time NULLS LAST, r.race_id
+                """
+            )
+            joined_rows = cur.fetchall() or []
         except Exception as e:
-            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                seasons = []
-            else:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
-        season_list: List[Dict[str, Any]] = []
-        for s in seasons:
-            season_obj = {"year": int(s["year"]), "series": []}
-            # series for this season
+
+        race_ids = [row.get("race_id") for row in joined_rows if row.get("race_id")]
+        results_by_race: Dict[str, List[Dict[str, Any]]] = {}
+        if race_ids:
             try:
                 cur.execute(
-                    "SELECT series_id, name, year FROM series WHERE season_id = %s ORDER BY name",
-                    (s["id"],),
+                    """
+                    SELECT race_id, competitor_id, initial_handicap, finish_time
+                    FROM race_results
+                    WHERE race_id = ANY(%s)
+                    ORDER BY race_id, competitor_id
+                    """,
+                    (race_ids,),
                 )
-                series_rows = cur.fetchall()
+                for ent in cur.fetchall() or []:
+                    rid = ent.get("race_id")
+                    if not rid:
+                        continue
+                    results_by_race.setdefault(rid, []).append(
+                        {
+                            "competitor_id": ent.get("competitor_id"),
+                            "initial_handicap": ent.get("initial_handicap"),
+                            "finish_time": _time_to_str(ent.get("finish_time")),
+                        }
+                    )
             except Exception as e:
-                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                    series_rows = []
-                else:
+                if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                     raise
-            for ser in series_rows:
+
+        seasons_map: Dict[int, Dict[str, Any]] = {}
+        series_map: Dict[tuple[int, str], Dict[str, Any]] = {}
+        for row in joined_rows:
+            y = row.get("season_year")
+            if y is None:
+                continue
+            year = int(y)
+            season_obj = seasons_map.setdefault(year, {"year": year, "series": []})
+            sid = row.get("series_id")
+            if not sid:
+                continue  # season with no series/races
+            key = (year, sid)
+            series_obj = series_map.get(key)
+            if series_obj is None:
                 series_obj = {
-                    "series_id": ser["series_id"],
-                    "name": ser["name"],
-                    "season": int(ser.get("year") or s["year"]),
+                    "series_id": sid,
+                    "name": row.get("series_name"),
+                    "season": int(row.get("series_year") or year),
                     "races": [],
                 }
-                # races
-                try:
-                    cur.execute(
-                        """
-                        SELECT race_id, name, date, start_time, race_no
-                        FROM races
-                        WHERE series_id = %s
-                        ORDER BY date NULLS LAST, start_time NULLS LAST, race_id
-                        """,
-                        (ser["series_id"],),
-                    )
-                    race_rows = cur.fetchall()
-                except Exception as e:
-                    if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                        race_rows = []
-                    else:
-                        raise
-                for r in race_rows:
-                    race_obj = {
-                        "race_id": r["race_id"],
-                        "series_id": ser["series_id"],
-                        "name": r.get("name"),
-                        "date": r.get("date").isoformat() if r.get("date") else None,
-                        "start_time": _time_to_str(r.get("start_time")),
-                        "race_no": r.get("race_no"),
-                        "competitors": [],
-                    }
-                    # entrants
-                    try:
-                        cur.execute(
-                            """
-                            SELECT competitor_id, initial_handicap, finish_time
-                            FROM race_results
-                            WHERE race_id = %s
-                            ORDER BY competitor_id
-                            """,
-                            (r["race_id"],),
-                        )
-                        ent_rows = cur.fetchall()
-                    except Exception as e:
-                        if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                            ent_rows = []
-                        else:
-                            raise
-                    entrants = []
-                    for ent in ent_rows:
-                        entrants.append(
-                            {
-                                "competitor_id": ent.get("competitor_id"),
-                                "initial_handicap": ent.get("initial_handicap"),
-                                "finish_time": _time_to_str(ent.get("finish_time")),
-                            }
-                        )
-                    race_obj["competitors"] = entrants
-                    series_obj["races"].append(race_obj)
+                series_map[key] = series_obj
                 season_obj["series"].append(series_obj)
-            season_list.append(season_obj)
-        out["seasons"] = season_list
+            rid = row.get("race_id")
+            if not rid:
+                continue
+            race_obj = {
+                "race_id": rid,
+                "series_id": sid,
+                "name": row.get("race_name"),
+                "date": (row.get("race_date").isoformat() if row.get("race_date") else None),
+                "start_time": _time_to_str(row.get("start_time")),
+                "race_no": row.get("race_no"),
+                "competitors": results_by_race.get(rid, []),
+            }
+            series_obj["races"].append(race_obj)
+        out["seasons"] = [seasons_map[k] for k in sorted(seasons_map.keys())]
 
     return out
 
