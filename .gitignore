@@ -8,3 +8,4 @@ instance/
 .env
 venv/
 *.egg-info/
+.dbvenv/
