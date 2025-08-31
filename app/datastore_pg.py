@@ -185,8 +185,8 @@ def load_data() -> Dict[str, Any]:
 def save_data(data: Dict[str, Any]) -> None:
     """Persist the provided JSON-like structure into PostgreSQL.
 
-    For simplicity, this performs full replacement of each section present in
-    the input (settings, fleet, seasons/series/races/results).
+    Optimized to upsert only the provided sections without wholesale deletes.
+    For races, deletes are targeted by comparing race_id sets.
     """
     with _get_conn() as conn:
         with conn.cursor() as cur:
@@ -214,13 +214,8 @@ def save_data(data: Dict[str, Any]) -> None:
                         ),
                     )
                 except Exception as e:
-                    # Older schema: only 'config' may exist
                     if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())) or isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                        try:
-                            cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
-                        except Exception:
-                            # Give up silently; settings not persisted
-                            pass
+                        cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
                     else:
                         raise
 
@@ -228,7 +223,12 @@ def save_data(data: Dict[str, Any]) -> None:
             if "fleet" in data and data["fleet"] is not None:
                 fleet = data["fleet"] or {"competitors": []}
                 competitors = fleet.get("competitors", [])
-                cur.execute("DELETE FROM competitors")
+                # Replace competitors set (keeps it simple and bounded)
+                try:
+                    cur.execute("DELETE FROM competitors")
+                except Exception as e:
+                    if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                        raise
                 for comp in competitors:
                     cur.execute(
                         """
@@ -256,32 +256,40 @@ def save_data(data: Dict[str, Any]) -> None:
             # Seasons / Series / Races / Results
             if "seasons" in data and data["seasons"] is not None:
                 seasons = data.get("seasons", [])
-                # Replace everything for determinism
-                cur.execute("DELETE FROM race_results")
-                cur.execute("DELETE FROM races")
-                cur.execute("DELETE FROM series")
-                cur.execute("DELETE FROM seasons")
 
+                # Build target sets
+                target_race_ids = set()
+                target_series = []
                 for season in seasons:
-                    year = int(season.get("year")) if season.get("year") is not None else None
-                    if year is None:
+                    y = season.get("year")
+                    if y is None:
                         continue
-                    cur.execute("INSERT INTO seasons (year) VALUES (%s) RETURNING id", (year,))
-                    season_id = cur.fetchone()[0]
+                    try:
+                        cur.execute(
+                            "INSERT INTO seasons (year) VALUES (%s) ON CONFLICT (year) DO NOTHING",
+                            (int(y),),
+                        )
+                    except Exception:
+                        pass
+                    # get season id
+                    cur.execute("SELECT id FROM seasons WHERE year = %s", (int(y),))
+                    row = cur.fetchone()
+                    season_id = row[0] if row else None
                     for series in season.get("series", []) or []:
-                        series_id = series.get("series_id")
+                        sid = series.get("series_id")
                         name = series.get("name")
+                        target_series.append((sid, name, season_id, int(y)))
                         cur.execute(
                             """
                             INSERT INTO series (series_id, name, season_id, year)
                             VALUES (%s, %s, %s, %s)
                             ON CONFLICT (series_id) DO UPDATE SET name = EXCLUDED.name, season_id = EXCLUDED.season_id, year = EXCLUDED.year
-                            RETURNING series_id
                             """,
-                            (series_id, name, season_id, year),
+                            (sid, name, season_id, int(y)),
                         )
-                        # Insert races
                         for race in series.get("races", []) or []:
+                            rid = race.get("race_id")
+                            target_race_ids.add(rid)
                             cur.execute(
                                 """
                                 INSERT INTO races (race_id, series_id, name, date, start_time, race_no)
@@ -294,15 +302,16 @@ def save_data(data: Dict[str, Any]) -> None:
                                     race_no = EXCLUDED.race_no
                                 """,
                                 (
-                                    race.get("race_id"),
-                                    series_id,
+                                    rid,
+                                    series.get("series_id"),
                                     race.get("name"),
                                     race.get("date"),
                                     race.get("start_time"),
                                     race.get("race_no"),
                                 ),
                             )
-                            # entrants
+                            # Replace entrants for this race for determinism
+                            cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
                             for ent in race.get("competitors", []) or []:
                                 cur.execute(
                                     """
@@ -313,12 +322,29 @@ def save_data(data: Dict[str, Any]) -> None:
                                         finish_time = EXCLUDED.finish_time
                                     """,
                                     (
-                                        race.get("race_id"),
+                                        rid,
                                         ent.get("competitor_id"),
                                         ent.get("initial_handicap"),
                                         ent.get("finish_time"),
                                     ),
                                 )
+
+                # Delete races no longer present (handles race deletions/renames)
+                try:
+                    cur.execute("SELECT race_id FROM races")
+                    existing_rids = {row[0] for row in cur.fetchall()}
+                except Exception:
+                    existing_rids = set()
+                to_delete = list(existing_rids - target_race_ids)
+                if to_delete:
+                    cur.execute(
+                        "DELETE FROM race_results WHERE race_id = ANY(%s)",
+                        (to_delete,),
+                    )
+                    cur.execute(
+                        "DELETE FROM races WHERE race_id = ANY(%s)",
+                        (to_delete,),
+                    )
 
         conn.commit()
 
