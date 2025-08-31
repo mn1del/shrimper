@@ -24,6 +24,48 @@ from .datastore import (
 
 bp = Blueprint('main', __name__)
 
+@bp.route('/health/db')
+def health_db():
+    """Database connectivity health check.
+
+    Attempts to connect using the ``DATABASE_URL`` environment variable and
+    returns basic server/user info. Always returns HTTP 200 with a JSON body
+    describing connection status.
+    """
+    import os
+    url = os.environ.get('DATABASE_URL')
+    if not url:
+        return {
+            'connected': False,
+            'status': 'no_database_url',
+            'message': 'DATABASE_URL is not set; JSON backend likely in use.'
+        }
+    try:
+        import psycopg2  # type: ignore
+        with psycopg2.connect(url, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT current_user, current_database(), version()')
+                user, db, ver = cur.fetchone()
+            return {
+                'connected': True,
+                'status': 'ok',
+                'user': user,
+                'database': db,
+                'server_version': (ver or '').split('\n')[0],
+            }
+    except ImportError:
+        return {
+            'connected': False,
+            'status': 'client_missing',
+            'error': 'psycopg2 is not installed in this environment.'
+        }
+    except Exception as e:  # pragma: no cover - best-effort health output
+        return {
+            'connected': False,
+            'status': 'error',
+            'error': str(e),
+        }
+
 
 #<getdata>
 def _series_meta_paths():
