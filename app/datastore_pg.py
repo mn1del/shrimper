@@ -36,23 +36,28 @@ def load_data() -> Dict[str, Any]:
     out: Dict[str, Any] = {"fleet": {"competitors": []}, "seasons": [], "settings": {}}
 
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # Settings (prefer stored config JSON if available)
+        # Settings (prefer stored JSON config if available); be tolerant of older schemas
         try:
-            cur.execute(
-                "SELECT config, version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor FROM settings ORDER BY id DESC LIMIT 1"
-            )
+            cur.execute("SELECT config FROM settings ORDER BY id DESC LIMIT 1")
             row = cur.fetchone()
-            if row:
-                if row.get("config"):
-                    out["settings"] = row["config"]
-                else:
+            if row and row.get("config"):
+                out["settings"] = row["config"]
+            else:
+                # Try to assemble minimal settings from split columns if they exist
+                try:
+                    cur.execute(
+                        "SELECT handicap_delta_by_rank, league_points_by_rank, fleet_size_factor FROM settings ORDER BY id DESC LIMIT 1"
+                    )
+                    r2 = cur.fetchone() or {}
                     out["settings"] = {
-                        "version": row.get("version"),
-                        "updated_at": row.get("updated_at").isoformat() + "Z" if row.get("updated_at") else None,
-                        "handicap_delta_by_rank": row.get("handicap_delta_by_rank") or [],
-                        "league_points_by_rank": row.get("league_points_by_rank") or [],
-                        "fleet_size_factor": row.get("fleet_size_factor") or [],
+                        "handicap_delta_by_rank": r2.get("handicap_delta_by_rank") or [],
+                        "league_points_by_rank": r2.get("league_points_by_rank") or [],
+                        "fleet_size_factor": r2.get("fleet_size_factor") or [],
                     }
+                except Exception as e2:
+                    # Columns may not exist yet; leave settings empty
+                    if not isinstance(e2, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        raise
         except Exception as e:  # settings table may not exist yet
             if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
@@ -188,21 +193,36 @@ def save_data(data: Dict[str, Any]) -> None:
             # Settings
             if "settings" in data and data["settings"] is not None:
                 settings = data["settings"]
-                cur.execute("DELETE FROM settings")
-                cur.execute(
-                    """
-                    INSERT INTO settings (version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor, config)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        settings.get("version"),
-                        settings.get("updated_at"),
-                        json.dumps(settings.get("handicap_delta_by_rank", [])),
-                        json.dumps(settings.get("league_points_by_rank", [])),
-                        json.dumps(settings.get("fleet_size_factor", [])),
-                        json.dumps(settings),
-                    ),
-                )
+                try:
+                    cur.execute("DELETE FROM settings")
+                except Exception as e:
+                    if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                        raise
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO settings (version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor, config)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            settings.get("version"),
+                            settings.get("updated_at"),
+                            json.dumps(settings.get("handicap_delta_by_rank", [])),
+                            json.dumps(settings.get("league_points_by_rank", [])),
+                            json.dumps(settings.get("fleet_size_factor", [])),
+                            json.dumps(settings),
+                        ),
+                    )
+                except Exception as e:
+                    # Older schema: only 'config' may exist
+                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())) or isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                        try:
+                            cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
+                        except Exception:
+                            # Give up silently; settings not persisted
+                            pass
+                    else:
+                        raise
 
             # Fleet
             if "fleet" in data and data["fleet"] is not None:
