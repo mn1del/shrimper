@@ -88,10 +88,26 @@ def _parse_hms(t: str | None) -> int | None:
 
 #<getdata>
 def _fleet_lookup() -> dict[str, dict]:
-    """Return mapping of competitor id to fleet details from data.json."""
+    """Return mapping of competitor id to fleet details from data.json.
+
+    Many imported fleet registers do not assign a stable ``competitor_id`` but
+    do include a unique sail number. Race entries in this project typically use
+    ids of the form ``C_<sail_no>`` (e.g. ``C_298``). To ensure standings and
+    per-race calculations can join fleet metadata to race entrants, derive an
+    id from the sail number when ``competitor_id`` is missing.
+    """
     fleet = ds_get_fleet()
     competitors = fleet.get("competitors", [])
-    return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
+    mapping: dict[str, dict] = {}
+    for c in competitors:
+        cid = c.get("competitor_id")
+        if cid:
+            mapping[cid] = c
+            continue
+        sail = str((c.get("sail_no") or "")).strip()
+        if sail:
+            mapping[f"C_{sail}"] = c
+    return mapping
 #</getdata>
 
 
