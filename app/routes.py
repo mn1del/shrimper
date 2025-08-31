@@ -885,8 +885,8 @@ def series_detail(series_id):
                     e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
                 }
                 snapshot = handicap_map.copy()
-
-            if race.get('race_id') == race_id:
+            
+                if race.get('race_id') == race_id:
                 # Build entries for the full fleet order, enriching with any
                 # entrants. This guarantees all fleet members appear and
                 # finishers line up with their result rows.
