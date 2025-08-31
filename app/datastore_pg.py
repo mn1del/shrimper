@@ -3,18 +3,80 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
+from psycopg2 import pool as pg_pool
 from psycopg2.extras import RealDictCursor
 from psycopg2 import errors as pg_errors
+from contextlib import contextmanager
 
 
-# Postgres-backed datastore implementing the same API as app/datastore.py
+_POOL: Optional[pg_pool.AbstractConnectionPool] = None
 
 
+def init_pool(minconn: int = 1, maxconn: int = 10) -> None:
+    """Initialize a global connection pool using DATABASE_URL.
+
+    Safe to call multiple times; subsequent calls are ignored once a pool exists.
+    """
+    global _POOL
+    if _POOL is not None:
+        return
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        # Leave _POOL as None; callers will fall back to direct connections
+        return
+    _POOL = pg_pool.ThreadedConnectionPool(minconn, maxconn, dsn=url)
+
+
+@contextmanager
 def _get_conn():
+    """Yield a database connection from the pool if available, else direct.
+
+    Returned object behaves like a psycopg2 connection within a context manager
+    and may be used with nested "with conn.cursor() as cur:" blocks.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL not set; configure a PostgreSQL connection string")
-    return psycopg2.connect(url)
+    if _POOL is not None:
+        conn = _POOL.getconn()
+        try:
+            try:
+                yield conn
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+        finally:
+            # Ensure connection not left in a transaction
+            try:
+                if getattr(conn, "closed", 0) == 0 and not conn.autocommit:
+                    # If caller didn't commit/rollback and transaction is open, rollback
+                    # status 0 = idle, 1 = active, 2 = intrans, 3 = inerror (psycopg2 docs)
+                    if getattr(conn, "status", 0) in (1, 2, 3):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+            finally:
+                _POOL.putconn(conn)
+    else:
+        conn = psycopg2.connect(url)
+        try:
+            try:
+                yield conn
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _time_to_str(val) -> Optional[str]:

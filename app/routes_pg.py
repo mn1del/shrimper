@@ -37,8 +37,20 @@ _base.ds_set_settings = _pg.set_settings
 
 # Ensure scoring constants reflect PostgreSQL settings
 def init_backend():
-    """Patch scoring settings from PostgreSQL (call at app start)."""
+    """Initialize DB pool and patch scoring settings from PostgreSQL."""
     try:
+        # Initialize a modest connection pool; override via env if desired
+        import os as _os
+        try:
+            minconn = int(_os.environ.get("DB_POOL_MIN", "1"))
+        except ValueError:
+            minconn = 1
+        try:
+            maxconn = int(_os.environ.get("DB_POOL_MAX", "10"))
+        except ValueError:
+            maxconn = 10
+        _pg.init_pool(minconn=minconn, maxconn=maxconn)
+
         settings = _pg.get_settings()
         _scoring._SETTINGS = settings  # type: ignore[attr-defined]
         hd, hd_def = _scoring._build_lookup(settings.get("handicap_delta_by_rank", []), "rank", "delta_s_per_hr")  # type: ignore[attr-defined]
