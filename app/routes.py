@@ -43,6 +43,11 @@ def health_db():
     try:
         import psycopg2  # type: ignore
         with psycopg2.connect(url, connect_timeout=5) as conn:
+            # CREATE INDEX CONCURRENTLY requires autocommit
+            try:
+                conn.autocommit = True
+            except Exception:
+                pass
             with conn.cursor() as cur:
                 cur.execute('SELECT current_user, current_database(), version()')
                 user, db, ver = cur.fetchone()
@@ -210,7 +215,6 @@ def apply_missing_indexes():
                 for sql in statements:
                     cur.execute(sql)
                     applied.append(sql)
-            conn.commit()
         return {'ok': True, 'applied': applied}
     except ImportError:
         return {'ok': False, 'status': 'client_missing'}
