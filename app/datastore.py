@@ -97,7 +97,7 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
                     "start_time": race.get("start_time"),
                     "series_name": series.get("name"),
                     "series_id": series.get("series_id"),
-                    "finishers": sum(1 for e in race.get("entrants", []) if e.get("finish_time")),
+                    "finishers": sum(1 for e in race.get("competitors", []) if e.get("finish_time")),
                     "season": season.get("year"),
                 })
     races.sort(key=lambda r: (r.get("date") or "", r.get("start_time") or ""), reverse=True)

@@ -139,7 +139,7 @@ def recalculate_handicaps() -> None:
     for race in race_list:
         start_seconds = _parse_hms(race.get("start_time")) or 0
         calc_entries: list[dict] = []
-        for ent in race.get("entrants", []):
+        for ent in race.get("competitors", []):
             cid = ent.get("competitor_id")
             if not cid:
                 continue
@@ -204,8 +204,8 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
             for race in series.get("races", []):
                 start_seconds = _parse_hms(race.get("start_time")) or 0
                 entrants_map = {
-                    ent.get("competitor_id"): ent
-                    for ent in race.get("entrants", [])
+                ent.get("competitor_id"): ent
+                    for ent in race.get("competitors", [])
                     if ent.get("competitor_id")
                 }
                 entries: list[dict] = []
@@ -477,7 +477,7 @@ def race_new():
         'series_id': '',
         'date': '',
         'start_time': '',
-        'entrants': [],
+        'competitors': [],
         'results': {},
     }
     breadcrumbs = [('Races', url_for('main.races')), ('Create New Race', None)]
@@ -551,7 +551,7 @@ def series_detail(series_id):
 
         for race in race_objs:
             start_seconds = _parse_hms(race.get('start_time'))
-            entrants = race.get('entrants', [])
+            entrants = race.get('competitors', [])
             entrants_map = {
                 e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
             }
@@ -913,12 +913,12 @@ def update_race(race_id):
             if not series_obj:
                 abort(400)
         series_id_val = series_obj.get('series_id')
-        # Build entrants from finish_times
-        entrants: list[dict] = []
+        # Build competitors from finish_times
+        competitors: list[dict] = []
         for ft in finish_times:
             ent = {'competitor_id': ft['competitor_id'], 'finish_time': ft.get('finish_time')}
-            entrants.append(ent)
-        entrants = _apply_overrides(entrants)
+            competitors.append(ent)
+        competitors = _apply_overrides(competitors)
         # Append new race, then renumber to assign id and sequence
         series_obj.setdefault('races', []).append({
             'race_id': '',
@@ -929,7 +929,7 @@ def update_race(race_id):
             'status': 'draft',
             'created_at': timestamp,
             'updated_at': timestamp,
-            'entrants': entrants,
+            'competitors': competitors,
             'results': {},
             'race_no': 0,
         })
@@ -984,11 +984,11 @@ def update_race(race_id):
         race_obj['start_time'] = start_time
     if finish_times:
         ft_map = {ft['competitor_id']: ft.get('finish_time') for ft in finish_times}
-        for entrant in race_obj.get('entrants', []):
+        for entrant in race_obj.get('competitors', []):
             cid = entrant.get('competitor_id')
             if cid in ft_map:
                 entrant['finish_time'] = ft_map[cid]
-    _apply_overrides(race_obj.get('entrants', []))
+    _apply_overrides(race_obj.get('competitors', []))
 
     race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
 
@@ -1005,7 +1005,7 @@ def update_race(race_id):
     final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
     redirect_series_id = target_series.get('series_id')
     redirect_url = url_for('main.series_detail', series_id=redirect_series_id, race_id=final_race_id)
-    finisher_count = sum(1 for e in race_obj.get('entrants', []) if e.get('finish_time'))
+    finisher_count = sum(1 for e in race_obj.get('competitors', []) if e.get('finish_time'))
     return {'finisher_count': finisher_count, 'redirect': redirect_url}
 #</getdata>
 
