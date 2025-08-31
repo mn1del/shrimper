@@ -705,28 +705,53 @@ def series_detail(series_id):
                 if revised is not None:
                     handicap_map[cid] = revised
 
-        # For the race view we want to show the boats that actually
-        # participated. Build a display list from the race's entrants and enrich
-        # with any available fleet details. This also ensures finish times are
-        # shown even when the fleet register lacks competitor IDs.
-        entrants_for_display = []
-        # Map competitor_id -> fleet entry (when available)
+        # Build a display list for the race table that includes the entire
+        # fleet, plus any entrants not present in the fleet register. This
+        # ensures the race page serves as the full data entry point and shows
+        # all boats even without a recorded finish time.
         fleet_by_id = {c.get('competitor_id'): c for c in fleet if c.get('competitor_id')}
+        display_list: list[dict] = []
         if selected_race:
-            for ent in selected_race.get('competitors', []) or []:
-                cid = ent.get('competitor_id')
-                if not cid:
-                    continue
+            # All competitor ids to include = fleet ids ∪ entrant ids
+            entrant_ids = [
+                e.get('competitor_id')
+                for e in (selected_race.get('competitors', []) or [])
+                if e.get('competitor_id')
+            ]
+            fleet_ids = [cid for cid in fleet_by_id.keys()]
+            extra_ids = [cid for cid in entrant_ids if cid not in fleet_by_id]
+            ordered_ids = [*fleet_ids, *extra_ids]
+
+            # Map competitor_id -> entrant details for this race (if any)
+            # `entrants_map` is created earlier in the loop while locating the
+            # selected race; it refers to the selected race's entrants here.
+            local_entrants_map = {}
+            try:
+                local_entrants_map = entrants_map  # type: ignore[name-defined]
+            except NameError:
+                # Fallback (shouldn't generally happen) – rebuild a map
+                local_entrants_map = {
+                    e.get('competitor_id'): e
+                    for e in (selected_race.get('competitors', []) or [])
+                    if e.get('competitor_id')
+                }
+
+            for cid in ordered_ids:
                 f = fleet_by_id.get(cid, {})
-                entrants_for_display.append({
+                ent = local_entrants_map.get(cid, {})
+                display_list.append({
                     'competitor_id': cid,
                     'sailor_name': f.get('sailor_name', ''),
                     'boat_name': f.get('boat_name', ''),
                     'sail_no': f.get('sail_no', ''),
-                    'current_handicap_s_per_hr': pre_race_handicaps.get(cid, ent.get('initial_handicap', 0)),
+                    'current_handicap_s_per_hr': pre_race_handicaps.get(
+                        cid,
+                        ent.get('initial_handicap', 0),
+                    ),
                 })
-            # Replace the fleet list used by the template with entrants
-            fleet = entrants_for_display
+
+            # Replace the fleet list used by the template with the full display list
+            fleet = display_list
 
         if selected_race:
             # Primary path: full results computed above
@@ -1043,13 +1068,32 @@ def update_race(race_id):
         race_obj['date'] = race_date
     if start_time is not None:
         race_obj['start_time'] = start_time
-    if finish_times:
-        ft_map = {ft['competitor_id']: ft.get('finish_time') for ft in finish_times}
-        for entrant in race_obj.get('competitors', []):
-            cid = entrant.get('competitor_id')
+    if finish_times or handicap_overrides:
+        ft_map = {ft['competitor_id']: ft.get('finish_time') for ft in (finish_times or [])}
+        ov_map = {o['competitor_id']: o.get('handicap') for o in (handicap_overrides or [])}
+
+        entrants_list = race_obj.setdefault('competitors', [])
+        existing = {e.get('competitor_id'): e for e in entrants_list if e.get('competitor_id')}
+
+        # Update existing entrants with new finish times
+        for cid, entrant in list(existing.items()):
             if cid in ft_map:
                 entrant['finish_time'] = ft_map[cid]
-    _apply_overrides(race_obj.get('competitors', []))
+
+        # Add new entrants that now have a finish time or an override
+        for cid, finish in ft_map.items():
+            if cid and cid not in existing and (finish not in (None, '')):
+                entrants_list.append({'competitor_id': cid, 'finish_time': finish})
+                existing[cid] = entrants_list[-1]
+
+        # Also add entrants that only have a handicap override
+        for cid, handicap in ov_map.items():
+            if cid and cid not in existing and (handicap not in (None, '')):
+                entrants_list.append({'competitor_id': cid})
+                existing[cid] = entrants_list[-1]
+
+        # Apply overrides across the (possibly expanded) entrant list
+        _apply_overrides(entrants_list)
 
     race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
 
