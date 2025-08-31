@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2 import errors as pg_errors
 
 
 # Postgres-backed datastore implementing the same API as app/datastore.py
@@ -36,55 +37,78 @@ def load_data() -> Dict[str, Any]:
 
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Settings (prefer stored config JSON if available)
-        cur.execute("SELECT config, version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor FROM settings ORDER BY id DESC LIMIT 1")
-        row = cur.fetchone()
-        if row:
-            if row.get("config"):
-                out["settings"] = row["config"]
-            else:
-                out["settings"] = {
-                    "version": row.get("version"),
-                    "updated_at": row.get("updated_at").isoformat() + "Z" if row.get("updated_at") else None,
-                    "handicap_delta_by_rank": row.get("handicap_delta_by_rank") or [],
-                    "league_points_by_rank": row.get("league_points_by_rank") or [],
-                    "fleet_size_factor": row.get("fleet_size_factor") or [],
-                }
+        try:
+            cur.execute(
+                "SELECT config, version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor FROM settings ORDER BY id DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            if row:
+                if row.get("config"):
+                    out["settings"] = row["config"]
+                else:
+                    out["settings"] = {
+                        "version": row.get("version"),
+                        "updated_at": row.get("updated_at").isoformat() + "Z" if row.get("updated_at") else None,
+                        "handicap_delta_by_rank": row.get("handicap_delta_by_rank") or [],
+                        "league_points_by_rank": row.get("league_points_by_rank") or [],
+                        "fleet_size_factor": row.get("fleet_size_factor") or [],
+                    }
+        except Exception as e:  # settings table may not exist yet
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
 
         # Fleet
-        cur.execute(
-            """
-            SELECT competitor_id, sailor_name, boat_name, sail_no,
-                   starting_handicap_s_per_hr, current_handicap_s_per_hr
-            FROM competitors
-            ORDER BY sail_no NULLS LAST, competitor_id
-            """
-        )
-        comps = []
-        for r in cur.fetchall():
-            comps.append(
-                {
-                    "competitor_id": r.get("competitor_id"),
-                    "sailor_name": r.get("sailor_name"),
-                    "boat_name": r.get("boat_name"),
-                    "sail_no": r.get("sail_no"),
-                    "starting_handicap_s_per_hr": r.get("starting_handicap_s_per_hr") or 0,
-                    "current_handicap_s_per_hr": r.get("current_handicap_s_per_hr") or r.get("starting_handicap_s_per_hr") or 0,
-                }
+        try:
+            cur.execute(
+                """
+                SELECT competitor_id, sailor_name, boat_name, sail_no,
+                       starting_handicap_s_per_hr, current_handicap_s_per_hr
+                FROM competitors
+                ORDER BY sail_no NULLS LAST, competitor_id
+                """
             )
-        out["fleet"]["competitors"] = comps
+            comps = []
+            for r in cur.fetchall():
+                comps.append(
+                    {
+                        "competitor_id": r.get("competitor_id"),
+                        "sailor_name": r.get("sailor_name"),
+                        "boat_name": r.get("boat_name"),
+                        "sail_no": r.get("sail_no"),
+                        "starting_handicap_s_per_hr": r.get("starting_handicap_s_per_hr") or 0,
+                        "current_handicap_s_per_hr": r.get("current_handicap_s_per_hr") or r.get("starting_handicap_s_per_hr") or 0,
+                    }
+                )
+            out["fleet"]["competitors"] = comps
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
 
         # Seasons -> Series -> Races -> Entrants
-        cur.execute("SELECT id, year FROM seasons ORDER BY year")
-        seasons = cur.fetchall()
+        try:
+            cur.execute("SELECT id, year FROM seasons ORDER BY year")
+            seasons = cur.fetchall()
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                seasons = []
+            else:
+                raise
         season_list: List[Dict[str, Any]] = []
         for s in seasons:
             season_obj = {"year": int(s["year"]), "series": []}
             # series for this season
-            cur.execute(
-                "SELECT series_id, name, year FROM series WHERE season_id = %s ORDER BY name",
-                (s["id"],),
-            )
-            for ser in cur.fetchall():
+            try:
+                cur.execute(
+                    "SELECT series_id, name, year FROM series WHERE season_id = %s ORDER BY name",
+                    (s["id"],),
+                )
+                series_rows = cur.fetchall()
+            except Exception as e:
+                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    series_rows = []
+                else:
+                    raise
+            for ser in series_rows:
                 series_obj = {
                     "series_id": ser["series_id"],
                     "name": ser["name"],
@@ -92,16 +116,23 @@ def load_data() -> Dict[str, Any]:
                     "races": [],
                 }
                 # races
-                cur.execute(
-                    """
-                    SELECT race_id, name, date, start_time, race_no
-                    FROM races
-                    WHERE series_id = %s
-                    ORDER BY date NULLS LAST, start_time NULLS LAST, race_id
-                    """,
-                    (ser["series_id"],),
-                )
-                for r in cur.fetchall():
+                try:
+                    cur.execute(
+                        """
+                        SELECT race_id, name, date, start_time, race_no
+                        FROM races
+                        WHERE series_id = %s
+                        ORDER BY date NULLS LAST, start_time NULLS LAST, race_id
+                        """,
+                        (ser["series_id"],),
+                    )
+                    race_rows = cur.fetchall()
+                except Exception as e:
+                    if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                        race_rows = []
+                    else:
+                        raise
+                for r in race_rows:
                     race_obj = {
                         "race_id": r["race_id"],
                         "series_id": ser["series_id"],
@@ -112,17 +143,24 @@ def load_data() -> Dict[str, Any]:
                         "competitors": [],
                     }
                     # entrants
-                    cur.execute(
-                        """
-                        SELECT competitor_id, initial_handicap, finish_time
-                        FROM race_results
-                        WHERE race_id = %s
-                        ORDER BY competitor_id
-                        """,
-                        (r["race_id"],),
-                    )
+                    try:
+                        cur.execute(
+                            """
+                            SELECT competitor_id, initial_handicap, finish_time
+                            FROM race_results
+                            WHERE race_id = %s
+                            ORDER BY competitor_id
+                            """,
+                            (r["race_id"],),
+                        )
+                        ent_rows = cur.fetchall()
+                    except Exception as e:
+                        if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                            ent_rows = []
+                        else:
+                            raise
                     entrants = []
-                    for ent in cur.fetchall():
+                    for ent in ent_rows:
                         entrants.append(
                             {
                                 "competitor_id": ent.get("competitor_id"),
@@ -269,7 +307,12 @@ def list_seasons(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     # Return seasons with their series metadata (without expanding races)
     seasons: List[Dict[str, Any]] = []
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id, year FROM seasons ORDER BY year")
+        try:
+            cur.execute("SELECT id, year FROM seasons ORDER BY year")
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return []
+            raise
         for s in cur.fetchall():
             seasons.append({"year": int(s["year"]), "series": []})
     return seasons
@@ -279,7 +322,12 @@ def list_series(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     # Flattened list of series objects
     out: List[Dict[str, Any]] = []
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT series_id, name, year FROM series ORDER BY year, name")
+        try:
+            cur.execute("SELECT series_id, name, year FROM series ORDER BY year, name")
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return []
+            raise
         for r in cur.fetchall():
             out.append({"series_id": r["series_id"], "name": r["name"], "season": int(r["year"])})
     return out
@@ -362,22 +410,27 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
 def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            """
-            SELECT r.race_id,
-                   r.date,
-                   r.start_time,
-                   s.name AS series_name,
-                   r.series_id,
-                   s.year AS season,
-                   COUNT(rr.finish_time) FILTER (WHERE rr.finish_time IS NOT NULL) AS finishers
-            FROM races r
-            JOIN series s ON s.series_id = r.series_id
-            LEFT JOIN race_results rr ON rr.race_id = r.race_id
-            GROUP BY r.race_id, r.date, r.start_time, s.name, r.series_id, s.year
-            ORDER BY r.date DESC NULLS LAST, r.start_time DESC NULLS LAST
-            """
-        )
+        try:
+            cur.execute(
+                """
+                SELECT r.race_id,
+                       r.date,
+                       r.start_time,
+                       s.name AS series_name,
+                       r.series_id,
+                       s.year AS season,
+                       COUNT(rr.finish_time) FILTER (WHERE rr.finish_time IS NOT NULL) AS finishers
+                FROM races r
+                JOIN series s ON s.series_id = r.series_id
+                LEFT JOIN race_results rr ON rr.race_id = r.race_id
+                GROUP BY r.race_id, r.date, r.start_time, s.name, r.series_id, s.year
+                ORDER BY r.date DESC NULLS LAST, r.start_time DESC NULLS LAST
+                """
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return []
+            raise
         for r in cur.fetchall():
             out.append(
                 {
@@ -457,4 +510,3 @@ def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None
     d["settings"] = settings
     save_data(d)
     return d
-

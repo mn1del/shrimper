@@ -20,6 +20,12 @@ def create_app():
         app.logger.info("Using JSON file backend (routes)")
 
     app.register_blueprint(routes.bp)
+    # Initialize PG-backed scoring constants if available
+    try:
+        if hasattr(routes, "init_backend"):
+            routes.init_backend()  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover
+        app.logger.exception("Postgres backend initialization failed; proceeding with defaults")
 
     app.logger.info("Starting handicap recalculation")
     try:

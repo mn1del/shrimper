@@ -25,17 +25,17 @@ def _build_lookup(entries: List[Dict], key_field: str, value_field: str) -> Tupl
     return lookup, default
 
 
-# Load configuration from data.json settings
-_SETTINGS = get_settings()
+# Load configuration and tolerate missing settings with safe defaults
+_SETTINGS = get_settings() or {}
 
 _HANDICAP_DELTAS, _HANDICAP_DEFAULT = _build_lookup(
-    _SETTINGS["handicap_delta_by_rank"], "rank", "delta_s_per_hr"
+    _SETTINGS.get("handicap_delta_by_rank", []), "rank", "delta_s_per_hr"
 )
 _LEAGUE_POINTS, _POINTS_DEFAULT = _build_lookup(
-    _SETTINGS["league_points_by_rank"], "rank", "points"
+    _SETTINGS.get("league_points_by_rank", []), "rank", "points"
 )
 _FLEET_FACTORS, _FLEET_DEFAULT = _build_lookup(
-    _SETTINGS["fleet_size_factor"], "finishers", "factor"
+    _SETTINGS.get("fleet_size_factor", []), "finishers", "factor"
 )
 
 
