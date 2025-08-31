@@ -77,6 +77,9 @@ def create_tables(conn):
                 id SERIAL PRIMARY KEY,
                 version INTEGER,
                 updated_at TIMESTAMP,
+                handicap_delta_by_rank JSONB,
+                league_points_by_rank JSONB,
+                fleet_size_factor JSONB,
                 config JSONB
             )
         """)
@@ -230,13 +233,19 @@ def migrate_settings(conn, data):
         # Clear existing settings
         cur.execute("DELETE FROM settings")
         
-        # Insert settings as JSONB
+        # Insert settings with individual arrays and full config
         cur.execute("""
-            INSERT INTO settings (version, updated_at, config)
-            VALUES (%s, %s, %s)
+            INSERT INTO settings (
+                version, updated_at, handicap_delta_by_rank, 
+                league_points_by_rank, fleet_size_factor, config
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             settings.get('version'),
             settings.get('updated_at'),
+            json.dumps(settings.get('handicap_delta_by_rank', [])),
+            json.dumps(settings.get('league_points_by_rank', [])),
+            json.dumps(settings.get('fleet_size_factor', [])),
             json.dumps(settings)
         ))
         
