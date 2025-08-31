@@ -112,6 +112,35 @@ CREATE TABLE settings (
 - **dates**: Stored as PostgreSQL DATE type, converted to ISO format strings
 - **JSONB fields**: Store arrays of scoring configuration objects
 
+### Database Indexes
+
+For optimal query performance, the following indexes are recommended:
+
+```sql
+-- Index for finding series within a season
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_series_season ON series(season_id);
+
+-- Index for finding races within a series
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series ON races(series_id);
+
+-- Index for ordering races by date and time
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_date_time ON races(date, start_time);
+
+-- Composite index for finding races within a series ordered by date/time
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series_date_time ON races(series_id, date, start_time);
+
+-- Index for finding all races a competitor participated in
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor ON race_results(competitor_id);
+
+-- Index for competitors lookup by sail number
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_competitors_sail_no ON competitors(sail_no);
+```
+
+To apply these indexes:
+```bash
+psql $DATABASE_URL -f add_indexes.sql
+```
+
 ### Migration
 
 To populate PostgreSQL from `data.json`:
