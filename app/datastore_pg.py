@@ -554,6 +554,99 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
     return out
 
 
+def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return a single season object with its series and races (with entrants).
+
+    Queries the DB in two round-trips: one join for seasons/series/races filtered
+    by the given year, and one bulk fetch of race_results for those races.
+    """
+    season_obj: Dict[str, Any] = {"year": int(season_year), "series": []}
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        rows: List[Dict[str, Any]] = []
+        try:
+            cur.execute(
+                """
+                SELECT s.year AS season_year,
+                       se.series_id AS series_id,
+                       se.name AS series_name,
+                       COALESCE(se.year, s.year) AS series_year,
+                       r.race_id AS race_id,
+                       r.name AS race_name,
+                       r.date AS race_date,
+                       r.start_time AS start_time,
+                       r.race_no AS race_no
+                FROM seasons s
+                LEFT JOIN series se ON se.season_id = s.id
+                LEFT JOIN races r ON r.series_id = se.series_id
+                WHERE s.year = %s
+                ORDER BY se.name, r.date NULLS LAST, r.start_time NULLS LAST, r.race_id
+                """,
+                (int(season_year),),
+            )
+            rows = cur.fetchall() or []
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+
+        race_ids = [row.get("race_id") for row in rows if row.get("race_id")]
+        results_by_race: Dict[str, List[Dict[str, Any]]] = {}
+        if race_ids:
+            try:
+                cur.execute(
+                    """
+                    SELECT race_id, competitor_id, initial_handicap, finish_time
+                    FROM race_results
+                    WHERE race_id = ANY(%s)
+                    ORDER BY race_id, competitor_id
+                    """,
+                    (race_ids,),
+                )
+                for ent in cur.fetchall() or []:
+                    rid = ent.get("race_id")
+                    if not rid:
+                        continue
+                    results_by_race.setdefault(rid, []).append(
+                        {
+                            "competitor_id": ent.get("competitor_id"),
+                            "initial_handicap": ent.get("initial_handicap"),
+                            "finish_time": _time_to_str(ent.get("finish_time")),
+                        }
+                    )
+            except Exception as e:
+                if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    raise
+
+        series_map: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            sid = row.get("series_id")
+            if not sid:
+                continue
+            series_obj = series_map.get(sid)
+            if series_obj is None:
+                series_obj = {
+                    "series_id": sid,
+                    "name": row.get("series_name"),
+                    "season": int(row.get("series_year") or season_year),
+                    "races": [],
+                }
+                series_map[sid] = series_obj
+                season_obj["series"].append(series_obj)
+            rid = row.get("race_id")
+            if not rid:
+                continue
+            race_obj = {
+                "race_id": rid,
+                "series_id": sid,
+                "name": row.get("race_name"),
+                "date": (row.get("race_date").isoformat() if row.get("race_date") else None),
+                "start_time": _time_to_str(row.get("start_time")),
+                "race_no": row.get("race_no"),
+                "competitors": results_by_race.get(rid, []),
+            }
+            series_obj["races"].append(race_obj)
+    return season_obj
+
+
 # The following helpers mirror the JSON datastore behavior for in-memory data
 def ensure_season(year: int, data: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     d = data or load_data()

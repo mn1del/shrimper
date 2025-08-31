@@ -14,6 +14,7 @@ from .datastore import (
     list_all_races as ds_list_all_races,
     list_seasons as ds_list_seasons,
     list_series as ds_list_series,
+    list_season_races_with_results as ds_list_season_races_with_results,
     find_series as ds_find_series,
     find_race as ds_find_race,
     ensure_series as ds_ensure_series,
@@ -456,11 +457,8 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
     fleet = _fleet_lookup()
     race_groups: list[dict] = []
 
-    data = load_data()
-    for season_obj in data.get("seasons", []):
-        if int(season_obj.get("year", 0)) != int(season):
-            continue
-        for series in season_obj.get("series", []):
+    season_obj = ds_list_season_races_with_results(int(season)) or {"series": []}
+    for series in season_obj.get("series", []):
             group = {
                 "series_name": series.get("name"),
                 "series_id": series.get("series_id"),
