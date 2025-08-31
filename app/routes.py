@@ -3,6 +3,8 @@ import json
 import importlib
 from datetime import datetime
 from pathlib import Path
+import os
+import time
 
 from .scoring import calculate_race_results, _scaling_factor
 from . import scoring as scoring_module
@@ -24,6 +26,54 @@ from .datastore import (
 
 
 bp = Blueprint('main', __name__)
+
+# Simple in-process caches for expensive computations
+_STANDINGS_CACHE: dict[tuple[int, str], tuple[float, tuple[list[dict], list[dict]]]] = {}
+_RACE_CACHE: dict[str, tuple[float, dict, int]] = {}
+_STANDINGS_TTL = int(os.environ.get('CACHE_TTL_STANDINGS', '180'))  # seconds
+_RACE_TTL = int(os.environ.get('CACHE_TTL_RACE', '120'))  # seconds
+
+
+def _cache_get_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]] | None:
+    key = (int(season), scoring)
+    entry = _STANDINGS_CACHE.get(key)
+    if not entry:
+        return None
+    exp, value = entry
+    if exp < time.time():
+        _STANDINGS_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set_standings(season: int, scoring: str, table: list[dict], groups: list[dict]) -> None:
+    _STANDINGS_CACHE[(int(season), scoring)] = (time.time() + _STANDINGS_TTL, (table, groups))
+
+
+def _cache_get_race(race_id: str) -> tuple[dict, int] | None:
+    entry = _RACE_CACHE.get(race_id or '')
+    if not entry:
+        return None
+    exp, results, fleet_adj = entry
+    if exp < time.time():
+        _RACE_CACHE.pop(race_id, None)
+        return None
+    return results, fleet_adj
+
+
+def _cache_set_race(race_id: str, results: dict, fleet_adjustment: int) -> None:
+    if not race_id:
+        return
+    _RACE_CACHE[race_id] = (time.time() + _RACE_TTL, results, int(fleet_adjustment or 0))
+
+
+def _cache_clear_all() -> None:
+    _STANDINGS_CACHE.clear()
+    _RACE_CACHE.clear()
+
+
+def _cache_delete_race(race_id: str) -> None:
+    _RACE_CACHE.pop(race_id or '', None)
 
 @bp.route('/health/db')
 def health_db():
@@ -782,8 +832,8 @@ def series_detail(series_id):
                 if cid not in ordered_ids:
                     ordered_ids.append(cid)
 
-            calc_entries: list[dict] = []
-            pre_race_handicaps = {}
+            # Precompute pre-race handicaps (used for display and as calc inputs)
+            pre_race_handicaps: dict[str, int] = {}
             for cid in ordered_ids:
                 ent = entrants_map.get(cid, {})
                 comp = None
@@ -812,61 +862,69 @@ def series_detail(series_id):
                 if initial is None:
                     initial = 0
                 pre_race_handicaps[cid] = int(initial)
-                entry = {
-                    'competitor_id': cid,
-                    'start': start_seconds,
-                    'initial_handicap': int(initial),
-                }
-                ft = _parse_hms(ent.get('finish_time')) if ent else None
-                if ft is not None:
-                    entry['finish'] = ft
-                status = ent.get('status') if ent else None
-                if status:
-                    entry['status'] = status
-                calc_entries.append(entry)
 
-            results_list = calculate_race_results(calc_entries)
-            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
-            if finisher_count:
-                fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100))
+            cached = _cache_get_race(race_id)
+            if cached is not None:
+                results, fleet_adjustment = cached
+            else:
+                calc_entries: list[dict] = []
+                for cid in ordered_ids:
+                    ent = entrants_map.get(cid, {})
+                    entry = {
+                        'competitor_id': cid,
+                        'start': start_seconds,
+                        'initial_handicap': pre_race_handicaps.get(cid, 0),
+                    }
+                    ft = _parse_hms(ent.get('finish_time')) if ent else None
+                    if ft is not None:
+                        entry['finish'] = ft
+                    status = ent.get('status') if ent else None
+                    if status:
+                        entry['status'] = status
+                    calc_entries.append(entry)
 
-            results: dict[str, dict] = {}
-            for res in results_list:
-                cid = res.get('competitor_id')
-                entrant = entrants_map.get(cid, {})
-                finish_str = entrant.get('finish_time')
-                is_non_finisher = res.get('finish') is None
-                results[cid] = {
-                    'finish_time': finish_str,
-                    'on_course_secs': res.get('elapsed_seconds'),
-                    'abs_pos': res.get('absolute_position'),
-                    'allowance': res.get('allowance_seconds'),
-                    'adj_time_secs': res.get('adjusted_time_seconds'),
-                    'adj_time': _format_hms(res.get('adjusted_time_seconds')),
-                    'hcp_pos': res.get('handicap_position'),
-                    'race_pts': res.get('traditional_points')
-                    if res.get('traditional_points') is not None
-                    else (finisher_count + 1 if is_non_finisher else None),
-                    'league_pts': res.get('points')
-                    if res.get('points') is not None
-                    else (0.0 if is_non_finisher else None),
-                    'full_delta': res.get('full_delta')
-                    if res.get('full_delta') is not None
-                    else (0 if is_non_finisher else None),
-                    'scaled_delta': res.get('scaled_delta')
-                    if res.get('scaled_delta') is not None
-                    else (0 if is_non_finisher else None),
-                    'actual_delta': res.get('actual_delta')
-                    if res.get('actual_delta') is not None
-                    else (0 if is_non_finisher else None),
-                    'revised_hcp': res.get('revised_handicap')
-                    if res.get('revised_handicap') is not None
-                    else (
-                        res.get('initial_handicap') if is_non_finisher else None
-                    ),
-                    'place': res.get('status'),
-                    'handicap_override': entrant.get('handicap_override'),
-                }
+                results_list = calculate_race_results(calc_entries)
+                finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
+                fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100)) if finisher_count else 0
+
+                results: dict[str, dict] = {}
+                for res in results_list:
+                    cid = res.get('competitor_id')
+                    entrant = entrants_map.get(cid, {})
+                    finish_str = entrant.get('finish_time')
+                    is_non_finisher = res.get('finish') is None
+                    results[cid] = {
+                        'finish_time': finish_str,
+                        'on_course_secs': res.get('elapsed_seconds'),
+                        'abs_pos': res.get('absolute_position'),
+                        'allowance': res.get('allowance_seconds'),
+                        'adj_time_secs': res.get('adjusted_time_seconds'),
+                        'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                        'hcp_pos': res.get('handicap_position'),
+                        'race_pts': res.get('traditional_points')
+                        if res.get('traditional_points') is not None
+                        else (finisher_count + 1 if is_non_finisher else None),
+                        'league_pts': res.get('points')
+                        if res.get('points') is not None
+                        else (0.0 if is_non_finisher else None),
+                        'full_delta': res.get('full_delta')
+                        if res.get('full_delta') is not None
+                        else (0 if is_non_finisher else None),
+                        'scaled_delta': res.get('scaled_delta')
+                        if res.get('scaled_delta') is not None
+                        else (0 if is_non_finisher else None),
+                        'actual_delta': res.get('actual_delta')
+                        if res.get('actual_delta') is not None
+                        else (0 if is_non_finisher else None),
+                        'revised_hcp': res.get('revised_handicap')
+                        if res.get('revised_handicap') is not None
+                        else (
+                            res.get('initial_handicap') if is_non_finisher else None
+                        ),
+                        'place': res.get('status'),
+                        'handicap_override': entrant.get('handicap_override'),
+                    }
+                _cache_set_race(race_id, results, fleet_adjustment)
 
             selected_race = race
             skip_heavy = True
@@ -1197,7 +1255,12 @@ def standings():
             season_val = seasons[0]
         else:
             season_val = season_int
-        table, race_groups = _season_standings(season_val, scoring)
+        cached = _cache_get_standings(season_val, scoring)
+        if cached is not None:
+            table, race_groups = cached
+        else:
+            table, race_groups = _season_standings(season_val, scoring)
+            _cache_set_standings(season_val, scoring, table, race_groups)
     breadcrumbs = [('Standings', None)]
     return render_template(
         'standings.html',
@@ -1278,6 +1341,8 @@ def update_fleet():
     # Persist only fleet changes via datastore helper
     ds_set_fleet(fleet_data)
     recalculate_handicaps()
+    # Bust caches after fleet update
+    _cache_clear_all()
     return {'status': 'ok'}
 #</getdata>
 
@@ -1313,6 +1378,9 @@ def save_settings():
 
     # Reload scoring settings so future calculations use the new values
     importlib.reload(scoring_module)
+
+    # Bust caches after settings change
+    _cache_clear_all()
 
     return {"status": "ok"}
 #</getdata>
@@ -1498,6 +1566,9 @@ def update_race(race_id):
     save_data(store)
     recalculate_handicaps()
 
+    # Bust caches after race update
+    _cache_clear_all()
+
     # Determine final race id after any renumber
     final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
     redirect_series_id = target_series.get('series_id')
@@ -1519,5 +1590,7 @@ def delete_race(race_id):
     ds_renumber_races(series_obj)
     save_data(store)
     redirect_url = url_for('main.series_detail', series_id=series_id)
+    # Bust caches after race deletion
+    _cache_clear_all()
     return {'redirect': redirect_url}
 #</getdata>
