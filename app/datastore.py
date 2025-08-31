@@ -11,12 +11,13 @@ def _load_raw() -> Dict[str, Any]:
     if not DATA_FILE.exists():
         # Minimal skeleton
         return {"fleet": {"competitors": []}, "seasons": [], "settings": {}}
-    with DATA_FILE.open() as f:
+    # Use utf-8-sig to tolerate BOM-prefixed files
+    with DATA_FILE.open(encoding="utf-8-sig") as f:
         return json.load(f)
 
 
 def _save_raw(data: Dict[str, Any]) -> None:
-    DATA_FILE.write_text(json.dumps(data, indent=2))
+    DATA_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def load_data() -> Dict[str, Any]:
@@ -149,4 +150,3 @@ def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None
     d["settings"] = settings
     save_data(d)
     return d
-
