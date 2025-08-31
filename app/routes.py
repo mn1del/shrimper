@@ -558,66 +558,77 @@ def series_detail(series_id):
             snapshot = handicap_map.copy()
 
             if race.get('race_id') == race_id:
-                # Build entries for full fleet using handicaps prior to this race
+                # Build entries for the full fleet order, enriching with any
+                # entrants. This guarantees all fleet members appear and
+                # finishers line up with their result rows.
                 calc_entries: list[dict] = []
-                # Prefer building from the race entrants so we don't depend on
-                # fleet competitor_id presence to show finish times/results.
-                if entrants:
-                    for entrant in entrants:
-                        cid = entrant.get('competitor_id')
-                        if not cid:
-                            continue
-                        initial = snapshot.get(cid)
-                        if initial is None:
-                            # Fall back to any initial handicap on the entrant
-                            # (useful when fleet register lacks competitor IDs)
-                            initial = entrant.get('initial_handicap', 0)
-                        # Apply any per-race override
-                        if entrant.get('handicap_override') is not None:
-                            try:
-                                initial = int(entrant['handicap_override'])
-                                snapshot[cid] = initial
-                            except (ValueError, TypeError):
-                                pass
-                        entry = {
-                            'competitor_id': cid,
-                            'start': start_seconds or 0,
-                            'initial_handicap': initial,
-                        }
-                        ft = _parse_hms(entrant.get('finish_time'))
-                        if ft is not None:
-                            entry['finish'] = ft
-                        status = entrant.get('status')
-                        if status:
-                            entry['status'] = status
-                        calc_entries.append(entry)
-                else:
-                    # Fallback: no entrants list present, use fleet (legacy)
-                    for comp in fleet:
-                        cid = comp.get('competitor_id')
-                        if not cid:
-                            continue
-                        entrant = entrants_map.get(cid)
-                        initial = snapshot.get(cid, 0)
-                        if entrant and entrant.get('handicap_override') is not None:
-                            try:
-                                initial = int(entrant['handicap_override'])
-                                snapshot[cid] = initial
-                            except (ValueError, TypeError):
-                                pass
-                        entry = {
-                            'competitor_id': cid,
-                            'start': start_seconds or 0,
-                            'initial_handicap': initial,
-                        }
-                        if entrant:
-                            ft = _parse_hms(entrant.get('finish_time'))
-                            if ft is not None:
-                                entry['finish'] = ft
-                            status = entrant.get('status')
-                            if status:
-                                entry['status'] = status
-                        calc_entries.append(entry)
+
+                # Helper maps by sail number for fleets without competitor_id
+                fleet_by_sail = {
+                    str((c.get('sail_no') or '')).strip(): c for c in fleet
+                }
+
+                # Build ordered ids using fleet order (derive C_<sail> when possible)
+                ordered_ids: list[str] = []
+                for idx, comp in enumerate(fleet):
+                    raw_cid = comp.get('competitor_id')
+                    sail = (comp.get('sail_no') or '').strip()
+                    cid_guess = f'C_{sail}' if (not raw_cid and sail) else raw_cid
+                    if cid_guess and cid_guess in entrants_map:
+                        cid = cid_guess
+                    elif raw_cid:
+                        cid = raw_cid
+                    elif sail:
+                        cid = f'C_UNK_{sail}'
+                    else:
+                        cid = f'C_UNK_{idx+1}'
+                    ordered_ids.append(cid)
+
+                # Append any remaining entrants not represented in fleet
+                for cid in entrants_map.keys():
+                    if cid not in ordered_ids:
+                        ordered_ids.append(cid)
+
+                # Build calc entries
+                for cid in ordered_ids:
+                    ent = entrants_map.get(cid, {})
+                    # Find fleet record for this id if possible
+                    comp = None
+                    if cid.startswith('C_') and '_' in cid:
+                        sail = cid.split('_', 1)[1]
+                        comp = fleet_by_sail.get(sail)
+                    # initial handicap preference: per-race override -> snapshot ->
+                    # entrant initial -> fleet current/starting -> 0
+                    initial = snapshot.get(cid)
+                    if ent.get('handicap_override') is not None:
+                        try:
+                            initial = int(ent['handicap_override'])
+                            snapshot[cid] = initial
+                        except (ValueError, TypeError):
+                            pass
+                    if initial is None:
+                        initial = ent.get('initial_handicap')
+                    if initial is None and comp is not None:
+                        initial = (
+                            comp.get('current_handicap_s_per_hr')
+                            or comp.get('starting_handicap_s_per_hr')
+                            or 0
+                        )
+                    if initial is None:
+                        initial = 0
+
+                    entry = {
+                        'competitor_id': cid,
+                        'start': start_seconds or 0,
+                        'initial_handicap': int(initial),
+                    }
+                    ft = _parse_hms(ent.get('finish_time')) if ent else None
+                    if ft is not None:
+                        entry['finish'] = ft
+                    status = ent.get('status') if ent else None
+                    if status:
+                        entry['status'] = status
+                    calc_entries.append(entry)
 
                 results_list = calculate_race_results(calc_entries)
                 finisher_count = sum(
@@ -723,10 +734,19 @@ def series_detail(series_id):
             # 1) Add every fleet record, even if competitor_id is missing.
             #    Use a stable fallback id based on sail number when needed.
             for idx, f in enumerate(fleet):
-                cid = f.get('competitor_id')
-                if not cid:
-                    sail = (f.get('sail_no') or '').strip()
-                    cid = f'C_UNK_{sail}' if sail else f'C_UNK_{idx+1}'
+                raw_cid = f.get('competitor_id')
+                sail = (f.get('sail_no') or '').strip()
+                # Prefer a matching entrant id when fleet lacks an id
+                cid_guess = f'C_{sail}' if (not raw_cid and sail) else raw_cid
+                cid = None
+                if cid_guess and cid_guess in local_entrants_map:
+                    cid = cid_guess
+                elif raw_cid:
+                    cid = raw_cid
+                elif sail:
+                    cid = f'C_UNK_{sail}'
+                else:
+                    cid = f'C_UNK_{idx+1}'
                 seen.add(cid)
                 ent = local_entrants_map.get(cid, {})
                 display_list.append({
@@ -736,9 +756,12 @@ def series_detail(series_id):
                     'sail_no': f.get('sail_no', ''),
                     'current_handicap_s_per_hr': (
                         pre_race_handicaps.get(cid)
-                        if cid in pre_race_handicaps
-                        else f.get('current_handicap_s_per_hr')
-                        or f.get('starting_handicap_s_per_hr', 0)
+                        if cid in pre_race_handicaps else (
+                            ent.get('initial_handicap')
+                            if ent.get('initial_handicap') is not None
+                            else f.get('current_handicap_s_per_hr')
+                            or f.get('starting_handicap_s_per_hr', 0)
+                        )
                     ),
                 })
 
