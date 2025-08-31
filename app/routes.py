@@ -6,112 +6,74 @@ from pathlib import Path
 
 from .scoring import calculate_race_results, _scaling_factor
 from . import scoring as scoring_module
+from .datastore import (
+    load_data,
+    save_data,
+    list_all_races as ds_list_all_races,
+    list_seasons as ds_list_seasons,
+    find_series as ds_find_series,
+    find_race as ds_find_race,
+    ensure_series as ds_ensure_series,
+    renumber_races as ds_renumber_races,
+    get_fleet as ds_get_fleet,
+    set_fleet as ds_set_fleet,
+    get_settings as ds_get_settings,
+    set_settings as ds_set_settings,
+)
 
 
 bp = Blueprint('main', __name__)
 
-#<getdata>
-DATA_DIR = Path(__file__).resolve().parent.parent / 'data'
-#</getdata>
-
 
 #<getdata>
 def _series_meta_paths():
-    """Yield paths to all series metadata files across seasons."""
-    for season_dir in DATA_DIR.iterdir():
-        if season_dir.is_dir():
-            yield from season_dir.glob("*/series_metadata.json")
+    """Deprecated: file-based data no longer used (single data.json)."""
+    return []
 #</getdata>
 
 
 #<getdata>
 def _load_series_entries():
-    """Return list of series with their race data."""
+    """Return list of series (metadata + races) from data.json."""
+    data = load_data()
     entries = []
-    for meta_path in sorted(_series_meta_paths()):
-        with meta_path.open() as f:
-            series = json.load(f)
-        races = []
-        races_dir = meta_path.parent / "races"
-        for race_path in sorted(races_dir.glob("*.json")):
-            with race_path.open() as rf:
-                races.append(json.load(rf))
-        entries.append({"series": series, "races": races})
+    for season in data.get("seasons", []):
+        for series in season.get("series", []):
+            meta = {"series_id": series.get("series_id"), "name": series.get("name"), "season": series.get("season")}
+            entries.append({"series": meta, "races": list(series.get("races", []))})
     return entries
 #</getdata>
 
 
 #<getdata>
 def _load_all_races():
-    """Return a flat list of all races with series info."""
-    races = []
-    for meta_path in _series_meta_paths():
-        with meta_path.open() as f:
-            series = json.load(f)
-        series_name = series.get("name")
-        series_id = series.get("series_id")
-        season = series.get("season")
-        races_dir = meta_path.parent / "races"
-        for race_path in races_dir.glob("*.json"):
-            with race_path.open() as rf:
-                race = json.load(rf)
-            finishers = sum(1 for e in race.get("entrants", []) if e.get("finish_time"))
-            races.append({
-                "race_id": race.get("race_id"),
-                "date": race.get("date"),
-                "start_time": race.get("start_time"),
-                "series_name": series_name,
-                "series_id": series_id,
-                "finishers": finishers,
-                "season": season,
-            })
-    # Sort races by date and start time in descending order so the most recent
-    # race appears first in the list. Missing dates or times are treated as
-    # empty strings so they sort last.
-    races.sort(
-        key=lambda r: (r["date"] or "", r["start_time"] or ""),
-        reverse=True,
-    )
-    return races
+    """Return a flat list of all races with series info from data.json."""
+    return ds_list_all_races()
 #</getdata>
 
 
 #<getdata>
 def _find_series(series_id: str):
-    """Return (series, races) for the given series id or (None, None).
-
-    Series identifiers may appear with inconsistent casing across the data.
-    To make routing more robust, comparisons are performed case-insensitively.
-    """
-    target = series_id.lower()
-    for entry in _load_series_entries():
-        sid = entry["series"].get("series_id")
-        if sid and sid.lower() == target:
-            return entry["series"], entry["races"]
-    return None, None
+    """Return (series_meta, races) for the given series id or (None, None)."""
+    _season, series = ds_find_series(series_id)
+    if not series:
+        return None, None
+    meta = {"series_id": series.get("series_id"), "name": series.get("name"), "season": series.get("season")}
+    return meta, list(series.get("races", []))
 #</getdata>
 
 
 #<getdata>
 def _find_race(race_id: str):
     """Return race data for the given race id or None if not found."""
-    for meta_path in _series_meta_paths():
-        races_dir = meta_path.parent / "races"
-        race_path = races_dir / f"{race_id}.json"
-        if race_path.exists():
-            with race_path.open() as f:
-                return json.load(f)
-    return None
+    _season, _series, race = ds_find_race(race_id)
+    return race
 #</getdata>
 
 
 #<getdata>
 def _race_path(race_id: str):
-    """Return the Path to a race JSON file or None if not found."""
-    for meta_path in _series_meta_paths():
-        race_path = meta_path.parent / "races" / f"{race_id}.json"
-        if race_path.exists():
-            return race_path
+    """Deprecated: now stored inside data.json; kept for compatibility."""
     return None
 #</getdata>
 
@@ -126,13 +88,9 @@ def _parse_hms(t: str | None) -> int | None:
 
 #<getdata>
 def _fleet_lookup() -> dict[str, dict]:
-    """Return mapping of competitor id to fleet details."""
-    path = DATA_DIR / "fleet.json"
-    try:
-        with path.open() as f:
-            competitors = json.load(f).get("competitors", [])
-    except FileNotFoundError:
-        competitors = []
+    """Return mapping of competitor id to fleet details from data.json."""
+    fleet = ds_get_fleet()
+    competitors = fleet.get("competitors", [])
     return {c.get("competitor_id"): c for c in competitors if c.get("competitor_id")}
 #</getdata>
 
@@ -160,14 +118,8 @@ def recalculate_handicaps() -> None:
     handicaps produced from the race are then fed forward to subsequent races
     and ultimately written back to the fleet register.
     """
-
-    fleet_path = DATA_DIR / "fleet.json"
-    try:
-        with fleet_path.open() as f:
-            fleet_data = json.load(f)
-    except FileNotFoundError:
-        return
-
+    data = load_data()
+    fleet_data = data.get("fleet", {"competitors": []})
     competitors = fleet_data.get("competitors", [])
     handicap_map = {
         c.get("competitor_id"): c.get("starting_handicap_s_per_hr", 0)
@@ -175,14 +127,16 @@ def recalculate_handicaps() -> None:
         if c.get("competitor_id")
     }
 
-    race_files: list[tuple[dict, Path]] = []
-    for race_path in DATA_DIR.rglob("RACE_*.json"):
-        with race_path.open() as rf:
-            race_files.append((json.load(rf), race_path))
+    # Build list of (race_obj) across all seasons/series
+    race_list: list[dict] = []
+    for season in data.get("seasons", []):
+        for series in season.get("series", []):
+            for race in series.get("races", []):
+                race_list.append(race)
 
-    race_files.sort(key=lambda r: (r[0].get("date"), r[0].get("start_time")))
+    race_list.sort(key=lambda r: (r.get("date"), r.get("start_time")))
 
-    for race, race_path in race_files:
+    for race in race_list:
         start_seconds = _parse_hms(race.get("start_time")) or 0
         calc_entries: list[dict] = []
         for ent in race.get("entrants", []):
@@ -219,9 +173,6 @@ def recalculate_handicaps() -> None:
                 if cid and revised is not None:
                     handicap_map[cid] = revised
 
-        with race_path.open("w") as rf:
-            json.dump(race, rf, indent=2)
-
     for comp in competitors:
         cid = comp.get("competitor_id")
         if cid:
@@ -229,8 +180,8 @@ def recalculate_handicaps() -> None:
                 cid, comp.get("current_handicap_s_per_hr", 0)
             )
 
-    with fleet_path.open("w") as f:
-        json.dump(fleet_data, f, indent=2)
+    data["fleet"] = fleet_data
+    save_data(data)
 #</getdata>
 
 
@@ -240,62 +191,58 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
     fleet = _fleet_lookup()
     race_groups: list[dict] = []
 
-    for meta_path in _series_meta_paths():
-        with meta_path.open() as f:
-            series = json.load(f)
-        if int(series.get("season", 0)) != int(season):
+    data = load_data()
+    for season_obj in data.get("seasons", []):
+        if int(season_obj.get("year", 0)) != int(season):
             continue
-
-        group = {
-            "series_name": series.get("name"),
-            "series_id": series.get("series_id"),
-            "races": [],
-        }
-        races_dir = meta_path.parent / "races"
-        for race_path in races_dir.glob("*.json"):
-            with race_path.open() as rf:
-                race = json.load(rf)
-            start_seconds = _parse_hms(race.get("start_time")) or 0
-            entrants_map = {
-                ent.get("competitor_id"): ent
-                for ent in race.get("entrants", [])
-                if ent.get("competitor_id")
+        for series in season_obj.get("series", []):
+            group = {
+                "series_name": series.get("name"),
+                "series_id": series.get("series_id"),
+                "races": [],
             }
-            entries: list[dict] = []
-            for cid, info in fleet.items():
-                entry = {
-                    "competitor_id": cid,
-                    "start": start_seconds,
-                    "initial_handicap": entrants_map.get(cid, {}).get(
-                        "initial_handicap",
-                        info.get("current_handicap_s_per_hr")
-                        or info.get("starting_handicap_s_per_hr", 0),
-                    ),
-                    "sailor": info.get("sailor_name"),
-                    "boat": info.get("boat_name"),
-                    "sail_number": info.get("sail_no"),
+            for race in series.get("races", []):
+                start_seconds = _parse_hms(race.get("start_time")) or 0
+                entrants_map = {
+                    ent.get("competitor_id"): ent
+                    for ent in race.get("entrants", [])
+                    if ent.get("competitor_id")
                 }
-                ent = entrants_map.get(cid)
-                if ent:
-                    ft = ent.get("finish_time")
-                    if ft:
-                        entry["finish"] = _parse_hms(ft)
-                    status = ent.get("status")
-                    if status:
-                        entry["status"] = status
-                entries.append(entry)
-            results = calculate_race_results(entries)
-            group["races"].append(
-                {
-                    "race_id": race.get("race_id"),
-                    "date": race.get("date"),
-                    "start_time": race.get("start_time"),
-                    "results": results,
-                }
-            )
-        if group["races"]:
-            group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
-            race_groups.append(group)
+                entries: list[dict] = []
+                for cid, info in fleet.items():
+                    entry = {
+                        "competitor_id": cid,
+                        "start": start_seconds,
+                        "initial_handicap": entrants_map.get(cid, {}).get(
+                            "initial_handicap",
+                            info.get("current_handicap_s_per_hr")
+                            or info.get("starting_handicap_s_per_hr", 0),
+                        ),
+                        "sailor": info.get("sailor_name"),
+                        "boat": info.get("boat_name"),
+                        "sail_number": info.get("sail_no"),
+                    }
+                    ent = entrants_map.get(cid)
+                    if ent:
+                        ft = ent.get("finish_time")
+                        if ft:
+                            entry["finish"] = _parse_hms(ft)
+                        status = ent.get("status")
+                        if status:
+                            entry["status"] = status
+                    entries.append(entry)
+                results = calculate_race_results(entries)
+                group["races"].append(
+                    {
+                        "race_id": race.get("race_id"),
+                        "date": race.get("date"),
+                        "start_time": race.get("start_time"),
+                        "results": results,
+                    }
+                )
+            if group["races"]:
+                group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
+                race_groups.append(group)
 
     race_groups.sort(key=lambda g: g["series_name"] or "")
 
@@ -524,9 +471,7 @@ def _renumber_races(series_dir: Path) -> dict[str, str]:
 @bp.route('/races/new')
 def race_new():
     series_list = [entry['series'] for entry in _load_series_entries()]
-    fleet_path = DATA_DIR / 'fleet.json'
-    with fleet_path.open() as f:
-        fleet = json.load(f).get('competitors', [])
+    fleet = ds_get_fleet().get('competitors', [])
     blank_race = {
         'race_id': '__new__',
         'series_id': '',
@@ -585,21 +530,20 @@ def series_detail(series_id):
     if race_id:
         #<getdata>
         # Load baseline handicaps from fleet register
-        fleet_path = DATA_DIR / 'fleet.json'
-        with fleet_path.open() as f:
-            fleet = json.load(f).get('competitors', [])
+        fleet = ds_get_fleet().get('competitors', [])
         handicap_map = {
             comp.get('competitor_id'): comp.get('starting_handicap_s_per_hr', 0)
             for comp in fleet
             if comp.get('competitor_id')
         }
 
-        # Load all races and process them chronologically until target race
-        race_objs = []
-        for race_path in DATA_DIR.rglob('RACE_*.json'):
-            with race_path.open() as rf:
-                race = json.load(rf)
-            race_objs.append(race)
+        # Load all races from data.json and process them chronologically until target race
+        data = load_data()
+        race_objs: list[dict] = []
+        for season in data.get('seasons', []):
+            for s in season.get('series', []):
+                for r in s.get('races', []):
+                    race_objs.append(r)
         race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
 
         pre_race_handicaps = handicap_map
@@ -786,10 +730,8 @@ def race_sheet(race_id):
 def standings():
     scoring = request.args.get('format', 'league').lower()
     season_param = request.args.get('season')
-    seasons = sorted(
-        {int(json.load(p.open()).get('season')) for p in _series_meta_paths()},
-        reverse=True,
-    )
+    data = load_data()
+    seasons = sorted({int(season.get('year')) for season in data.get('seasons', [])}, reverse=True)
     if not seasons:
         season_val = None
         table = []
@@ -822,10 +764,7 @@ def standings():
 @bp.route('/fleet')
 def fleet():
     breadcrumbs = [('Fleet', None)]
-    data_path = Path(__file__).resolve().parent.parent / 'data' / 'fleet.json'
-    with data_path.open() as f:
-        data = json.load(f)
-    competitors = data.get('competitors', [])
+    competitors = ds_get_fleet().get('competitors', [])
     return render_template('fleet.html', title='Fleet', breadcrumbs=breadcrumbs, fleet=competitors)
 #</getdata>
 
@@ -834,14 +773,10 @@ def fleet():
 @bp.route('/api/fleet', methods=['POST'])
 def update_fleet():
     """Persist fleet edits and refresh handicaps."""
-    fleet_path = DATA_DIR / 'fleet.json'
     payload = request.get_json() or {}
     comps = payload.get('competitors', [])
-    try:
-        with fleet_path.open() as f:
-            fleet_data = json.load(f)
-    except FileNotFoundError:
-        fleet_data = {'competitors': []}
+    data = load_data()
+    fleet_data = data.get('fleet', {'competitors': []})
     existing = {
         c.get('competitor_id'): c
         for c in fleet_data.get('competitors', [])
@@ -886,8 +821,8 @@ def update_fleet():
 
     fleet_data['competitors'] = list(existing.values())
     fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-    with fleet_path.open('w') as f:
-        json.dump(fleet_data, f, indent=2)
+    data['fleet'] = fleet_data
+    save_data(data)
     recalculate_handicaps()
     return {'status': 'ok'}
 #</getdata>
@@ -903,9 +838,7 @@ def rules():
 @bp.route('/settings')
 def settings():
     breadcrumbs = [('Settings', None)]
-    data_path = DATA_DIR / 'settings.json'
-    with data_path.open() as f:
-        settings_data = json.load(f)
+    settings_data = ds_get_settings()
     return render_template('settings.html', title='Settings', breadcrumbs=breadcrumbs, settings=settings_data)
 #</getdata>
 
@@ -914,20 +847,16 @@ def settings():
 @bp.route('/api/settings', methods=['POST'])
 def save_settings():
     """Persist updated settings to the JSON configuration file."""
-    data_path = DATA_DIR / 'settings.json'
     payload = request.get_json() or {}
     # Preserve versioning information and update timestamp
-    try:
-        with data_path.open() as f:
-            existing = json.load(f)
-    except FileNotFoundError:
-        existing = {"version": 0}
+    existing = ds_get_settings() or {"version": 0}
 
     payload["version"] = int(existing.get("version", 0)) + 1
     payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
 
-    with data_path.open('w') as f:
-        json.dump(payload, f, indent=2)
+    data = load_data()
+    data['settings'] = payload
+    save_data(data)
 
     # Reload scoring settings so future calculations use the new values
     importlib.reload(scoring_module)
@@ -946,63 +875,55 @@ def update_race(race_id):
     start_time = data.get('start_time')
     finish_times = data.get('finish_times', [])
     handicap_overrides = data.get('handicap_overrides', [])
+
+    store = load_data()
+
+    def _apply_overrides(entrants_list: list[dict]):
+        if not handicap_overrides:
+            return entrants_list
+        ov_map = {o['competitor_id']: o.get('handicap') for o in handicap_overrides}
+        for ent in entrants_list:
+            cid = ent.get('competitor_id')
+            if cid in ov_map:
+                val = ov_map[cid]
+                if val in (None, ''):
+                    ent.pop('handicap_override', None)
+                else:
+                    try:
+                        ent['handicap_override'] = int(val)
+                    except (ValueError, TypeError):
+                        ent.pop('handicap_override', None)
+        return entrants_list
+
     if race_id == '__new__':
         if series_choice is None or not race_date:
             abort(400)
         start_time = start_time or ''
         timestamp = datetime.utcnow().isoformat() + 'Z'
+        try:
+            season_year = int(datetime.strptime(race_date, '%Y-%m-%d').year)
+        except ValueError:
+            abort(400)
         if series_choice == '__new__':
             if not new_series_name:
                 abort(400)
-            try:
-                season = datetime.strptime(race_date, '%Y-%m-%d').year
-            except ValueError:
-                abort(400)
-            series_id = f"SER_{season}_{new_series_name}"
-            season_dir = DATA_DIR / str(season)
-            series_dir = season_dir / new_series_name
-            (series_dir / 'races').mkdir(parents=True, exist_ok=True)
-            series_meta = {
-                'series_id': series_id,
-                'name': new_series_name,
-                'season': int(season),
-            }
-            with (series_dir / 'series_metadata.json').open('w') as f:
-                json.dump(series_meta, f, indent=2)
+            store, season_obj, series_obj = ds_ensure_series(season_year, new_series_name, data=store)
         else:
-            meta_path, series_meta = _load_series_meta(series_choice)
-            if not meta_path:
+            _season_obj, series_obj = ds_find_series(series_choice, data=store)
+            if not series_obj:
                 abort(400)
-            series_id = series_meta.get('series_id')
-            series_dir = meta_path.parent
-        if start_time:
-            try:
-                datetime.strptime(start_time, '%H:%M:%S')
-            except ValueError:
-                abort(400)
-        races_dir = series_dir / 'races'
-        races_dir.mkdir(parents=True, exist_ok=True)
-        seq = len(list(races_dir.glob('*.json'))) + 1
-        race_id = f"RACE_{race_date}_{series_meta['name']}_{seq}"
-        race_name = f"{series_id}_{seq}"
-        ov_map = {o['competitor_id']: o.get('handicap') for o in handicap_overrides}
-        entrants = []
+        series_id_val = series_obj.get('series_id')
+        # Build entrants from finish_times
+        entrants: list[dict] = []
         for ft in finish_times:
-            ent = {
-                'competitor_id': ft['competitor_id'],
-                'finish_time': ft.get('finish_time'),
-            }
-            ov = ov_map.get(ft['competitor_id'])
-            if ov not in (None, ''):
-                try:
-                    ent['handicap_override'] = int(ov)
-                except (ValueError, TypeError):
-                    pass
+            ent = {'competitor_id': ft['competitor_id'], 'finish_time': ft.get('finish_time')}
             entrants.append(ent)
-        race_data = {
-            'race_id': race_id,
-            'series_id': series_id,
-            'name': race_name,
+        entrants = _apply_overrides(entrants)
+        # Append new race, then renumber to assign id and sequence
+        series_obj.setdefault('races', []).append({
+            'race_id': '',
+            'series_id': series_id_val,
+            'name': '',
             'date': race_date,
             'start_time': start_time,
             'status': 'draft',
@@ -1010,103 +931,81 @@ def update_race(race_id):
             'updated_at': timestamp,
             'entrants': entrants,
             'results': {},
-            'race_no': seq,
-        }
-        with (races_dir / f'{race_id}.json').open('w') as f:
-            json.dump(race_data, f, indent=2)
-        mapping = _renumber_races(series_dir)
-        race_id = mapping.get(race_id, race_id)
+            'race_no': 0,
+        })
+        mapping = ds_renumber_races(series_obj)
+        # The last race is the one we added
+        new_race = series_obj['races'][-1]
+        new_race_id = new_race.get('race_id')
+        # Persist
+        save_data(store)
         recalculate_handicaps()
         finisher_count = sum(1 for ft in finish_times if ft.get('finish_time'))
-        redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
+        redirect_url = url_for('main.series_detail', series_id=series_id_val, race_id=new_race_id)
         return {'finisher_count': finisher_count, 'redirect': redirect_url}
 
-    race_path = _race_path(race_id)
-    if race_path is None:
+    # Editing an existing race
+    season_obj, series_obj, race_obj = ds_find_race(race_id, data=store)
+    if not race_obj or not series_obj:
         abort(404)
-    with race_path.open() as f:
-        race_data = json.load(f)
 
+    current_series_id = series_obj.get('series_id')
     redirect_url = None
-    current_series_id = race_data.get('series_id')
-    orig_series_dir = race_path.parent.parent
+    target_series = series_obj
+
     if series_choice:
         if series_choice == '__new__':
             if not new_series_name:
                 abort(400)
-            date_str = race_date or race_data.get('date')
+            date_str = race_date or race_obj.get('date')
             if not date_str:
                 abort(400)
             try:
-                season = datetime.strptime(date_str, '%Y-%m-%d').year
+                season_year = int(datetime.strptime(date_str, '%Y-%m-%d').year)
             except ValueError:
                 abort(400)
-            season_dir = DATA_DIR / str(season)
-            series_dir = season_dir / new_series_name
-            (series_dir / 'races').mkdir(parents=True, exist_ok=True)
-            series_id = f"SER_{season}_{new_series_name}"
-            series_meta = {
-                'series_id': series_id,
-                'name': new_series_name,
-                'season': int(season),
-            }
-            with (series_dir / 'series_metadata.json').open('w') as f:
-                json.dump(series_meta, f, indent=2)
+            store, _season_new, target_series = ds_ensure_series(season_year, new_series_name, data=store)
         else:
-            series_id = series_choice
-            meta_path, series_meta = _load_series_meta(series_id)
-            if not meta_path:
+            _s, ts = ds_find_series(series_choice, data=store)
+            if not ts:
                 abort(400)
-            series_dir = meta_path.parent
+            target_series = ts
 
-        if series_id != current_series_id:
-            new_races_dir = series_dir / 'races'
-            new_races_dir.mkdir(parents=True, exist_ok=True)
-            new_path = new_races_dir / f'{race_id}.json'
-            race_path.rename(new_path)
-            race_path = new_path
-            race_data['series_id'] = series_id
-            redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
+        if target_series.get('series_id') != current_series_id:
+            # Move race to target series
+            series_obj['races'].remove(race_obj)
+            race_obj['series_id'] = target_series.get('series_id')
+            target_series.setdefault('races', []).append(race_obj)
 
-    if series_choice is None:
-        series_id = race_data.get('series_id')
-        series_dir = race_path.parent.parent
-
+    # Apply field edits
     if race_date is not None:
-        race_data['date'] = race_date
+        race_obj['date'] = race_date
     if start_time is not None:
-        race_data['start_time'] = start_time
+        race_obj['start_time'] = start_time
     if finish_times:
         ft_map = {ft['competitor_id']: ft.get('finish_time') for ft in finish_times}
-        for entrant in race_data.get('entrants', []):
+        for entrant in race_obj.get('entrants', []):
             cid = entrant.get('competitor_id')
             if cid in ft_map:
                 entrant['finish_time'] = ft_map[cid]
-    if handicap_overrides:
-        ov_map = {o['competitor_id']: o.get('handicap') for o in handicap_overrides}
-        for entrant in race_data.get('entrants', []):
-            cid = entrant.get('competitor_id')
-            if cid in ov_map:
-                val = ov_map[cid]
-                if val in (None, ''):
-                    entrant.pop('handicap_override', None)
-                else:
-                    try:
-                        entrant['handicap_override'] = int(val)
-                    except (ValueError, TypeError):
-                        entrant.pop('handicap_override', None)
+    _apply_overrides(race_obj.get('entrants', []))
 
-    race_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-    with race_path.open('w') as f:
-        json.dump(race_data, f, indent=2)
-    mapping = _renumber_races(series_dir)
-    if series_choice and series_id != current_series_id:
-        _renumber_races(orig_series_dir)
-    race_id = mapping.get(race_data['race_id'], race_data['race_id'])
-    redirect_url = url_for('main.series_detail', series_id=series_id, race_id=race_id)
+    race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+
+    # Renumber races in affected series (and original if moved)
+    mapping_target = ds_renumber_races(target_series)
+    if target_series is not series_obj:
+        ds_renumber_races(series_obj)
+
+    # Persist and recalc
+    save_data(store)
     recalculate_handicaps()
 
-    finisher_count = sum(1 for e in race_data.get('entrants', []) if e.get('finish_time'))
+    # Determine final race id after any renumber
+    final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
+    redirect_series_id = target_series.get('series_id')
+    redirect_url = url_for('main.series_detail', series_id=redirect_series_id, race_id=final_race_id)
+    finisher_count = sum(1 for e in race_obj.get('entrants', []) if e.get('finish_time'))
     return {'finisher_count': finisher_count, 'redirect': redirect_url}
 #</getdata>
 
@@ -1114,15 +1013,14 @@ def update_race(race_id):
 #<getdata>
 @bp.route('/api/races/<race_id>', methods=['DELETE'])
 def delete_race(race_id):
-    race_path = _race_path(race_id)
-    if race_path is None:
+    store = load_data()
+    season_obj, series_obj, race_obj = ds_find_race(race_id, data=store)
+    if not race_obj or not series_obj:
         abort(404)
-    with race_path.open() as f:
-        race_data = json.load(f)
-    series_id = race_data.get('series_id')
-    series_dir = race_path.parent.parent
-    race_path.unlink()
-    _renumber_races(series_dir)
+    series_id = series_obj.get('series_id')
+    series_obj['races'].remove(race_obj)
+    ds_renumber_races(series_obj)
+    save_data(store)
     redirect_url = url_for('main.series_detail', series_id=series_id)
     return {'redirect': redirect_url}
 #</getdata>
