@@ -5,27 +5,31 @@ from flask import Flask
 def create_app():
     app = Flask(__name__)
 
-    # Auto-select backend: PostgreSQL if DATABASE_URL is set, else JSON file
-    routes = None
-    use_pg = bool(os.environ.get("DATABASE_URL"))
-    if use_pg:
-        try:
-            from . import routes_pg as routes  # type: ignore
-            app.logger.info("Using PostgreSQL backend (routes_pg)")
-        except Exception:  # pragma: no cover
-            app.logger.exception("Falling back to JSON backend; failed to init Postgres routes")
-            from . import routes  # type: ignore
-    else:
-        from . import routes  # type: ignore
-        app.logger.info("Using JSON file backend (routes)")
+    # PostgreSQL-only configuration (JSON backend retired on this branch)
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError(
+            "DATABASE_URL is required. This branch is PostgreSQL-only and does not use data.json."
+        )
 
-    app.register_blueprint(routes.bp)
-    # Initialize PG-backed scoring constants if available
+    # Initialize connection pool early (optional; direct connect works if pool init fails)
     try:
-        if hasattr(routes, "init_backend"):
-            routes.init_backend()  # type: ignore[attr-defined]
+        from . import datastore_pg as _pg
+        try:
+            minconn = int(os.environ.get("DB_POOL_MIN", "1"))
+        except ValueError:
+            minconn = 1
+        try:
+            maxconn = int(os.environ.get("DB_POOL_MAX", "10"))
+        except ValueError:
+            maxconn = 10
+        _pg.init_pool(minconn=minconn, maxconn=maxconn)
     except Exception:  # pragma: no cover
-        app.logger.exception("Postgres backend initialization failed; proceeding with defaults")
+        app.logger.exception("PostgreSQL pool initialization failed; continuing without pool")
+
+    # Routes use datastore proxies that now target PostgreSQL
+    from . import routes  # type: ignore
+    app.register_blueprint(routes.bp)
 
     app.logger.info("Starting handicap recalculation")
     try:
@@ -34,6 +38,7 @@ def create_app():
         app.logger.exception("Error recalculating handicaps")
 
     return app
+
 
 app = create_app()
 

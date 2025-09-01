@@ -4,10 +4,11 @@ This project is a Flask + Bootstrap skeleton for managing a sailing league. It p
 
 ## Development
 
-Install dependencies and run the dev server:
+Install dependencies and run the dev server (PostgreSQL required):
 
 ```bash
 pip install -r requirements.txt
+export DATABASE_URL=postgresql://user:pass@host:port/dbname
 flask --app app run --debug
 ```
 
@@ -15,7 +16,7 @@ Routes are defined in `app/routes.py` and templates live in `app/templates`.
 
 ## Database Schema
 
-The application supports both JSON file storage (`data.json`) and PostgreSQL database backends. When using PostgreSQL, the following schema is used:
+This branch is PostgreSQL-only (the prior `data.json` backend is retired). The following schema is used:
 
 ### Tables
 
@@ -143,15 +144,15 @@ psql $DATABASE_URL -f add_indexes.sql
 
 ### Migration
 
-To populate PostgreSQL from `data.json`:
+If migrating from an older deployment that used `data.json`, populate PostgreSQL once using:
 ```bash
+export DATABASE_URL=postgresql://user:pass@host:port/dbname
 python migrate_to_postgres.py
 ```
 
-Requires `DATABASE_URL` environment variable to be set.
-
 ## Dev Workflow
 1. Install dependencies: `pip install -r requirements.txt`
-2. Run the dev server: `flask --app app run --debug`
-3. Run tests: `pytest`
-4. Keep documentation, especially this file, accurate when structure or workflow changes
+2. Export `DATABASE_URL` for your Postgres instance
+3. Run the dev server: `flask --app app run --debug`
+4. Run tests: `pytest`
+5. Keep documentation, especially this file, accurate when structure or workflow changes
