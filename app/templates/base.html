@@ -24,6 +24,7 @@
             <li class="nav-item"><a class="nav-link{% if request.path.startswith('/races') or request.path.startswith('/series') %} active{% endif %}" href="{{ url_for('main.races') }}">Races</a></li>
             <li class="nav-item"><a class="nav-link{% if request.path.startswith('/standings') %} active{% endif %}" href="{{ url_for('main.standings') }}">Standings</a></li>
             <li class="nav-item"><a class="nav-link{% if request.path.startswith('/fleet') %} active{% endif %}" href="{{ url_for('main.fleet') }}">Fleet</a></li>
+            <li class="nav-item"><a class="nav-link{% if request.path.startswith('/db') %} active{% endif %}" href="{{ url_for('main.db_browser') }}">DB</a></li>
             <li class="nav-item"><a class="nav-link{% if request.path.startswith('/rules') %} active{% endif %}" href="{{ url_for('main.rules') }}">Rules</a></li>
             <li class="nav-item"><a class="nav-link{% if request.path.startswith('/settings') %} active{% endif %}" href="{{ url_for('main.settings') }}">Settings</a></li>
           </ul>

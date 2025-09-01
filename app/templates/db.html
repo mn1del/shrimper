@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Database Browser</h1>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="card h-100">
+      <div class="card-header">Seasons</div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for y in seasons %}
+          <li class="list-group-item d-flex justify-content-between align-items-center {% if selected_season == y %}active{% endif %}">
+            <a class="text-reset text-decoration-none {% if selected_season == y %}text-white{% endif %}" href="{{ url_for('main.db_browser', season=y) }}">{{ y }}</a>
+          </li>
+          {% else %}
+          <li class="list-group-item text-muted">No seasons</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-9">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Series{% if selected_season %} in {{ selected_season }}{% endif %}</span>
+        {% if selected_series %}<a class="small" href="{{ url_for('main.db_browser', season=selected_season) }}">Clear series filter</a>{% endif %}
+      </div>
+      <div class="table-responsive">
+        <table class="table table-striped table-sm">
+          <thead><tr><th>Series ID</th><th>Name</th><th>Season</th></tr></thead>
+          <tbody>
+          {% for s in series_list %}
+            <tr>
+              <td><a href="{{ url_for('main.db_browser', season=selected_season, series=s.series_id) }}">{{ s.series_id }}</a></td>
+              <td>{{ s.name }}</td>
+              <td>{{ s.season }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="text-muted">No series</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header">Races{% if selected_series %} in {{ selected_series }}{% endif %}</div>
+      <div class="table-responsive">
+        <table class="table table-striped table-sm">
+          <thead><tr><th>Race ID</th><th>Date</th><th>Start Time</th><th>Series</th><th>Finishers</th></tr></thead>
+          <tbody>
+          {% for r in races %}
+            <tr>
+              <td><a href="{{ url_for('main.race_sheet', race_id=r.race_id) }}">{{ r.race_id }}</a></td>
+              <td>{{ r.date }}</td>
+              <td>{{ r.start_time }}</td>
+              <td>{{ r.series_name }}</td>
+              <td>{{ r.finishers }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-muted">No races</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header">Competitors</div>
+      <div class="table-responsive">
+        <table class="table table-striped table-sm">
+          <thead><tr><th>ID</th><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr></thead>
+          <tbody>
+          {% for c in fleet %}
+            <tr>
+              <td>{{ c.competitor_id }}</td>
+              <td>{{ c.sailor_name }}</td>
+              <td>{{ c.boat_name }}</td>
+              <td>{{ c.sail_no }}</td>
+              <td>{{ c.starting_handicap_s_per_hr }}</td>
+              <td>{{ c.current_handicap_s_per_hr }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-muted">No competitors</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Settings</div>
+      <div class="card-body">
+        <pre class="mb-0 small">{{ settings | tojson(indent=2) }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

@@ -26,7 +26,11 @@ def _build_lookup(entries: List[Dict], key_field: str, value_field: str) -> Tupl
 
 
 # Load configuration and tolerate missing settings with safe defaults
-_SETTINGS = get_settings() or {}
+# Load configuration and tolerate missing DB/settings with safe defaults
+try:
+    _SETTINGS = get_settings() or {}
+except Exception:
+    _SETTINGS = {}
 
 _HANDICAP_DELTAS, _HANDICAP_DEFAULT = _build_lookup(
     _SETTINGS.get("handicap_delta_by_rank", []), "rank", "delta_s_per_hr"

@@ -2,7 +2,6 @@ from flask import Blueprint, redirect, render_template, url_for, abort, request
 import json
 import importlib
 from datetime import datetime
-from pathlib import Path
 import os
 import time
 
@@ -275,13 +274,6 @@ def apply_missing_indexes():
 
 
 #<getdata>
-def _series_meta_paths():
-    """Deprecated: file-based data no longer used (single data.json)."""
-    return []
-#</getdata>
-
-
-#<getdata>
 def _load_series_entries():
     """Return list of series (metadata + races) from data.json."""
     # Use datastore helper to avoid materializing the full dataset
@@ -318,13 +310,6 @@ def _find_race(race_id: str):
     """Return race data for the given race id or None if not found."""
     _season, _series, race = ds_find_race(race_id)
     return race
-#</getdata>
-
-
-#<getdata>
-def _race_path(race_id: str):
-    """Deprecated: now stored inside data.json; kept for compatibility."""
-    return None
 #</getdata>
 
 
@@ -660,6 +645,54 @@ def races():
     )
 
 
+@bp.route('/db')
+def db_browser():
+    """Read-only browser for database contents.
+
+    Provides clickable lists of seasons, series, races, competitors and shows
+    current settings. Filters by optional season/series query params.
+    """
+    try:
+        season_param = request.args.get('season')
+        series_param = request.args.get('series')
+        seasons_meta = ds_list_seasons() or []
+        seasons = sorted({int(s.get('year')) for s in seasons_meta if s.get('year') is not None})
+        selected_season = int(season_param) if season_param else None
+    except Exception:
+        seasons = []
+        selected_season = None
+
+    all_series = ds_list_series() or []
+    if selected_season is not None:
+        series_list = [s for s in all_series if int(s.get('season') or 0) == selected_season]
+    else:
+        series_list = all_series
+
+    selected_series = (series_param or '')
+    all_races = ds_list_all_races() or []
+    if selected_series:
+        races_list = [r for r in all_races if (r.get('series_id') or '').lower() == selected_series.lower()]
+    else:
+        races_list = all_races
+
+    fleet = ds_get_fleet().get('competitors', [])
+    settings = ds_get_settings() or {}
+
+    breadcrumbs = [('DB', None)]
+    return render_template(
+        'db.html',
+        title='Database Browser',
+        breadcrumbs=breadcrumbs,
+        seasons=seasons,
+        selected_season=selected_season,
+        series_list=series_list,
+        selected_series=selected_series,
+        races=races_list,
+        fleet=fleet,
+        settings=settings,
+    )
+
+
 #<getdata>
 def _load_series_meta(series_id: str):
     """Return (path, data) for the given series id or (None, None).
@@ -677,57 +710,7 @@ def _load_series_meta(series_id: str):
 #</getdata>
 
 
-#<getdata>
-def _renumber_races(series_dir: Path) -> dict[str, str]:
-    """Renumber races in ``series_dir`` based on date and start time.
-
-    Returns mapping of old race_id to new race_id for the series.
-    """
-    races_dir = series_dir / "races"
-    if not races_dir.exists():
-        return {}
-
-    meta_path = series_dir / "series_metadata.json"
-    try:
-        with meta_path.open() as f:
-            meta = json.load(f)
-    except FileNotFoundError:
-        return {}
-
-    series_name = meta.get("name")
-    series_id = meta.get("series_id")
-
-    race_entries: list[tuple[dict, Path]] = []
-    for path in races_dir.glob("RACE_*.json"):
-        with path.open() as rf:
-            race_entries.append((json.load(rf), path))
-
-    race_entries.sort(key=lambda r: (r[0].get("date") or "", r[0].get("start_time") or ""))
-
-    temp_entries: list[tuple[dict, Path]] = []
-    for data, path in race_entries:
-        tmp = path.with_name(path.name + ".__tmp__")
-        path.rename(tmp)
-        temp_entries.append((data, tmp))
-
-    mapping: dict[str, str] = {}
-    for idx, (data, tmp) in enumerate(temp_entries, start=1):
-        old_id = data.get("race_id")
-        date = data.get("date", "")
-        new_id = f"RACE_{date}_{series_name}_{idx}"
-        data["race_id"] = new_id
-        data["race_no"] = idx
-        if series_id:
-            data["name"] = f"{series_id}_{idx}"
-        new_path = races_dir / f"{new_id}.json"
-        with tmp.open("w") as f:
-            json.dump(data, f, indent=2)
-        tmp.rename(new_path)
-        if old_id:
-            mapping[old_id] = new_id
-
-    return mapping
-#</getdata>
+## File-based renumber helper removed (JSON backend retired)
 
 
 #<getdata>
