@@ -180,15 +180,30 @@ def load_data() -> Dict[str, Any]:
         results_by_race: Dict[str, List[Dict[str, Any]]] = {}
         if race_ids:
             try:
-                cur.execute(
-                    """
-                    SELECT race_id, competitor_id, initial_handicap, finish_time
-                    FROM race_results
-                    WHERE race_id = ANY(%s)
-                    ORDER BY race_id, competitor_id
-                    """,
-                    (race_ids,),
-                )
+                # Prefer selecting handicap_override if the column exists; fall back gracefully
+                try:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                        FROM race_results
+                        WHERE race_id = ANY(%s)
+                        ORDER BY race_id, competitor_id
+                        """,
+                        (race_ids,),
+                    )
+                except Exception as e:
+                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        cur.execute(
+                            """
+                            SELECT race_id, competitor_id, initial_handicap, finish_time
+                            FROM race_results
+                            WHERE race_id = ANY(%s)
+                            ORDER BY race_id, competitor_id
+                            """,
+                            (race_ids,),
+                        )
+                    else:
+                        raise
                 for ent in cur.fetchall() or []:
                     rid = ent.get("race_id")
                     if not rid:
@@ -198,6 +213,7 @@ def load_data() -> Dict[str, Any]:
                             "competitor_id": ent.get("competitor_id"),
                             "initial_handicap": ent.get("initial_handicap"),
                             "finish_time": _time_to_str(ent.get("finish_time")),
+                            "handicap_override": ent.get("handicap_override"),
                         }
                     )
             except Exception as e:
@@ -375,21 +391,44 @@ def save_data(data: Dict[str, Any]) -> None:
                             # Replace entrants for this race for determinism
                             cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
                             for ent in race.get("competitors", []) or []:
-                                cur.execute(
-                                    """
-                                    INSERT INTO race_results (race_id, competitor_id, initial_handicap, finish_time)
-                                    VALUES (%s, %s, %s, %s)
-                                    ON CONFLICT (race_id, competitor_id) DO UPDATE SET
-                                        initial_handicap = EXCLUDED.initial_handicap,
-                                        finish_time = EXCLUDED.finish_time
-                                    """,
-                                    (
-                                        rid,
-                                        ent.get("competitor_id"),
-                                        ent.get("initial_handicap"),
-                                        ent.get("finish_time"),
-                                    ),
-                                )
+                                # Attempt to upsert including handicap_override; fall back if column missing
+                                try:
+                                    cur.execute(
+                                        """
+                                        INSERT INTO race_results (race_id, competitor_id, initial_handicap, finish_time, handicap_override)
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (race_id, competitor_id) DO UPDATE SET
+                                            initial_handicap = EXCLUDED.initial_handicap,
+                                            finish_time = EXCLUDED.finish_time,
+                                            handicap_override = EXCLUDED.handicap_override
+                                        """,
+                                        (
+                                            rid,
+                                            ent.get("competitor_id"),
+                                            ent.get("initial_handicap"),
+                                            ent.get("finish_time"),
+                                            ent.get("handicap_override"),
+                                        ),
+                                    )
+                                except Exception as e:
+                                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                                        cur.execute(
+                                            """
+                                            INSERT INTO race_results (race_id, competitor_id, initial_handicap, finish_time)
+                                            VALUES (%s, %s, %s, %s)
+                                            ON CONFLICT (race_id, competitor_id) DO UPDATE SET
+                                                initial_handicap = EXCLUDED.initial_handicap,
+                                                finish_time = EXCLUDED.finish_time
+                                            """,
+                                            (
+                                                rid,
+                                                ent.get("competitor_id"),
+                                                ent.get("initial_handicap"),
+                                                ent.get("finish_time"),
+                                            ),
+                                        )
+                                    else:
+                                        raise
 
                 # Delete races no longer present (handles race deletions/renames)
                 try:
@@ -500,16 +539,27 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
             "race_no": rr.get("race_no"),
             "competitors": [],
         }
-        cur.execute(
-            "SELECT competitor_id, initial_handicap, finish_time FROM race_results WHERE race_id = %s ORDER BY competitor_id",
-            (race_id,),
-        )
+        # Read handicap_override if present; fall back when column missing
+        try:
+            cur.execute(
+                "SELECT competitor_id, initial_handicap, finish_time, handicap_override FROM race_results WHERE race_id = %s ORDER BY competitor_id",
+                (race_id,),
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                cur.execute(
+                    "SELECT competitor_id, initial_handicap, finish_time FROM race_results WHERE race_id = %s ORDER BY competitor_id",
+                    (race_id,),
+                )
+            else:
+                raise
         for ent in cur.fetchall():
             race["competitors"].append(
                 {
                     "competitor_id": ent.get("competitor_id"),
                     "initial_handicap": ent.get("initial_handicap"),
                     "finish_time": _time_to_str(ent.get("finish_time")),
+                    "handicap_override": ent.get("handicap_override"),
                 }
             )
         return season, series, race
@@ -592,15 +642,30 @@ def list_season_races_with_results(season_year: int, data: Optional[Dict[str, An
         results_by_race: Dict[str, List[Dict[str, Any]]] = {}
         if race_ids:
             try:
-                cur.execute(
-                    """
-                    SELECT race_id, competitor_id, initial_handicap, finish_time
-                    FROM race_results
-                    WHERE race_id = ANY(%s)
-                    ORDER BY race_id, competitor_id
-                    """,
-                    (race_ids,),
-                )
+                # Try to include handicap_override where schema supports it
+                try:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                        FROM race_results
+                        WHERE race_id = ANY(%s)
+                        ORDER BY race_id, competitor_id
+                        """,
+                        (race_ids,),
+                    )
+                except Exception as e:
+                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        cur.execute(
+                            """
+                            SELECT race_id, competitor_id, initial_handicap, finish_time
+                            FROM race_results
+                            WHERE race_id = ANY(%s)
+                            ORDER BY race_id, competitor_id
+                            """,
+                            (race_ids,),
+                        )
+                    else:
+                        raise
                 for ent in cur.fetchall() or []:
                     rid = ent.get("race_id")
                     if not rid:
@@ -610,6 +675,7 @@ def list_season_races_with_results(season_year: int, data: Optional[Dict[str, An
                             "competitor_id": ent.get("competitor_id"),
                             "initial_handicap": ent.get("initial_handicap"),
                             "finish_time": _time_to_str(ent.get("finish_time")),
+                            "handicap_override": ent.get("handicap_override"),
                         }
                     )
             except Exception as e:

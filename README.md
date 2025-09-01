@@ -78,6 +78,7 @@ CREATE TABLE race_results (
     competitor_id VARCHAR(20) REFERENCES competitors(competitor_id) ON DELETE CASCADE,
     initial_handicap INTEGER,
     finish_time TIME,
+    handicap_override INTEGER,
     UNIQUE(race_id, competitor_id)
 );
 ```
@@ -149,6 +150,8 @@ If migrating from an older deployment that used `data.json`, populate PostgreSQL
 export DATABASE_URL=postgresql://user:pass@host:port/dbname
 python migrate_to_postgres.py
 ```
+
+If upgrading from a schema without `race_results.handicap_override`, either rerun the migration or POST to `/admin/schema/upgrade` to add the column in place. Overrides persist and seed subsequent races once this column exists.
 
 ## Dev Workflow
 1. Install dependencies: `pip install -r requirements.txt`
