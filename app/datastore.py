@@ -104,6 +104,18 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
     return races
 
 
+def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return a single season object with series and races (JSON backend)."""
+    d = data or load_data()
+    for season in d.get("seasons", []):
+        try:
+            if int(season.get("year")) == int(season_year):
+                return season
+        except Exception:
+            continue
+    return {"year": int(season_year), "series": []}
+
+
 def renumber_races(series: Dict[str, Any]) -> Dict[str, str]:
     """Renumber races in a series and rebuild race_id from date/name.
 

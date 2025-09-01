@@ -3,18 +3,80 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
+from psycopg2 import pool as pg_pool
 from psycopg2.extras import RealDictCursor
 from psycopg2 import errors as pg_errors
+from contextlib import contextmanager
 
 
-# Postgres-backed datastore implementing the same API as app/datastore.py
+_POOL: Optional[pg_pool.AbstractConnectionPool] = None
 
 
+def init_pool(minconn: int = 1, maxconn: int = 10) -> None:
+    """Initialize a global connection pool using DATABASE_URL.
+
+    Safe to call multiple times; subsequent calls are ignored once a pool exists.
+    """
+    global _POOL
+    if _POOL is not None:
+        return
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        # Leave _POOL as None; callers will fall back to direct connections
+        return
+    _POOL = pg_pool.ThreadedConnectionPool(minconn, maxconn, dsn=url)
+
+
+@contextmanager
 def _get_conn():
+    """Yield a database connection from the pool if available, else direct.
+
+    Returned object behaves like a psycopg2 connection within a context manager
+    and may be used with nested "with conn.cursor() as cur:" blocks.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL not set; configure a PostgreSQL connection string")
-    return psycopg2.connect(url)
+    if _POOL is not None:
+        conn = _POOL.getconn()
+        try:
+            try:
+                yield conn
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+        finally:
+            # Ensure connection not left in a transaction
+            try:
+                if getattr(conn, "closed", 0) == 0 and not conn.autocommit:
+                    # If caller didn't commit/rollback and transaction is open, rollback
+                    # status 0 = idle, 1 = active, 2 = intrans, 3 = inerror (psycopg2 docs)
+                    if getattr(conn, "status", 0) in (1, 2, 3):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+            finally:
+                _POOL.putconn(conn)
+    else:
+        conn = psycopg2.connect(url)
+        try:
+            try:
+                yield conn
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _time_to_str(val) -> Optional[str]:
@@ -89,95 +151,95 @@ def load_data() -> Dict[str, Any]:
             if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
 
-        # Seasons -> Series -> Races -> Entrants
+        # Seasons + Series + Races -> Entrants (optimized in 2 round-trips)
+        joined_rows: List[Dict[str, Any]] = []
         try:
-            cur.execute("SELECT id, year FROM seasons ORDER BY year")
-            seasons = cur.fetchall()
+            cur.execute(
+                """
+                SELECT s.year AS season_year,
+                       se.series_id AS series_id,
+                       se.name AS series_name,
+                       COALESCE(se.year, s.year) AS series_year,
+                       r.race_id AS race_id,
+                       r.name AS race_name,
+                       r.date AS race_date,
+                       r.start_time AS start_time,
+                       r.race_no AS race_no
+                FROM seasons s
+                LEFT JOIN series se ON se.season_id = s.id
+                LEFT JOIN races r ON r.series_id = se.series_id
+                ORDER BY s.year, se.name, r.date NULLS LAST, r.start_time NULLS LAST, r.race_id
+                """
+            )
+            joined_rows = cur.fetchall() or []
         except Exception as e:
-            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                seasons = []
-            else:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
-        season_list: List[Dict[str, Any]] = []
-        for s in seasons:
-            season_obj = {"year": int(s["year"]), "series": []}
-            # series for this season
+
+        race_ids = [row.get("race_id") for row in joined_rows if row.get("race_id")]
+        results_by_race: Dict[str, List[Dict[str, Any]]] = {}
+        if race_ids:
             try:
                 cur.execute(
-                    "SELECT series_id, name, year FROM series WHERE season_id = %s ORDER BY name",
-                    (s["id"],),
+                    """
+                    SELECT race_id, competitor_id, initial_handicap, finish_time
+                    FROM race_results
+                    WHERE race_id = ANY(%s)
+                    ORDER BY race_id, competitor_id
+                    """,
+                    (race_ids,),
                 )
-                series_rows = cur.fetchall()
+                for ent in cur.fetchall() or []:
+                    rid = ent.get("race_id")
+                    if not rid:
+                        continue
+                    results_by_race.setdefault(rid, []).append(
+                        {
+                            "competitor_id": ent.get("competitor_id"),
+                            "initial_handicap": ent.get("initial_handicap"),
+                            "finish_time": _time_to_str(ent.get("finish_time")),
+                        }
+                    )
             except Exception as e:
-                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                    series_rows = []
-                else:
+                if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                     raise
-            for ser in series_rows:
+
+        seasons_map: Dict[int, Dict[str, Any]] = {}
+        series_map: Dict[tuple[int, str], Dict[str, Any]] = {}
+        for row in joined_rows:
+            y = row.get("season_year")
+            if y is None:
+                continue
+            year = int(y)
+            season_obj = seasons_map.setdefault(year, {"year": year, "series": []})
+            sid = row.get("series_id")
+            if not sid:
+                continue  # season with no series/races
+            key = (year, sid)
+            series_obj = series_map.get(key)
+            if series_obj is None:
                 series_obj = {
-                    "series_id": ser["series_id"],
-                    "name": ser["name"],
-                    "season": int(ser.get("year") or s["year"]),
+                    "series_id": sid,
+                    "name": row.get("series_name"),
+                    "season": int(row.get("series_year") or year),
                     "races": [],
                 }
-                # races
-                try:
-                    cur.execute(
-                        """
-                        SELECT race_id, name, date, start_time, race_no
-                        FROM races
-                        WHERE series_id = %s
-                        ORDER BY date NULLS LAST, start_time NULLS LAST, race_id
-                        """,
-                        (ser["series_id"],),
-                    )
-                    race_rows = cur.fetchall()
-                except Exception as e:
-                    if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                        race_rows = []
-                    else:
-                        raise
-                for r in race_rows:
-                    race_obj = {
-                        "race_id": r["race_id"],
-                        "series_id": ser["series_id"],
-                        "name": r.get("name"),
-                        "date": r.get("date").isoformat() if r.get("date") else None,
-                        "start_time": _time_to_str(r.get("start_time")),
-                        "race_no": r.get("race_no"),
-                        "competitors": [],
-                    }
-                    # entrants
-                    try:
-                        cur.execute(
-                            """
-                            SELECT competitor_id, initial_handicap, finish_time
-                            FROM race_results
-                            WHERE race_id = %s
-                            ORDER BY competitor_id
-                            """,
-                            (r["race_id"],),
-                        )
-                        ent_rows = cur.fetchall()
-                    except Exception as e:
-                        if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                            ent_rows = []
-                        else:
-                            raise
-                    entrants = []
-                    for ent in ent_rows:
-                        entrants.append(
-                            {
-                                "competitor_id": ent.get("competitor_id"),
-                                "initial_handicap": ent.get("initial_handicap"),
-                                "finish_time": _time_to_str(ent.get("finish_time")),
-                            }
-                        )
-                    race_obj["competitors"] = entrants
-                    series_obj["races"].append(race_obj)
+                series_map[key] = series_obj
                 season_obj["series"].append(series_obj)
-            season_list.append(season_obj)
-        out["seasons"] = season_list
+            rid = row.get("race_id")
+            if not rid:
+                continue
+            race_obj = {
+                "race_id": rid,
+                "series_id": sid,
+                "name": row.get("race_name"),
+                "date": (row.get("race_date").isoformat() if row.get("race_date") else None),
+                "start_time": _time_to_str(row.get("start_time")),
+                "race_no": row.get("race_no"),
+                "competitors": results_by_race.get(rid, []),
+            }
+            series_obj["races"].append(race_obj)
+        out["seasons"] = [seasons_map[k] for k in sorted(seasons_map.keys())]
 
     return out
 
@@ -185,8 +247,8 @@ def load_data() -> Dict[str, Any]:
 def save_data(data: Dict[str, Any]) -> None:
     """Persist the provided JSON-like structure into PostgreSQL.
 
-    For simplicity, this performs full replacement of each section present in
-    the input (settings, fleet, seasons/series/races/results).
+    Optimized to upsert only the provided sections without wholesale deletes.
+    For races, deletes are targeted by comparing race_id sets.
     """
     with _get_conn() as conn:
         with conn.cursor() as cur:
@@ -214,13 +276,8 @@ def save_data(data: Dict[str, Any]) -> None:
                         ),
                     )
                 except Exception as e:
-                    # Older schema: only 'config' may exist
                     if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())) or isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                        try:
-                            cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
-                        except Exception:
-                            # Give up silently; settings not persisted
-                            pass
+                        cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
                     else:
                         raise
 
@@ -228,7 +285,12 @@ def save_data(data: Dict[str, Any]) -> None:
             if "fleet" in data and data["fleet"] is not None:
                 fleet = data["fleet"] or {"competitors": []}
                 competitors = fleet.get("competitors", [])
-                cur.execute("DELETE FROM competitors")
+                # Replace competitors set (keeps it simple and bounded)
+                try:
+                    cur.execute("DELETE FROM competitors")
+                except Exception as e:
+                    if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                        raise
                 for comp in competitors:
                     cur.execute(
                         """
@@ -256,32 +318,40 @@ def save_data(data: Dict[str, Any]) -> None:
             # Seasons / Series / Races / Results
             if "seasons" in data and data["seasons"] is not None:
                 seasons = data.get("seasons", [])
-                # Replace everything for determinism
-                cur.execute("DELETE FROM race_results")
-                cur.execute("DELETE FROM races")
-                cur.execute("DELETE FROM series")
-                cur.execute("DELETE FROM seasons")
 
+                # Build target sets
+                target_race_ids = set()
+                target_series = []
                 for season in seasons:
-                    year = int(season.get("year")) if season.get("year") is not None else None
-                    if year is None:
+                    y = season.get("year")
+                    if y is None:
                         continue
-                    cur.execute("INSERT INTO seasons (year) VALUES (%s) RETURNING id", (year,))
-                    season_id = cur.fetchone()[0]
+                    try:
+                        cur.execute(
+                            "INSERT INTO seasons (year) VALUES (%s) ON CONFLICT (year) DO NOTHING",
+                            (int(y),),
+                        )
+                    except Exception:
+                        pass
+                    # get season id
+                    cur.execute("SELECT id FROM seasons WHERE year = %s", (int(y),))
+                    row = cur.fetchone()
+                    season_id = row[0] if row else None
                     for series in season.get("series", []) or []:
-                        series_id = series.get("series_id")
+                        sid = series.get("series_id")
                         name = series.get("name")
+                        target_series.append((sid, name, season_id, int(y)))
                         cur.execute(
                             """
                             INSERT INTO series (series_id, name, season_id, year)
                             VALUES (%s, %s, %s, %s)
                             ON CONFLICT (series_id) DO UPDATE SET name = EXCLUDED.name, season_id = EXCLUDED.season_id, year = EXCLUDED.year
-                            RETURNING series_id
                             """,
-                            (series_id, name, season_id, year),
+                            (sid, name, season_id, int(y)),
                         )
-                        # Insert races
                         for race in series.get("races", []) or []:
+                            rid = race.get("race_id")
+                            target_race_ids.add(rid)
                             cur.execute(
                                 """
                                 INSERT INTO races (race_id, series_id, name, date, start_time, race_no)
@@ -294,15 +364,16 @@ def save_data(data: Dict[str, Any]) -> None:
                                     race_no = EXCLUDED.race_no
                                 """,
                                 (
-                                    race.get("race_id"),
-                                    series_id,
+                                    rid,
+                                    series.get("series_id"),
                                     race.get("name"),
                                     race.get("date"),
                                     race.get("start_time"),
                                     race.get("race_no"),
                                 ),
                             )
-                            # entrants
+                            # Replace entrants for this race for determinism
+                            cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
                             for ent in race.get("competitors", []) or []:
                                 cur.execute(
                                     """
@@ -313,12 +384,29 @@ def save_data(data: Dict[str, Any]) -> None:
                                         finish_time = EXCLUDED.finish_time
                                     """,
                                     (
-                                        race.get("race_id"),
+                                        rid,
                                         ent.get("competitor_id"),
                                         ent.get("initial_handicap"),
                                         ent.get("finish_time"),
                                     ),
                                 )
+
+                # Delete races no longer present (handles race deletions/renames)
+                try:
+                    cur.execute("SELECT race_id FROM races")
+                    existing_rids = {row[0] for row in cur.fetchall()}
+                except Exception:
+                    existing_rids = set()
+                to_delete = list(existing_rids - target_race_ids)
+                if to_delete:
+                    cur.execute(
+                        "DELETE FROM race_results WHERE race_id = ANY(%s)",
+                        (to_delete,),
+                    )
+                    cur.execute(
+                        "DELETE FROM races WHERE race_id = ANY(%s)",
+                        (to_delete,),
+                    )
 
         conn.commit()
 
@@ -466,6 +554,99 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
     return out
 
 
+def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return a single season object with its series and races (with entrants).
+
+    Queries the DB in two round-trips: one join for seasons/series/races filtered
+    by the given year, and one bulk fetch of race_results for those races.
+    """
+    season_obj: Dict[str, Any] = {"year": int(season_year), "series": []}
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        rows: List[Dict[str, Any]] = []
+        try:
+            cur.execute(
+                """
+                SELECT s.year AS season_year,
+                       se.series_id AS series_id,
+                       se.name AS series_name,
+                       COALESCE(se.year, s.year) AS series_year,
+                       r.race_id AS race_id,
+                       r.name AS race_name,
+                       r.date AS race_date,
+                       r.start_time AS start_time,
+                       r.race_no AS race_no
+                FROM seasons s
+                LEFT JOIN series se ON se.season_id = s.id
+                LEFT JOIN races r ON r.series_id = se.series_id
+                WHERE s.year = %s
+                ORDER BY se.name, r.date NULLS LAST, r.start_time NULLS LAST, r.race_id
+                """,
+                (int(season_year),),
+            )
+            rows = cur.fetchall() or []
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+
+        race_ids = [row.get("race_id") for row in rows if row.get("race_id")]
+        results_by_race: Dict[str, List[Dict[str, Any]]] = {}
+        if race_ids:
+            try:
+                cur.execute(
+                    """
+                    SELECT race_id, competitor_id, initial_handicap, finish_time
+                    FROM race_results
+                    WHERE race_id = ANY(%s)
+                    ORDER BY race_id, competitor_id
+                    """,
+                    (race_ids,),
+                )
+                for ent in cur.fetchall() or []:
+                    rid = ent.get("race_id")
+                    if not rid:
+                        continue
+                    results_by_race.setdefault(rid, []).append(
+                        {
+                            "competitor_id": ent.get("competitor_id"),
+                            "initial_handicap": ent.get("initial_handicap"),
+                            "finish_time": _time_to_str(ent.get("finish_time")),
+                        }
+                    )
+            except Exception as e:
+                if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    raise
+
+        series_map: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            sid = row.get("series_id")
+            if not sid:
+                continue
+            series_obj = series_map.get(sid)
+            if series_obj is None:
+                series_obj = {
+                    "series_id": sid,
+                    "name": row.get("series_name"),
+                    "season": int(row.get("series_year") or season_year),
+                    "races": [],
+                }
+                series_map[sid] = series_obj
+                season_obj["series"].append(series_obj)
+            rid = row.get("race_id")
+            if not rid:
+                continue
+            race_obj = {
+                "race_id": rid,
+                "series_id": sid,
+                "name": row.get("race_name"),
+                "date": (row.get("race_date").isoformat() if row.get("race_date") else None),
+                "start_time": _time_to_str(row.get("start_time")),
+                "race_no": row.get("race_no"),
+                "competitors": results_by_race.get(rid, []),
+            }
+            series_obj["races"].append(race_obj)
+    return season_obj
+
+
 # The following helpers mirror the JSON datastore behavior for in-memory data
 def ensure_season(year: int, data: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     d = data or load_data()
@@ -509,24 +690,127 @@ def renumber_races(series: Dict[str, Any]) -> Dict[str, str]:
 
 
 def get_fleet(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = load_data() if data is None else data
-    return d.get("fleet", {"competitors": []})
+    # Targeted SELECT to avoid materializing all data
+    if data is not None:
+        return data.get("fleet", {"competitors": []})
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute(
+                """
+                SELECT competitor_id, sailor_name, boat_name, sail_no,
+                       starting_handicap_s_per_hr, current_handicap_s_per_hr
+                FROM competitors
+                ORDER BY sail_no NULLS LAST, competitor_id
+                """
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return {"competitors": []}
+            raise
+        comps: List[Dict[str, Any]] = []
+        for r in cur.fetchall():
+            comps.append(
+                {
+                    "competitor_id": r.get("competitor_id"),
+                    "sailor_name": r.get("sailor_name"),
+                    "boat_name": r.get("boat_name"),
+                    "sail_no": r.get("sail_no"),
+                    "starting_handicap_s_per_hr": r.get("starting_handicap_s_per_hr") or 0,
+                    "current_handicap_s_per_hr": r.get("current_handicap_s_per_hr") or r.get("starting_handicap_s_per_hr") or 0,
+                }
+            )
+        return {"competitors": comps}
 
 
 def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = data or load_data()
-    d["fleet"] = fleet
-    save_data(d)
-    return d
+    # Replace competitors table content to match provided fleet
+    competitors = (fleet or {}).get("competitors", [])
+    with _get_conn() as conn, conn.cursor() as cur:
+        try:
+            cur.execute("DELETE FROM competitors")
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+        for comp in competitors:
+            cur.execute(
+                """
+                INSERT INTO competitors (
+                    competitor_id, sailor_name, boat_name, sail_no,
+                    starting_handicap_s_per_hr, current_handicap_s_per_hr
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (competitor_id) DO UPDATE SET
+                    sailor_name = EXCLUDED.sailor_name,
+                    boat_name = EXCLUDED.boat_name,
+                    sail_no = EXCLUDED.sail_no,
+                    starting_handicap_s_per_hr = EXCLUDED.starting_handicap_s_per_hr,
+                    current_handicap_s_per_hr = EXCLUDED.current_handicap_s_per_hr
+                """,
+                (
+                    comp.get("competitor_id"),
+                    comp.get("sailor_name"),
+                    comp.get("boat_name"),
+                    comp.get("sail_no"),
+                    comp.get("starting_handicap_s_per_hr") or 0,
+                    comp.get("current_handicap_s_per_hr") or comp.get("starting_handicap_s_per_hr") or 0,
+                ),
+            )
+        conn.commit()
+    return {"competitors": competitors}
 
 
 def get_settings(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = load_data() if data is None else data
-    return d.get("settings", {})
+    if data is not None:
+        return data.get("settings", {})
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute("SELECT config FROM settings ORDER BY id DESC LIMIT 1")
+            row = cur.fetchone()
+            if row and row.get("config"):
+                return row["config"]
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+        # Fallback on older split columns
+        try:
+            cur.execute(
+                "SELECT handicap_delta_by_rank, league_points_by_rank, fleet_size_factor FROM settings ORDER BY id DESC LIMIT 1"
+            )
+            r2 = cur.fetchone() or {}
+            return {
+                "handicap_delta_by_rank": r2.get("handicap_delta_by_rank") or [],
+                "league_points_by_rank": r2.get("league_points_by_rank") or [],
+                "fleet_size_factor": r2.get("fleet_size_factor") or [],
+            }
+        except Exception:
+            return {}
 
 
 def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    d = data or load_data()
-    d["settings"] = settings
-    save_data(d)
-    return d
+    with _get_conn() as conn, conn.cursor() as cur:
+        try:
+            cur.execute("DELETE FROM settings")
+        except Exception as e:
+            if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                raise
+        try:
+            cur.execute(
+                """
+                INSERT INTO settings (version, updated_at, handicap_delta_by_rank, league_points_by_rank, fleet_size_factor, config)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    settings.get("version"),
+                    settings.get("updated_at"),
+                    json.dumps(settings.get("handicap_delta_by_rank", [])),
+                    json.dumps(settings.get("league_points_by_rank", [])),
+                    json.dumps(settings.get("fleet_size_factor", [])),
+                    json.dumps(settings),
+                ),
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())) or isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
+            else:
+                raise
+        conn.commit()
+    return settings

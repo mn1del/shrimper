@@ -28,3 +28,4 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 2. Run the dev server: `flask --app app run --debug`
 3. Run tests: `pytest`
 4. Keep documentation, especially this file, accurate when structure or workflow changes
+5. In VS Code Codex has DB connectivity from the shell using psycopg2-binary
