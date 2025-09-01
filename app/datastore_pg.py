@@ -150,6 +150,27 @@ def load_data() -> Dict[str, Any]:
         except Exception as e:
             if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
+        # Build canonicalization maps for competitor IDs
+        canon_ids = {c.get("competitor_id") for c in out["fleet"]["competitors"] if c.get("competitor_id")}
+        sail_to_id = {str((c.get("sail_no") or "")).strip(): c.get("competitor_id") for c in out["fleet"]["competitors"] if c.get("competitor_id") and (c.get("sail_no") is not None)}
+        import re as _re
+        def _canon_cid(cid_raw: str | None) -> str | None:
+            if not cid_raw:
+                return None
+            if cid_raw in canon_ids:
+                return cid_raw
+            s = cid_raw
+            num = None
+            if s.startswith("C_UNK_"):
+                num = s[6:]
+            elif s.startswith("C_"):
+                num = s.split("_", 1)[1]
+            if not num:
+                m = _re.search(r"(\d+)$", s)
+                num = m.group(1) if m else None
+            if num:
+                return sail_to_id.get(str(num)) or cid_raw
+            return cid_raw
 
         # Seasons + Series + Races -> Entrants (optimized in 2 round-trips)
         joined_rows: List[Dict[str, Any]] = []
@@ -178,6 +199,7 @@ def load_data() -> Dict[str, Any]:
 
         race_ids = [row.get("race_id") for row in joined_rows if row.get("race_id")]
         results_by_race: Dict[str, List[Dict[str, Any]]] = {}
+        results_by_race_maps: Dict[str, Dict[str, Dict[str, Any]]] = {}
         if race_ids:
             try:
                 # Prefer selecting handicap_override if the column exists; fall back gracefully
@@ -212,17 +234,30 @@ def load_data() -> Dict[str, Any]:
                     rid = ent.get("race_id")
                     if not rid:
                         continue
-                    results_by_race.setdefault(rid, []).append(
-                        {
-                            "competitor_id": ent.get("competitor_id"),
-                            "initial_handicap": ent.get("initial_handicap"),
-                            "finish_time": _time_to_str(ent.get("finish_time")),
-                            "handicap_override": ent.get("handicap_override"),
-                        }
-                    )
+                    cid_raw = ent.get("competitor_id")
+                    cid = _canon_cid(cid_raw)
+                    entry = {
+                        "competitor_id": cid,
+                        "initial_handicap": ent.get("initial_handicap"),
+                        "finish_time": _time_to_str(ent.get("finish_time")),
+                        "handicap_override": ent.get("handicap_override"),
+                    }
+                    m = results_by_race_maps.setdefault(rid, {})
+                    prev = m.get(cid or "")
+                    if prev is None:
+                        m[cid or ""] = entry
+                    else:
+                        # Prefer row with a finish_time or an override
+                        if (prev.get("finish_time") is None and entry.get("finish_time") is not None) or (
+                            prev.get("handicap_override") is None and entry.get("handicap_override") is not None
+                        ):
+                            m[cid or ""] = entry
             except Exception as e:
                 if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                     raise
+        # Convert maps to lists
+        for rid, cmap in results_by_race_maps.items():
+            results_by_race[rid] = list(cmap.values())
 
         seasons_map: Dict[int, Dict[str, Any]] = {}
         series_map: Dict[tuple[int, str], Dict[str, Any]] = {}
@@ -561,15 +596,52 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
                 )
             else:
                 raise
-        for ent in cur.fetchall():
-            race["competitors"].append(
-                {
-                    "competitor_id": ent.get("competitor_id"),
-                    "initial_handicap": ent.get("initial_handicap"),
-                    "finish_time": _time_to_str(ent.get("finish_time")),
-                    "handicap_override": ent.get("handicap_override"),
-                }
+        # Canonicalize IDs using fleet table
+        # Load fleet for this normalization
+        try:
+            cur.execute(
+                "SELECT competitor_id, sail_no FROM competitors ORDER BY competitor_id"
             )
+            fleet_rows = cur.fetchall() or []
+        except Exception:
+            fleet_rows = []
+        canon_ids = {r.get("competitor_id") for r in fleet_rows if r.get("competitor_id")}
+        sail_to_id = {str((r.get("sail_no") or "")).strip(): r.get("competitor_id") for r in fleet_rows if r.get("competitor_id") and (r.get("sail_no") is not None)}
+        import re as _re
+        def _canon_cid(cid_raw: str | None) -> str | None:
+            if not cid_raw:
+                return None
+            if cid_raw in canon_ids:
+                return cid_raw
+            s = cid_raw
+            num = None
+            if s.startswith("C_UNK_"):
+                num = s[6:]
+            elif s.startswith("C_"):
+                num = s.split("_", 1)[1]
+            if not num:
+                m = _re.search(r"(\d+)$", s)
+                num = m.group(1) if m else None
+            if num:
+                return sail_to_id.get(str(num)) or cid_raw
+            return cid_raw
+        # Deduplicate
+        seen: dict[str, dict] = {}
+        for ent in cur.fetchall():
+            cid = _canon_cid(ent.get("competitor_id"))
+            entry = {
+                "competitor_id": cid,
+                "initial_handicap": ent.get("initial_handicap"),
+                "finish_time": _time_to_str(ent.get("finish_time")),
+                "handicap_override": ent.get("handicap_override"),
+            }
+            prev = seen.get(cid or "")
+            if prev is None or (
+                (prev.get("finish_time") is None and entry.get("finish_time") is not None)
+                or (prev.get("handicap_override") is None and entry.get("handicap_override") is not None)
+            ):
+                seen[cid or ""] = entry
+        race["competitors"].extend(seen.values())
         return season, series, race
 
 
@@ -678,18 +750,57 @@ def list_season_races_with_results(season_year: int, data: Optional[Dict[str, An
                         )
                     else:
                         raise
-                for ent in cur.fetchall() or []:
+                rows_rr = cur.fetchall() or []
+                # Canonicalize using competitors table
+                try:
+                    cur.execute(
+                        "SELECT competitor_id, sail_no FROM competitors ORDER BY competitor_id"
+                    )
+                    fleet_rows = cur.fetchall() or []
+                except Exception:
+                    fleet_rows = []
+                canon_ids = {r.get("competitor_id") for r in fleet_rows if r.get("competitor_id")}
+                sail_to_id = {str((r.get("sail_no") or "")).strip(): r.get("competitor_id") for r in fleet_rows if r.get("competitor_id") and (r.get("sail_no") is not None)}
+                import re as _re
+                def _canon_cid(cid_raw: str | None) -> str | None:
+                    if not cid_raw:
+                        return None
+                    if cid_raw in canon_ids:
+                        return cid_raw
+                    s = cid_raw
+                    num = None
+                    if s.startswith("C_UNK_"):
+                        num = s[6:]
+                    elif s.startswith("C_"):
+                        num = s.split("_", 1)[1]
+                    if not num:
+                        m = _re.search(r"(\d+)$", s)
+                        num = m.group(1) if m else None
+                    if num:
+                        return sail_to_id.get(str(num)) or cid_raw
+                    return cid_raw
+                # Build per-race maps with dedupe
+                rr_maps: Dict[str, Dict[str, Dict[str, Any]]] = {}
+                for ent in rows_rr:
                     rid = ent.get("race_id")
                     if not rid:
                         continue
-                    results_by_race.setdefault(rid, []).append(
-                        {
-                            "competitor_id": ent.get("competitor_id"),
-                            "initial_handicap": ent.get("initial_handicap"),
-                            "finish_time": _time_to_str(ent.get("finish_time")),
-                            "handicap_override": ent.get("handicap_override"),
-                        }
-                    )
+                    cid = _canon_cid(ent.get("competitor_id"))
+                    entry = {
+                        "competitor_id": cid,
+                        "initial_handicap": ent.get("initial_handicap"),
+                        "finish_time": _time_to_str(ent.get("finish_time")),
+                        "handicap_override": ent.get("handicap_override"),
+                    }
+                    m = rr_maps.setdefault(rid, {})
+                    prev = m.get(cid or "")
+                    if prev is None or (
+                        (prev.get("finish_time") is None and entry.get("finish_time") is not None)
+                        or (prev.get("handicap_override") is None and entry.get("handicap_override") is not None)
+                    ):
+                        m[cid or ""] = entry
+                for rid, cmap in rr_maps.items():
+                    results_by_race[rid] = list(cmap.values())
             except Exception as e:
                 if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                     raise
