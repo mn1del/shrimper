@@ -193,6 +193,10 @@ def load_data() -> Dict[str, Any]:
                     )
                 except Exception as e:
                     if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         cur.execute(
                             """
                             SELECT race_id, competitor_id, initial_handicap, finish_time
@@ -547,6 +551,10 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
             )
         except Exception as e:
             if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 cur.execute(
                     "SELECT competitor_id, initial_handicap, finish_time FROM race_results WHERE race_id = %s ORDER BY competitor_id",
                     (race_id,),
@@ -655,6 +663,10 @@ def list_season_races_with_results(season_year: int, data: Optional[Dict[str, An
                     )
                 except Exception as e:
                     if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         cur.execute(
                             """
                             SELECT race_id, competitor_id, initial_handicap, finish_time
