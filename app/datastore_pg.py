@@ -596,6 +596,8 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
                 )
             else:
                 raise
+        # IMPORTANT: materialize race_results rows before running another query on the same cursor
+        race_result_rows = cur.fetchall() or []
         # Canonicalize IDs using fleet table
         # Load fleet for this normalization
         try:
@@ -627,7 +629,7 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
             return cid_raw
         # Deduplicate
         seen: dict[str, dict] = {}
-        for ent in cur.fetchall():
+        for ent in race_result_rows:
             cid = _canon_cid(ent.get("competitor_id"))
             entry = {
                 "competitor_id": cid,
