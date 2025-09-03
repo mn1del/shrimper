@@ -1003,3 +1003,151 @@ def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None
                 raise
         conn.commit()
     return settings
+
+
+def normalize_competitor_ids() -> Dict[str, Any]:
+    """Normalize race_results.competitor_id values to canonical fleet IDs.
+
+    - If a race_results row uses a fallback like C_<sail> or C_UNK_<sail>, map it
+      to the canonical competitors.competitor_id for that sail number.
+    - When a canonical row already exists for the same race, merge values by
+      coalescing non-null fields, then delete the duplicate old row.
+
+    Returns a dict with counts of updated, merged and deleted rows.
+    """
+    stats = {"updated": 0, "merged": 0, "deleted": 0, "skipped": 0}
+    with _get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Load fleet canon ids and sail numbers
+            try:
+                cur.execute(
+                    "SELECT competitor_id, sail_no FROM competitors ORDER BY competitor_id"
+                )
+                fleet_rows = cur.fetchall() or []
+            except Exception as e:
+                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    return stats
+                raise
+
+            canon_ids = {r.get("competitor_id") for r in fleet_rows if r.get("competitor_id")}
+            sail_to_id = {
+                str((r.get("sail_no") or "")).strip(): r.get("competitor_id")
+                for r in fleet_rows
+                if r.get("competitor_id") and (r.get("sail_no") is not None)
+            }
+
+            import re as _re
+
+            def _canon_cid(cid_raw: str | None) -> str | None:
+                if not cid_raw:
+                    return None
+                if cid_raw in canon_ids:
+                    return cid_raw
+                s = str(cid_raw)
+                num = None
+                if s.startswith("C_UNK_"):
+                    num = s[6:]
+                elif s.startswith("C_"):
+                    num = s.split("_", 1)[1]
+                if not num:
+                    m = _re.search(r"(\d+)$", s)
+                    num = m.group(1) if m else None
+                if num:
+                    return sail_to_id.get(str(num)) or cid_raw
+                return cid_raw
+
+            # Detect whether handicap_override column exists
+            try:
+                cur.execute(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='race_results' AND column_name='handicap_override'
+                    """
+                )
+                override_supported = cur.fetchone() is not None
+            except Exception:
+                override_supported = False
+
+            # Pull all race_results rows
+            try:
+                if override_supported:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                        FROM race_results
+                        ORDER BY race_id, competitor_id
+                        """
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time
+                        FROM race_results
+                        ORDER BY race_id, competitor_id
+                        """
+                    )
+            except Exception as e:
+                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    return stats
+                raise
+
+            rows = cur.fetchall() or []
+            for row in rows:
+                rid = row.get("race_id")
+                old = row.get("competitor_id")
+                new = _canon_cid(old)
+                if not new or new == old:
+                    stats["skipped"] += 1
+                    continue
+
+                # Check if a canonical row already exists for this race
+                if override_supported:
+                    cur.execute(
+                        "SELECT initial_handicap, finish_time, handicap_override FROM race_results WHERE race_id=%s AND competitor_id=%s",
+                        (rid, new),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT initial_handicap, finish_time FROM race_results WHERE race_id=%s AND competitor_id=%s",
+                        (rid, new),
+                    )
+                existing = cur.fetchone()
+                if existing:
+                    # Merge values: prefer non-null from either row
+                    ih = row.get("initial_handicap") or existing.get("initial_handicap")
+                    ft = row.get("finish_time") or existing.get("finish_time")
+                    if override_supported:
+                        ho = row.get("handicap_override") if row.get("handicap_override") is not None else existing.get("handicap_override")
+                        cur.execute(
+                            """
+                            UPDATE race_results
+                            SET initial_handicap=%s, finish_time=%s, handicap_override=%s
+                            WHERE race_id=%s AND competitor_id=%s
+                            """,
+                            (ih, ft, ho, rid, new),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            UPDATE race_results
+                            SET initial_handicap=%s, finish_time=%s
+                            WHERE race_id=%s AND competitor_id=%s
+                            """,
+                            (ih, ft, rid, new),
+                        )
+                    cur.execute(
+                        "DELETE FROM race_results WHERE race_id=%s AND competitor_id=%s",
+                        (rid, old),
+                    )
+                    stats["merged"] += 1
+                    stats["deleted"] += 1
+                else:
+                    # Simple update to the canonical id
+                    cur.execute(
+                        "UPDATE race_results SET competitor_id=%s WHERE race_id=%s AND competitor_id=%s",
+                        (new, rid, old),
+                    )
+                    stats["updated"] += 1
+
+        conn.commit()
+    return stats

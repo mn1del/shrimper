@@ -9,3 +9,4 @@ instance/
 venv/
 *.egg-info/
 .dbvenv/
+.tmpvenv

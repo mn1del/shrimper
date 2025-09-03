@@ -329,6 +329,24 @@ def apply_missing_indexes():
         return {'ok': False, 'status': 'error', 'error': str(e)}
 
 
+@bp.route('/admin/normalize_ids', methods=['POST'])
+def admin_normalize_ids():
+    """Normalize competitor IDs in race_results to canonical fleet IDs.
+
+    This performs an in-place cleanup to replace fallback ids (e.g. C_<sail>) with
+    the stable competitor_id from the fleet register, merging duplicates where
+    necessary. Use this once after migrating legacy data.
+    """
+    try:
+        from . import datastore_pg as _pg
+        stats = _pg.normalize_competitor_ids()
+        # Bust caches so views reflect changes immediately
+        _cache_clear_all()
+        return {'ok': True, **stats}
+    except Exception as e:  # pragma: no cover
+        return {'ok': False, 'status': 'error', 'error': str(e)}, 500
+
+
 #<getdata>
 def _load_series_entries():
     """Return list of series (metadata + races) from data.json."""
@@ -903,6 +921,13 @@ def series_detail(series_id):
             cached = _cache_get_race(race_id)
             if cached is not None:
                 results, fleet_adjustment = cached
+                # Ensure finisher count reflects cached results for display
+                try:
+                    finisher_count = sum(
+                        1 for r in (results or {}).values() if r.get('finish_time')
+                    )
+                except Exception:
+                    finisher_count = 0
             else:
                 calc_entries: list[dict] = []
                 for cid in ordered_ids:
@@ -961,6 +986,22 @@ def series_detail(series_id):
                         'place': res.get('status'),
                         'handicap_override': entrant.get('handicap_override'),
                     }
+                # Also provide result entries keyed by canonical fleet IDs when possible
+                try:
+                    if fleet:
+                        # Map sail number -> competitor record for id normalization
+                        fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
+                        for cid_key in list(results.keys()):
+                            if isinstance(cid_key, str) and cid_key.startswith('C_') and '_' in cid_key:
+                                sail = cid_key.split('_', 1)[1]
+                                comp = fleet_by_sail.get(sail)
+                                canon = comp.get('competitor_id') if comp else None
+                                if canon and canon not in results:
+                                    results[canon] = results[cid_key]
+                except Exception:
+                    # Best effort normalization; ignore failures
+                    pass
+
                 _cache_set_race(race_id, results, fleet_adjustment)
 
             selected_race = race
@@ -1104,6 +1145,20 @@ def series_detail(series_id):
                             'place': res.get('status'),
                             'handicap_override': entrant.get('handicap_override'),
                         }
+
+                    # Normalize result keys to include canonical fleet IDs when possible
+                    try:
+                        if fleet:
+                            fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
+                            for cid_key in list(results.keys()):
+                                if isinstance(cid_key, str) and cid_key.startswith('C_') and '_' in cid_key:
+                                    sail = cid_key.split('_', 1)[1]
+                                    comp = fleet_by_sail.get(sail)
+                                    canon = comp.get('competitor_id') if comp else None
+                                    if canon and canon not in results:
+                                        results[canon] = results[cid_key]
+                    except Exception:
+                        pass
 
                     selected_race = race
                     pre_race_handicaps = snapshot
