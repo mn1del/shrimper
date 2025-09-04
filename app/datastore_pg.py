@@ -150,6 +150,27 @@ def load_data() -> Dict[str, Any]:
         except Exception as e:
             if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                 raise
+        # Build canonicalization maps for competitor IDs
+        canon_ids = {c.get("competitor_id") for c in out["fleet"]["competitors"] if c.get("competitor_id")}
+        sail_to_id = {str((c.get("sail_no") or "")).strip(): c.get("competitor_id") for c in out["fleet"]["competitors"] if c.get("competitor_id") and (c.get("sail_no") is not None)}
+        import re as _re
+        def _canon_cid(cid_raw: str | None) -> str | None:
+            if not cid_raw:
+                return None
+            if cid_raw in canon_ids:
+                return cid_raw
+            s = cid_raw
+            num = None
+            if s.startswith("C_UNK_"):
+                num = s[6:]
+            elif s.startswith("C_"):
+                num = s.split("_", 1)[1]
+            if not num:
+                m = _re.search(r"(\d+)$", s)
+                num = m.group(1) if m else None
+            if num:
+                return sail_to_id.get(str(num)) or cid_raw
+            return cid_raw
 
         # Seasons + Series + Races -> Entrants (optimized in 2 round-trips)
         joined_rows: List[Dict[str, Any]] = []
@@ -178,31 +199,65 @@ def load_data() -> Dict[str, Any]:
 
         race_ids = [row.get("race_id") for row in joined_rows if row.get("race_id")]
         results_by_race: Dict[str, List[Dict[str, Any]]] = {}
+        results_by_race_maps: Dict[str, Dict[str, Dict[str, Any]]] = {}
         if race_ids:
             try:
-                cur.execute(
-                    """
-                    SELECT race_id, competitor_id, initial_handicap, finish_time
-                    FROM race_results
-                    WHERE race_id = ANY(%s)
-                    ORDER BY race_id, competitor_id
-                    """,
-                    (race_ids,),
-                )
+                # Prefer selecting handicap_override if the column exists; fall back gracefully
+                try:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                        FROM race_results
+                        WHERE race_id = ANY(%s)
+                        ORDER BY race_id, competitor_id
+                        """,
+                        (race_ids,),
+                    )
+                except Exception as e:
+                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        cur.execute(
+                            """
+                            SELECT race_id, competitor_id, initial_handicap, finish_time
+                            FROM race_results
+                            WHERE race_id = ANY(%s)
+                            ORDER BY race_id, competitor_id
+                            """,
+                            (race_ids,),
+                        )
+                    else:
+                        raise
                 for ent in cur.fetchall() or []:
                     rid = ent.get("race_id")
                     if not rid:
                         continue
-                    results_by_race.setdefault(rid, []).append(
-                        {
-                            "competitor_id": ent.get("competitor_id"),
-                            "initial_handicap": ent.get("initial_handicap"),
-                            "finish_time": _time_to_str(ent.get("finish_time")),
-                        }
-                    )
+                    cid_raw = ent.get("competitor_id")
+                    cid = _canon_cid(cid_raw)
+                    entry = {
+                        "competitor_id": cid,
+                        "initial_handicap": ent.get("initial_handicap"),
+                        "finish_time": _time_to_str(ent.get("finish_time")),
+                        "handicap_override": ent.get("handicap_override"),
+                    }
+                    m = results_by_race_maps.setdefault(rid, {})
+                    prev = m.get(cid or "")
+                    if prev is None:
+                        m[cid or ""] = entry
+                    else:
+                        # Prefer row with a finish_time or an override
+                        if (prev.get("finish_time") is None and entry.get("finish_time") is not None) or (
+                            prev.get("handicap_override") is None and entry.get("handicap_override") is not None
+                        ):
+                            m[cid or ""] = entry
             except Exception as e:
                 if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                     raise
+        # Convert maps to lists
+        for rid, cmap in results_by_race_maps.items():
+            results_by_race[rid] = list(cmap.values())
 
         seasons_map: Dict[int, Dict[str, Any]] = {}
         series_map: Dict[tuple[int, str], Dict[str, Any]] = {}
@@ -375,21 +430,44 @@ def save_data(data: Dict[str, Any]) -> None:
                             # Replace entrants for this race for determinism
                             cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
                             for ent in race.get("competitors", []) or []:
-                                cur.execute(
-                                    """
-                                    INSERT INTO race_results (race_id, competitor_id, initial_handicap, finish_time)
-                                    VALUES (%s, %s, %s, %s)
-                                    ON CONFLICT (race_id, competitor_id) DO UPDATE SET
-                                        initial_handicap = EXCLUDED.initial_handicap,
-                                        finish_time = EXCLUDED.finish_time
-                                    """,
-                                    (
-                                        rid,
-                                        ent.get("competitor_id"),
-                                        ent.get("initial_handicap"),
-                                        ent.get("finish_time"),
-                                    ),
-                                )
+                                # Attempt to upsert including handicap_override; fall back if column missing
+                                try:
+                                    cur.execute(
+                                        """
+                                        INSERT INTO race_results (race_id, competitor_id, initial_handicap, finish_time, handicap_override)
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (race_id, competitor_id) DO UPDATE SET
+                                            initial_handicap = EXCLUDED.initial_handicap,
+                                            finish_time = EXCLUDED.finish_time,
+                                            handicap_override = EXCLUDED.handicap_override
+                                        """,
+                                        (
+                                            rid,
+                                            ent.get("competitor_id"),
+                                            ent.get("initial_handicap"),
+                                            ent.get("finish_time"),
+                                            ent.get("handicap_override"),
+                                        ),
+                                    )
+                                except Exception as e:
+                                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                                        cur.execute(
+                                            """
+                                            INSERT INTO race_results (race_id, competitor_id, initial_handicap, finish_time)
+                                            VALUES (%s, %s, %s, %s)
+                                            ON CONFLICT (race_id, competitor_id) DO UPDATE SET
+                                                initial_handicap = EXCLUDED.initial_handicap,
+                                                finish_time = EXCLUDED.finish_time
+                                            """,
+                                            (
+                                                rid,
+                                                ent.get("competitor_id"),
+                                                ent.get("initial_handicap"),
+                                                ent.get("finish_time"),
+                                            ),
+                                        )
+                                    else:
+                                        raise
 
                 # Delete races no longer present (handles race deletions/renames)
                 try:
@@ -500,18 +578,72 @@ def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Opti
             "race_no": rr.get("race_no"),
             "competitors": [],
         }
-        cur.execute(
-            "SELECT competitor_id, initial_handicap, finish_time FROM race_results WHERE race_id = %s ORDER BY competitor_id",
-            (race_id,),
-        )
-        for ent in cur.fetchall():
-            race["competitors"].append(
-                {
-                    "competitor_id": ent.get("competitor_id"),
-                    "initial_handicap": ent.get("initial_handicap"),
-                    "finish_time": _time_to_str(ent.get("finish_time")),
-                }
+        # Read handicap_override if present; fall back when column missing
+        try:
+            cur.execute(
+                "SELECT competitor_id, initial_handicap, finish_time, handicap_override FROM race_results WHERE race_id = %s ORDER BY competitor_id",
+                (race_id,),
             )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                cur.execute(
+                    "SELECT competitor_id, initial_handicap, finish_time FROM race_results WHERE race_id = %s ORDER BY competitor_id",
+                    (race_id,),
+                )
+            else:
+                raise
+        # IMPORTANT: materialize race_results rows before running another query on the same cursor
+        race_result_rows = cur.fetchall() or []
+        # Canonicalize IDs using fleet table
+        # Load fleet for this normalization
+        try:
+            cur.execute(
+                "SELECT competitor_id, sail_no FROM competitors ORDER BY competitor_id"
+            )
+            fleet_rows = cur.fetchall() or []
+        except Exception:
+            fleet_rows = []
+        canon_ids = {r.get("competitor_id") for r in fleet_rows if r.get("competitor_id")}
+        sail_to_id = {str((r.get("sail_no") or "")).strip(): r.get("competitor_id") for r in fleet_rows if r.get("competitor_id") and (r.get("sail_no") is not None)}
+        import re as _re
+        def _canon_cid(cid_raw: str | None) -> str | None:
+            if not cid_raw:
+                return None
+            if cid_raw in canon_ids:
+                return cid_raw
+            s = cid_raw
+            num = None
+            if s.startswith("C_UNK_"):
+                num = s[6:]
+            elif s.startswith("C_"):
+                num = s.split("_", 1)[1]
+            if not num:
+                m = _re.search(r"(\d+)$", s)
+                num = m.group(1) if m else None
+            if num:
+                return sail_to_id.get(str(num)) or cid_raw
+            return cid_raw
+        # Deduplicate
+        seen: dict[str, dict] = {}
+        for ent in race_result_rows:
+            cid = _canon_cid(ent.get("competitor_id"))
+            entry = {
+                "competitor_id": cid,
+                "initial_handicap": ent.get("initial_handicap"),
+                "finish_time": _time_to_str(ent.get("finish_time")),
+                "handicap_override": ent.get("handicap_override"),
+            }
+            prev = seen.get(cid or "")
+            if prev is None or (
+                (prev.get("finish_time") is None and entry.get("finish_time") is not None)
+                or (prev.get("handicap_override") is None and entry.get("handicap_override") is not None)
+            ):
+                seen[cid or ""] = entry
+        race["competitors"].extend(seen.values())
         return season, series, race
 
 
@@ -592,26 +724,85 @@ def list_season_races_with_results(season_year: int, data: Optional[Dict[str, An
         results_by_race: Dict[str, List[Dict[str, Any]]] = {}
         if race_ids:
             try:
-                cur.execute(
-                    """
-                    SELECT race_id, competitor_id, initial_handicap, finish_time
-                    FROM race_results
-                    WHERE race_id = ANY(%s)
-                    ORDER BY race_id, competitor_id
-                    """,
-                    (race_ids,),
-                )
-                for ent in cur.fetchall() or []:
+                # Try to include handicap_override where schema supports it
+                try:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                        FROM race_results
+                        WHERE race_id = ANY(%s)
+                        ORDER BY race_id, competitor_id
+                        """,
+                        (race_ids,),
+                    )
+                except Exception as e:
+                    if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        cur.execute(
+                            """
+                            SELECT race_id, competitor_id, initial_handicap, finish_time
+                            FROM race_results
+                            WHERE race_id = ANY(%s)
+                            ORDER BY race_id, competitor_id
+                            """,
+                            (race_ids,),
+                        )
+                    else:
+                        raise
+                rows_rr = cur.fetchall() or []
+                # Canonicalize using competitors table
+                try:
+                    cur.execute(
+                        "SELECT competitor_id, sail_no FROM competitors ORDER BY competitor_id"
+                    )
+                    fleet_rows = cur.fetchall() or []
+                except Exception:
+                    fleet_rows = []
+                canon_ids = {r.get("competitor_id") for r in fleet_rows if r.get("competitor_id")}
+                sail_to_id = {str((r.get("sail_no") or "")).strip(): r.get("competitor_id") for r in fleet_rows if r.get("competitor_id") and (r.get("sail_no") is not None)}
+                import re as _re
+                def _canon_cid(cid_raw: str | None) -> str | None:
+                    if not cid_raw:
+                        return None
+                    if cid_raw in canon_ids:
+                        return cid_raw
+                    s = cid_raw
+                    num = None
+                    if s.startswith("C_UNK_"):
+                        num = s[6:]
+                    elif s.startswith("C_"):
+                        num = s.split("_", 1)[1]
+                    if not num:
+                        m = _re.search(r"(\d+)$", s)
+                        num = m.group(1) if m else None
+                    if num:
+                        return sail_to_id.get(str(num)) or cid_raw
+                    return cid_raw
+                # Build per-race maps with dedupe
+                rr_maps: Dict[str, Dict[str, Dict[str, Any]]] = {}
+                for ent in rows_rr:
                     rid = ent.get("race_id")
                     if not rid:
                         continue
-                    results_by_race.setdefault(rid, []).append(
-                        {
-                            "competitor_id": ent.get("competitor_id"),
-                            "initial_handicap": ent.get("initial_handicap"),
-                            "finish_time": _time_to_str(ent.get("finish_time")),
-                        }
-                    )
+                    cid = _canon_cid(ent.get("competitor_id"))
+                    entry = {
+                        "competitor_id": cid,
+                        "initial_handicap": ent.get("initial_handicap"),
+                        "finish_time": _time_to_str(ent.get("finish_time")),
+                        "handicap_override": ent.get("handicap_override"),
+                    }
+                    m = rr_maps.setdefault(rid, {})
+                    prev = m.get(cid or "")
+                    if prev is None or (
+                        (prev.get("finish_time") is None and entry.get("finish_time") is not None)
+                        or (prev.get("handicap_override") is None and entry.get("handicap_override") is not None)
+                    ):
+                        m[cid or ""] = entry
+                for rid, cmap in rr_maps.items():
+                    results_by_race[rid] = list(cmap.values())
             except Exception as e:
                 if not isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
                     raise
@@ -814,3 +1005,151 @@ def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None
                 raise
         conn.commit()
     return settings
+
+
+def normalize_competitor_ids() -> Dict[str, Any]:
+    """Normalize race_results.competitor_id values to canonical fleet IDs.
+
+    - If a race_results row uses a fallback like C_<sail> or C_UNK_<sail>, map it
+      to the canonical competitors.competitor_id for that sail number.
+    - When a canonical row already exists for the same race, merge values by
+      coalescing non-null fields, then delete the duplicate old row.
+
+    Returns a dict with counts of updated, merged and deleted rows.
+    """
+    stats = {"updated": 0, "merged": 0, "deleted": 0, "skipped": 0}
+    with _get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Load fleet canon ids and sail numbers
+            try:
+                cur.execute(
+                    "SELECT competitor_id, sail_no FROM competitors ORDER BY competitor_id"
+                )
+                fleet_rows = cur.fetchall() or []
+            except Exception as e:
+                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    return stats
+                raise
+
+            canon_ids = {r.get("competitor_id") for r in fleet_rows if r.get("competitor_id")}
+            sail_to_id = {
+                str((r.get("sail_no") or "")).strip(): r.get("competitor_id")
+                for r in fleet_rows
+                if r.get("competitor_id") and (r.get("sail_no") is not None)
+            }
+
+            import re as _re
+
+            def _canon_cid(cid_raw: str | None) -> str | None:
+                if not cid_raw:
+                    return None
+                if cid_raw in canon_ids:
+                    return cid_raw
+                s = str(cid_raw)
+                num = None
+                if s.startswith("C_UNK_"):
+                    num = s[6:]
+                elif s.startswith("C_"):
+                    num = s.split("_", 1)[1]
+                if not num:
+                    m = _re.search(r"(\d+)$", s)
+                    num = m.group(1) if m else None
+                if num:
+                    return sail_to_id.get(str(num)) or cid_raw
+                return cid_raw
+
+            # Detect whether handicap_override column exists
+            try:
+                cur.execute(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='race_results' AND column_name='handicap_override'
+                    """
+                )
+                override_supported = cur.fetchone() is not None
+            except Exception:
+                override_supported = False
+
+            # Pull all race_results rows
+            try:
+                if override_supported:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                        FROM race_results
+                        ORDER BY race_id, competitor_id
+                        """
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT race_id, competitor_id, initial_handicap, finish_time
+                        FROM race_results
+                        ORDER BY race_id, competitor_id
+                        """
+                    )
+            except Exception as e:
+                if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                    return stats
+                raise
+
+            rows = cur.fetchall() or []
+            for row in rows:
+                rid = row.get("race_id")
+                old = row.get("competitor_id")
+                new = _canon_cid(old)
+                if not new or new == old:
+                    stats["skipped"] += 1
+                    continue
+
+                # Check if a canonical row already exists for this race
+                if override_supported:
+                    cur.execute(
+                        "SELECT initial_handicap, finish_time, handicap_override FROM race_results WHERE race_id=%s AND competitor_id=%s",
+                        (rid, new),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT initial_handicap, finish_time FROM race_results WHERE race_id=%s AND competitor_id=%s",
+                        (rid, new),
+                    )
+                existing = cur.fetchone()
+                if existing:
+                    # Merge values: prefer non-null from either row
+                    ih = row.get("initial_handicap") or existing.get("initial_handicap")
+                    ft = row.get("finish_time") or existing.get("finish_time")
+                    if override_supported:
+                        ho = row.get("handicap_override") if row.get("handicap_override") is not None else existing.get("handicap_override")
+                        cur.execute(
+                            """
+                            UPDATE race_results
+                            SET initial_handicap=%s, finish_time=%s, handicap_override=%s
+                            WHERE race_id=%s AND competitor_id=%s
+                            """,
+                            (ih, ft, ho, rid, new),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            UPDATE race_results
+                            SET initial_handicap=%s, finish_time=%s
+                            WHERE race_id=%s AND competitor_id=%s
+                            """,
+                            (ih, ft, rid, new),
+                        )
+                    cur.execute(
+                        "DELETE FROM race_results WHERE race_id=%s AND competitor_id=%s",
+                        (rid, old),
+                    )
+                    stats["merged"] += 1
+                    stats["deleted"] += 1
+                else:
+                    # Simple update to the canonical id
+                    cur.execute(
+                        "UPDATE race_results SET competitor_id=%s WHERE race_id=%s AND competitor_id=%s",
+                        (new, rid, old),
+                    )
+                    stats["updated"] += 1
+
+        conn.commit()
+    return stats

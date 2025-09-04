@@ -211,6 +211,112 @@ def health_indexes():
             'error': str(e),
         }
 
+@bp.route('/health/schema')
+def health_schema():
+    """Report presence of required schema elements and types.
+
+    - Confirms race_results.handicap_override column exists
+    - Reports the data type of race_results.finish_time (expects TIME)
+    """
+    import os
+    url = os.environ.get('DATABASE_URL')
+    if not url:
+        return {
+            'connected': False,
+            'status': 'no_database_url',
+            'message': 'DATABASE_URL is not set; cannot inspect PostgreSQL schema.'
+        }
+    try:
+        import psycopg2  # type: ignore
+        with psycopg2.connect(url, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='race_results' AND column_name='handicap_override'
+                    """
+                )
+                has_override = cur.fetchone() is not None
+                # Finish time type
+                cur.execute(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='race_results' AND column_name='finish_time'
+                    """
+                )
+                row = cur.fetchone()
+                finish_type = row[0] if row else None
+        return {
+            'connected': True,
+            'status': 'ok',
+            'race_results.handicap_override': has_override,
+            'race_results.finish_time_type': finish_type,
+        }
+    except Exception as e:  # pragma: no cover
+        return {'connected': False, 'status': 'error', 'error': str(e)}
+
+@bp.route('/admin/schema/upgrade', methods=['POST'])
+def schema_upgrade():
+    """Ensure required schema is present and correct.
+
+    - Adds race_results.handicap_override if missing
+    - Coerces race_results.finish_time to TIME when not already TIME
+    """
+    import os
+    url = os.environ.get('DATABASE_URL')
+    if not url:
+        return {'ok': False, 'status': 'no_database_url'}
+    try:
+        import psycopg2  # type: ignore
+        with psycopg2.connect(url, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                # Add column if missing
+                cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='race_results' AND column_name='handicap_override'
+                        ) THEN
+                            ALTER TABLE public.race_results ADD COLUMN handicap_override INTEGER;
+                        END IF;
+                    END$$;
+                    """
+                )
+                # Ensure finish_time column is TIME type
+                try:
+                    cur.execute(
+                        """
+                        SELECT data_type
+                        FROM information_schema.columns
+                        WHERE table_schema='public' AND table_name='race_results' AND column_name='finish_time'
+                        """
+                    )
+                    row = cur.fetchone()
+                    col_type = row[0] if row else None
+                    if col_type and col_type.lower() != 'time without time zone':
+                        # Convert from interval/text to time safely
+                        cur.execute(
+                            """
+                            ALTER TABLE public.race_results
+                            ALTER COLUMN finish_time TYPE time
+                            USING CASE
+                                WHEN finish_time IS NULL THEN NULL
+                                WHEN pg_typeof(finish_time)::text = 'interval' THEN time '00:00' + finish_time
+                                ELSE finish_time::time
+                            END
+                            """
+                        )
+                except Exception:
+                    # Be tolerant if race_results is missing entirely
+                    pass
+                conn.commit()
+        return {'ok': True}
+    except Exception as e:  # pragma: no cover
+        return {'ok': False, 'status': 'error', 'error': str(e)}
+
 @bp.route('/admin/indexes/apply', methods=['POST'])
 def apply_missing_indexes():
     """Create recommended indexes if missing.
@@ -271,6 +377,24 @@ def apply_missing_indexes():
         return {'ok': False, 'status': 'client_missing'}
     except Exception as e:  # pragma: no cover
         return {'ok': False, 'status': 'error', 'error': str(e)}
+
+
+@bp.route('/admin/normalize_ids', methods=['POST'])
+def admin_normalize_ids():
+    """Normalize competitor IDs in race_results to canonical fleet IDs.
+
+    This performs an in-place cleanup to replace fallback ids (e.g. C_<sail>) with
+    the stable competitor_id from the fleet register, merging duplicates where
+    necessary. Use this once after migrating legacy data.
+    """
+    try:
+        from . import datastore_pg as _pg
+        stats = _pg.normalize_competitor_ids()
+        # Bust caches so views reflect changes immediately
+        _cache_clear_all()
+        return {'ok': True, **stats}
+    except Exception as e:  # pragma: no cover
+        return {'ok': False, 'status': 'error', 'error': str(e)}, 500
 
 
 #<getdata>
@@ -847,6 +971,13 @@ def series_detail(series_id):
             cached = _cache_get_race(race_id)
             if cached is not None:
                 results, fleet_adjustment = cached
+                # Ensure finisher count reflects cached results for display
+                try:
+                    finisher_count = sum(
+                        1 for r in (results or {}).values() if r.get('finish_time')
+                    )
+                except Exception:
+                    finisher_count = 0
             else:
                 calc_entries: list[dict] = []
                 for cid in ordered_ids:
@@ -905,6 +1036,22 @@ def series_detail(series_id):
                         'place': res.get('status'),
                         'handicap_override': entrant.get('handicap_override'),
                     }
+                # Also provide result entries keyed by canonical fleet IDs when possible
+                try:
+                    if fleet:
+                        # Map sail number -> competitor record for id normalization
+                        fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
+                        for cid_key in list(results.keys()):
+                            if isinstance(cid_key, str) and cid_key.startswith('C_') and '_' in cid_key:
+                                sail = cid_key.split('_', 1)[1]
+                                comp = fleet_by_sail.get(sail)
+                                canon = comp.get('competitor_id') if comp else None
+                                if canon and canon not in results:
+                                    results[canon] = results[cid_key]
+                except Exception:
+                    # Best effort normalization; ignore failures
+                    pass
+
                 _cache_set_race(race_id, results, fleet_adjustment)
 
             selected_race = race
@@ -1048,6 +1195,20 @@ def series_detail(series_id):
                             'place': res.get('status'),
                             'handicap_override': entrant.get('handicap_override'),
                         }
+
+                    # Normalize result keys to include canonical fleet IDs when possible
+                    try:
+                        if fleet:
+                            fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
+                            for cid_key in list(results.keys()):
+                                if isinstance(cid_key, str) and cid_key.startswith('C_') and '_' in cid_key:
+                                    sail = cid_key.split('_', 1)[1]
+                                    comp = fleet_by_sail.get(sail)
+                                    canon = comp.get('competitor_id') if comp else None
+                                    if canon and canon not in results:
+                                        results[canon] = results[cid_key]
+                    except Exception:
+                        pass
 
                     selected_race = race
                     pre_race_handicaps = snapshot
@@ -1380,6 +1541,48 @@ def update_race(race_id):
 
     store = load_data()
 
+    # Build canonicalization helpers to enforce stable competitor IDs
+    fleet = ds_get_fleet().get('competitors', [])
+    by_cid = {str(c.get('competitor_id')): c for c in (fleet or []) if c.get('competitor_id')}
+    by_sail = {str((c.get('sail_no') or '')).strip(): c for c in (fleet or []) if (c.get('sail_no') or '')}
+
+    def _canon_cid(raw: str | None) -> str | None:
+        if not raw:
+            return None
+        if raw in by_cid:
+            return raw
+        if raw.startswith('C_UNK_'):
+            sail = raw[6:]
+            comp = by_sail.get(sail)
+            return comp.get('competitor_id') if comp and comp.get('competitor_id') else None
+        # Handle ids of the form C_<sail> by mapping to fleet record
+        if raw.startswith('C_') and '_' in raw:
+            sail = raw.split('_', 1)[1]
+            comp = by_sail.get(sail)
+            return comp.get('competitor_id') if comp and comp.get('competitor_id') else None
+        # Unknown id that doesn't exist in fleet
+        return None
+
+    # Canonicalize incoming payload competitor IDs; reject unknowns to enforce stability
+    def _canon_list(items: list[dict], key: str) -> list[dict]:
+        out: list[dict] = []
+        missing: list[str] = []
+        for it in (items or []):
+            cid = _canon_cid(str(it.get(key)))
+            if cid is None:
+                missing.append(str(it.get(key)))
+                continue
+            itm = dict(it)
+            itm[key] = cid
+            out.append(itm)
+        if missing:
+            # Surface a clear error to guide adding/updating the fleet first
+            abort(400, description=f"Unknown competitor ids: {', '.join(sorted(set(missing)))}. Add them to Fleet first.")
+        return out
+
+    finish_times = _canon_list(finish_times, 'competitor_id')
+    handicap_overrides = _canon_list(handicap_overrides, 'competitor_id')
+
     def _apply_overrides(entrants_list: list[dict]):
         if not handicap_overrides:
             return entrants_list
@@ -1415,12 +1618,24 @@ def update_race(race_id):
             if not series_obj:
                 abort(400)
         series_id_val = series_obj.get('series_id')
-        # Build competitors from finish_times
+        # Build competitors from (canonicalized) finish_times
         competitors: list[dict] = []
         for ft in finish_times:
             ent = {'competitor_id': ft['competitor_id'], 'finish_time': ft.get('finish_time')}
             competitors.append(ent)
         competitors = _apply_overrides(competitors)
+        # Normalize competitor_ids to canonical fleet IDs
+        normalized_new: list[dict] = []
+        for ent in competitors:
+            cid_old = ent.get('competitor_id')
+            cid_new = _canon_cid(cid_old)
+            if not cid_new:
+                abort(400, description=f"Unknown competitor id: {cid_old}. Add to Fleet first.")
+            if cid_new != cid_old:
+                ent = dict(ent)
+                ent['competitor_id'] = cid_new
+            normalized_new.append(ent)
+        competitors = normalized_new
         # Append new race, then renumber to assign id and sequence
         series_obj.setdefault('races', []).append({
             'race_id': '',
@@ -1535,6 +1750,19 @@ def update_race(race_id):
 
         # Apply overrides across the (possibly expanded) entrant list
         _apply_overrides(entrants_list)
+
+        # Normalize any non-canonical competitor_ids now present in entrants_list
+        normalized_existing: list[dict] = []
+        for ent in entrants_list:
+            cid_old = ent.get('competitor_id')
+            cid_new = _canon_cid(cid_old)
+            if not cid_new:
+                abort(400, description=f"Unknown competitor id: {cid_old}. Add to Fleet first.")
+            if cid_new != cid_old:
+                ent = dict(ent)
+                ent['competitor_id'] = cid_new
+            normalized_existing.append(ent)
+        race_obj['competitors'] = normalized_existing
 
     race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
 

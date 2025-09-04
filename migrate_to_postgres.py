@@ -59,7 +59,7 @@ def create_tables(conn):
             )
         """)
         
-        # Create race_results table
+        # Create race_results table (include handicap_override for persistence)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS race_results (
                 id SERIAL PRIMARY KEY,
@@ -67,6 +67,7 @@ def create_tables(conn):
                 competitor_id VARCHAR(20) REFERENCES competitors(competitor_id) ON DELETE CASCADE,
                 initial_handicap INTEGER,
                 finish_time TIME,
+                handicap_override INTEGER,
                 UNIQUE(race_id, competitor_id)
             )
         """)
@@ -203,22 +204,24 @@ def migrate_races_and_results(conn, data):
                         race.get('race_no')
                     ))
                     
-                    # Insert race results
+                    # Insert race results (persist handicap_override when provided)
                     for competitor in race.get('competitors', []):
                         finish_time_str = competitor.get('finish_time')
                         
                         cur.execute("""
                             INSERT INTO race_results (
-                                race_id, competitor_id, initial_handicap, finish_time
-                            ) VALUES (%s, %s, %s, %s)
+                                race_id, competitor_id, initial_handicap, finish_time, handicap_override
+                            ) VALUES (%s, %s, %s, %s, %s)
                             ON CONFLICT (race_id, competitor_id) DO UPDATE SET
                                 initial_handicap = EXCLUDED.initial_handicap,
-                                finish_time = EXCLUDED.finish_time
+                                finish_time = EXCLUDED.finish_time,
+                                handicap_override = EXCLUDED.handicap_override
                         """, (
                             race.get('race_id'),
                             competitor.get('competitor_id'),
                             competitor.get('initial_handicap'),
-                            finish_time_str
+                            finish_time_str,
+                            competitor.get('handicap_override')
                         ))
         
         conn.commit()
