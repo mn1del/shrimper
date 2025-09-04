@@ -213,7 +213,11 @@ def health_indexes():
 
 @bp.route('/health/schema')
 def health_schema():
-    """Report presence of required schema elements (handicap_override column)."""
+    """Report presence of required schema elements and types.
+
+    - Confirms race_results.handicap_override column exists
+    - Reports the data type of race_results.finish_time (expects TIME)
+    """
     import os
     url = os.environ.get('DATABASE_URL')
     if not url:
@@ -233,13 +237,32 @@ def health_schema():
                     """
                 )
                 has_override = cur.fetchone() is not None
-        return {'connected': True, 'status': 'ok', 'race_results.handicap_override': has_override}
+                # Finish time type
+                cur.execute(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='race_results' AND column_name='finish_time'
+                    """
+                )
+                row = cur.fetchone()
+                finish_type = row[0] if row else None
+        return {
+            'connected': True,
+            'status': 'ok',
+            'race_results.handicap_override': has_override,
+            'race_results.finish_time_type': finish_type,
+        }
     except Exception as e:  # pragma: no cover
         return {'connected': False, 'status': 'error', 'error': str(e)}
 
 @bp.route('/admin/schema/upgrade', methods=['POST'])
 def schema_upgrade():
-    """Ensure required schema is present (adds race_results.handicap_override if missing)."""
+    """Ensure required schema is present and correct.
+
+    - Adds race_results.handicap_override if missing
+    - Coerces race_results.finish_time to TIME when not already TIME
+    """
     import os
     url = os.environ.get('DATABASE_URL')
     if not url:
@@ -262,6 +285,33 @@ def schema_upgrade():
                     END$$;
                     """
                 )
+                # Ensure finish_time column is TIME type
+                try:
+                    cur.execute(
+                        """
+                        SELECT data_type
+                        FROM information_schema.columns
+                        WHERE table_schema='public' AND table_name='race_results' AND column_name='finish_time'
+                        """
+                    )
+                    row = cur.fetchone()
+                    col_type = row[0] if row else None
+                    if col_type and col_type.lower() != 'time without time zone':
+                        # Convert from interval/text to time safely
+                        cur.execute(
+                            """
+                            ALTER TABLE public.race_results
+                            ALTER COLUMN finish_time TYPE time
+                            USING CASE
+                                WHEN finish_time IS NULL THEN NULL
+                                WHEN pg_typeof(finish_time)::text = 'interval' THEN time '00:00' + finish_time
+                                ELSE finish_time::time
+                            END
+                            """
+                        )
+                except Exception:
+                    # Be tolerant if race_results is missing entirely
+                    pass
                 conn.commit()
         return {'ok': True}
     except Exception as e:  # pragma: no cover
