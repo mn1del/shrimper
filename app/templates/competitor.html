@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-3 align-items-end mb-3">
+  <div class="col-12 col-md-4">
+    <label for="sailorInput" class="form-label">Sailor</label>
+    <input id="sailorInput" class="form-control" list="sailorList" placeholder="Type to search...">
+    <datalist id="sailorList">
+      {% for name in sailors %}
+        <option value="{{ name }}"></option>
+      {% endfor %}
+    </datalist>
+  </div>
+  <div class="col-12 col-md-4">
+    <label for="boatInput" class="form-label">Boat</label>
+    <input id="boatInput" class="form-control" list="boatList" placeholder="Type to search...">
+    <datalist id="boatList">
+      {% for name in boats %}
+        <option value="{{ name }}"></option>
+      {% endfor %}
+    </datalist>
+  </div>
+  <div class="col-12 col-md-4">
+    <label for="sailNoInput" class="form-label">Sail No</label>
+    <input id="sailNoInput" class="form-control" list="sailNoList" placeholder="Type to search...">
+    <datalist id="sailNoList">
+      {% for sn in sail_nos %}
+        <option value="{{ sn }}"></option>
+      {% endfor %}
+    </datalist>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle" id="competitorResults">
+    <thead>
+      <tr>
+        <th>Race Date</th>
+        <th>Start Time</th>
+        <th>Race Series</th>
+        <th># Finishers</th>
+        <th>Finish Time</th>
+        <th>Raw Finish Position</th>
+        <th>Adjusted Finish Position</th>
+        <th>Handicap</th>
+        <th>Adj Finish Time</th>
+        <th>Fleet Adjustment</th>
+        <th>Adjusted Handicap Change</th>
+        <th>Revised Handicap</th>
+        <th>Race Pts (Traditional)</th>
+        <th>League Pts (Adjusted)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {# Intentionally empty; rows to be filled when a competitor is selected #}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  // Provide races (chronological) for future dynamic population; not used yet.
+  window.__allRaces = {{ races | tojson }};
+  // Hook for future: listen for changes on inputs to populate table.
+  for (const id of ['sailorInput', 'boatInput', 'sailNoInput']) {
+    document.getElementById(id).addEventListener('change', () => {
+      // Placeholder for future implementation: populate #competitorResults tbody
+      const tbody = document.querySelector('#competitorResults tbody');
+      tbody.innerHTML = '';
+    });
+  }
+</script>
+{% endblock %}
+
