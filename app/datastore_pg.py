@@ -401,9 +401,12 @@ def save_data(data: Dict[str, Any]) -> None:
                             # Replace entrants for this race for determinism
                             cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
                             for ent in race.get("competitors", []) or []:
-                                # Normalize finish_time: empty string -> NULL for TIME columns
+                                # Normalize finish_time: empty/whitespace -> NULL for TIME columns
                                 _ft = ent.get("finish_time")
-                                finish_val = None if (_ft is None or _ft == "") else _ft
+                                finish_val = None
+                                if _ft is not None:
+                                    s = str(_ft).strip()
+                                    finish_val = None if s == "" else s
                                 cid = ent.get("competitor_id")
                                 cid_int = int(cid) if cid is not None else None
                                 cur.execute(

@@ -7,6 +7,40 @@ from typing import Any, Dict, List, Tuple, Optional
 from . import datastore_pg as _pg
 
 
+def _scan_series_in_data(series_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Return (season, series) from the provided data tree if present.
+
+    This scans the given ``data`` structure and returns references to the
+    contained season/series objects so that callers can mutate them and then
+    persist via ``save_data``.
+    """
+    if not data:
+        return None, None
+    seasons = data.get("seasons", []) or []
+    for season in seasons:
+        for series in season.get("series", []) or []:
+            if series.get("series_id") == series_id:
+                return season, series
+    return None, None
+
+
+def _scan_race_in_data(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Return (season, series, race) from provided data if present.
+
+    Returns references to objects inside ``data`` so edits can be persisted
+    by saving the same ``data`` tree.
+    """
+    if not data:
+        return None, None, None
+    seasons = data.get("seasons", []) or []
+    for season in seasons:
+        for series in season.get("series", []) or []:
+            for race in series.get("races", []) or []:
+                if race.get("race_id") == race_id:
+                    return season, series, race
+    return None, None, None
+
+
 def load_data() -> Dict[str, Any]:
     return _pg.load_data()
 
@@ -24,10 +58,20 @@ def list_series(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
 
 
 def find_series(series_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    # Prefer returning references from provided data so edits persist when saved
+    season, series = _scan_series_in_data(series_id, data=data)
+    if season is not None and series is not None:
+        return season, series
+    # Fallback to database fetch
     return _pg.find_series(series_id, data=data)
 
 
 def find_race(race_id: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    # Prefer returning references from provided data so edits persist when saved
+    season, series, race = _scan_race_in_data(race_id, data=data)
+    if season is not None and series is not None and race is not None:
+        return season, series, race
+    # Fallback to database fetch
     return _pg.find_race(race_id, data=data)
 
 
