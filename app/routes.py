@@ -4,6 +4,7 @@ import importlib
 from datetime import datetime
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from .scoring import calculate_race_results, _scaling_factor
 from . import scoring as scoring_module
@@ -33,6 +34,10 @@ _STANDINGS_CACHE: dict[tuple[int, str], tuple[float, tuple[list[dict], list[dict
 _RACE_CACHE: dict[str, tuple[float, dict, int]] = {}
 _STANDINGS_TTL = int(os.environ.get('CACHE_TTL_STANDINGS', '180'))  # seconds
 _RACE_TTL = int(os.environ.get('CACHE_TTL_RACE', '120'))  # seconds
+
+# Lightweight background executor for async tasks
+_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get('WORKER_THREADS', '1')))
+_RECALC_ACTIVE: set[str] = set()
 
 
 def _cache_get_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]] | None:
@@ -75,6 +80,83 @@ def _cache_clear_all() -> None:
 
 def _cache_delete_race(race_id: str) -> None:
     _RACE_CACHE.pop(race_id or '', None)
+
+
+def _cache_delete_standings_for_season(season: int | None) -> None:
+    if season is None:
+        return
+    season_int = int(season)
+    for key in list(_STANDINGS_CACHE.keys()):
+        if key and key[0] == season_int:
+            _STANDINGS_CACHE.pop(key, None)
+
+
+def _cache_delete_races_from(start_race_id: str) -> None:
+    try:
+        ids = ds_get_races() or []
+    except Exception:
+        ids = []
+    if start_race_id in ids:
+        start_idx = ids.index(start_race_id)
+        for rid in ids[start_idx:]:
+            _cache_delete_race(rid)
+    else:
+        _cache_delete_race(start_race_id)
+
+
+def _schedule_forward_recalc(race_id: str) -> None:
+    def _job():
+        try:
+            # mark active
+            try:
+                _RECALC_ACTIVE.add(race_id)
+            except Exception:
+                pass
+            recalculate_handicaps_from(race_id)
+        except Exception:
+            # Ignore background failures; the next page view will recompute on demand
+            pass
+        # After recompute, drop caches for forward races and season standings
+        try:
+            season_obj, _series_obj, _race_obj = ds_find_race(race_id)
+            season_year = (season_obj or {}).get('year') if season_obj else None
+        except Exception:
+            season_year = None
+        try:
+            _cache_delete_races_from(race_id)
+            _cache_delete_standings_for_season(season_year)
+        except Exception:
+            pass
+        finally:
+            try:
+                _RECALC_ACTIVE.discard(race_id)
+            except Exception:
+                pass
+
+    try:
+        _EXECUTOR.submit(_job)
+    except Exception:
+        # Fallback to synchronous execution if executor unavailable
+        _job()
+
+
+@bp.route('/api/recalc/status')
+def recalc_status():
+    """Return whether background forward recalculation is active.
+
+    Params:
+      - race_id (optional): if provided, returns whether that race is in the
+        active set; otherwise whether any recalc is active.
+    """
+    rid = request.args.get('race_id')
+    try:
+        if rid:
+            active = rid in _RECALC_ACTIVE
+        else:
+            active = bool(_RECALC_ACTIVE)
+        return {'in_progress': active, 'active_count': len(_RECALC_ACTIVE)}
+    except Exception as e:  # pragma: no cover
+        return {'in_progress': False, 'error': str(e)}
 
 @bp.route('/health/db')
 def health_db():
@@ -1920,7 +2002,13 @@ def update_race(race_id):
         # Persist
         # Persist only races/series/seasons to avoid touching settings unnecessarily
         save_data({'seasons': store.get('seasons', [])})
-        recalculate_handicaps()
+        # Invalidate just this race cache and its season standings, then schedule forward-only recalculation
+        try:
+            _cache_delete_race(new_race_id)
+            _cache_delete_standings_for_season(season_year)
+        except Exception:
+            pass
+        _schedule_forward_recalc(new_race_id)
         finisher_count = sum(1 for ft in finish_times if ft.get('finish_time'))
         redirect_url = url_for('main.series_detail', series_id=series_id_val, race_id=new_race_id)
         return {'finisher_count': finisher_count, 'redirect': redirect_url}
@@ -2032,23 +2120,219 @@ def update_race(race_id):
     if target_series is not series_obj:
         ds_renumber_races(series_obj)
 
-    # Persist and recalc
+    # Persist fast, schedule recalculation in background
     # Persist only races/series/seasons to avoid unintended settings writes
     save_data({'seasons': store.get('seasons', [])})
-    recalculate_handicaps()
 
-    # Bust caches after race update
-    _cache_clear_all()
-
-    # Determine final race id after any renumber
+    # Determine final race id after any renumber (before scheduling)
     final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
     redirect_series_id = target_series.get('series_id')
+
+    # Targeted cache invalidation for current race and its season
+    try:
+        # Resolve season year for standings invalidation
+        season_current, _series_current, _race_current = ds_find_race(final_race_id)
+        _cache_delete_race(final_race_id)
+        _cache_delete_standings_for_season((season_current or {}).get('year') if season_current else None)
+    except Exception:
+        pass
+
+    # Kick off forward-only recalculation asynchronously
+    _schedule_forward_recalc(final_race_id)
     redirect_url = url_for('main.series_detail', series_id=redirect_series_id, race_id=final_race_id)
     finisher_count = sum(1 for e in race_obj.get('competitors', []) if e.get('finish_time'))
     return {'finisher_count': finisher_count, 'redirect': redirect_url}
 #</getdata>
 
 
+#<getdata>
+@bp.route('/api/races/<race_id>/preview', methods=['POST'])
+def preview_race(race_id):
+    """Return recalculated results for the given race without persisting.
+
+    Accepts the same payload as ``/api/races/<race_id>`` (save), merges the
+    provided finish times and handicap overrides over the current race entrants,
+    computes results for this race only, and returns a JSON payload with:
+      - results: map of competitor_id -> computed fields (finish_time,
+        on_course_secs, abs_pos, allowance, adj_time, hcp_pos, race_pts,
+        league_pts, full_delta, scaled_delta, actual_delta, revised_hcp,
+        place, handicap_override)
+      - finisher_count
+      - fleet_adjustment (percentage integer)
+    """
+    data = request.get_json() or {}
+    start_time_override = data.get('start_time')
+    finish_times = data.get('finish_times', [])
+    handicap_overrides = data.get('handicap_overrides', [])
+
+    # Validate start_time format if provided
+    if isinstance(start_time_override, str) and start_time_override.strip():
+        try:
+            _ = _parse_hms(start_time_override)
+        except Exception:
+            abort(400, description=f"Invalid start time '{start_time_override}'. Expected HH:MM:SS.")
+
+    # Validate finish time formats in payload
+    for ft in (finish_times or []):
+        val = (ft or {}).get('finish_time')
+        if isinstance(val, str) and val.strip():
+            try:
+                _ = _parse_hms(val)
+            except Exception:
+                who = (ft or {}).get('competitor_id') or 'unknown competitor'
+                abort(400, description=f"Invalid finish time '{val}' for {who}. Expected HH:MM:SS.")
+
+    # Load race and fleet baselines
+    _season_obj, _series_obj, race_obj = ds_find_race(race_id)
+    if not race_obj:
+        abort(404)
+    fleet = ds_get_fleet().get('competitors', [])
+    valid_ids = {int(c.get('competitor_id')) for c in (fleet or []) if c.get('competitor_id') is not None}
+    fleet_map = {int(c.get('competitor_id')): c for c in (fleet or []) if c.get('competitor_id') is not None}
+
+    def _parse_cid(val) -> int:
+        try:
+            cid = int(val)
+        except Exception:
+            abort(400, description=f"Invalid competitor id '{val}'. Must be an integer id from the Fleet.")
+        if cid not in valid_ids:
+            abort(400, description=f"Unknown competitor id: {cid}. Add to Fleet first.")
+        return cid
+
+    # Normalize incoming lists to integer ids
+    finish_times = [
+        {'competitor_id': _parse_cid(ft.get('competitor_id')), 'finish_time': (ft.get('finish_time') or '').strip()}
+        for ft in (finish_times or [])
+    ]
+    handicap_overrides = [
+        {'competitor_id': _parse_cid(o.get('competitor_id')), 'handicap': (o.get('handicap') if o.get('handicap') not in (None, '') else None)}
+        for o in (handicap_overrides or [])
+    ]
+
+    # Build entrants map from current race
+    entrants = list(race_obj.get('competitors', []) or [])
+    entrants_map: dict[int, dict] = {int(e.get('competitor_id')): dict(e) for e in entrants if e.get('competitor_id') is not None}
+
+    # Apply finish time edits
+    for ft in finish_times:
+        cid = int(ft['competitor_id'])
+        ent = entrants_map.get(cid)
+        if ent is None:
+            ent = {'competitor_id': cid}
+            entrants_map[cid] = ent
+        ent['finish_time'] = ft.get('finish_time') or ''  # blank means no finish
+
+    # Apply handicap overrides
+    for o in handicap_overrides:
+        cid = int(o['competitor_id'])
+        ent = entrants_map.get(cid)
+        if ent is None:
+            ent = {'competitor_id': cid}
+            entrants_map[cid] = ent
+        try:
+            ent['handicap_override'] = int(o.get('handicap')) if o.get('handicap') is not None else None
+        except Exception:
+            ent['handicap_override'] = None
+
+    # Determine start time for preview
+    start_raw = (start_time_override if (isinstance(start_time_override, str) and start_time_override.strip()) else race_obj.get('start_time'))
+    try:
+        start_seconds = _parse_hms(start_raw)
+    except Exception:
+        start_seconds = None
+    if start_seconds is None:
+        start_seconds = 0
+
+    # Build calc entries with pre-race seeds honoring overrides
+    def _initial_for_cid(cid: int, ent: dict) -> int | None:
+        ov = ent.get('handicap_override')
+        if ov is not None:
+            try:
+                return int(ov)
+            except Exception:
+                return None
+        ih = ent.get('initial_handicap')
+        if ih is not None:
+            try:
+                return int(ih)
+            except Exception:
+                pass
+        comp = fleet_map.get(int(cid))
+        if comp is not None:
+            return comp.get('starting_handicap_s_per_hr')
+        return None
+
+    calc_entries: list[dict] = []
+    for cid, ent in entrants_map.items():
+        initial = _initial_for_cid(int(cid), ent)
+        # Do not include entries without a usable initial handicap
+        if initial is None:
+            continue
+        entry = {
+            'competitor_id': int(cid),
+            'start': start_seconds,
+            'initial_handicap': int(initial),
+        }
+        ft_raw = ent.get('finish_time')
+        if isinstance(ft_raw, str) and ft_raw.strip():
+            try:
+                ft = _parse_hms(ft_raw)
+            except Exception:
+                ft = None
+            if ft is not None:
+                entry['finish'] = ft
+        status = ent.get('status')
+        if status:
+            entry['status'] = status
+        calc_entries.append(entry)
+
+    # Compute results for this race only
+    results_list = calculate_race_results(calc_entries)
+    finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
+    fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100)) if finisher_count else 0
+
+    # Helper to format seconds as HH:MM:SS
+    def _format_hms(seconds: float | None) -> str | None:
+        if seconds is None:
+            return None
+        total = int(round(seconds))
+        h = total // 3600
+        m = (total % 3600) // 60
+        s = total % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    # Build response keyed by competitor id
+    results: dict[int, dict] = {}
+    for res in results_list:
+        cid = res.get('competitor_id')
+        ent = entrants_map.get(int(cid), {})
+        is_non_finisher = res.get('finish') is None
+        results[int(cid)] = {
+            'finish_time': ent.get('finish_time') if ent is not None else None,
+            'on_course_secs': res.get('elapsed_seconds'),
+            'abs_pos': res.get('absolute_position'),
+            'allowance': res.get('allowance_seconds'),
+            'adj_time_secs': res.get('adjusted_time_seconds'),
+            'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+            'hcp_pos': res.get('handicap_position'),
+            'race_pts': res.get('traditional_points')
+            if res.get('traditional_points') is not None
+            else (finisher_count + 1 if is_non_finisher else None),
+            'league_pts': res.get('points') if res.get('points') is not None else (0.0 if is_non_finisher else None),
+            'full_delta': res.get('full_delta') if res.get('full_delta') is not None else (0 if is_non_finisher else None),
+            'scaled_delta': res.get('scaled_delta') if res.get('scaled_delta') is not None else (0 if is_non_finisher else None),
+            'actual_delta': res.get('actual_delta') if res.get('actual_delta') is not None else (0 if is_non_finisher else None),
+            'revised_hcp': res.get('revised_handicap') if res.get('revised_handicap') is not None else (res.get('initial_handicap') if is_non_finisher else None),
+            'place': res.get('status'),
+            'handicap_override': ent.get('handicap_override'),
+        }
+
+    return {
+        'results': results,
+        'finisher_count': finisher_count,
+        'fleet_adjustment': fleet_adjustment,
+    }
+#</getdata>
 #<getdata>
 @bp.route('/api/races/<race_id>', methods=['DELETE'])
 def delete_race(race_id):
