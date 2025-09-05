@@ -159,3 +159,5 @@ If upgrading from a schema without `race_results.handicap_override`, either reru
 3. Run the dev server: `flask --app app run --debug`
 4. Run tests: `pytest`
 5. Keep documentation, especially this file, accurate when structure or workflow changes
+
+Note: If you change or upgrade the Bootstrap CDN version/URL, update the SRI hashes in `app/templates/base.html`.
