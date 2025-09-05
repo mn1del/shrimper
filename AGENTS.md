@@ -25,7 +25,7 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 
 ## Dev Workflow
 1. Install dependencies: `pip install -r requirements.txt`
-2. Set `DATABASE_URL` to your PostgreSQL connection string
+2. `DATABASE_URL` can be found in .env
 3. Run the dev server: `flask --app app run --debug`
 4. Run tests: `pytest`
 5. Keep documentation, especially this file, accurate when structure or workflow changes
