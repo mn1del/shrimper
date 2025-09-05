@@ -13,7 +13,7 @@ def client(memory_store):
     memory_store["fleet"] = {
         "competitors": [
             {
-                "competitor_id": "C1",
+                "competitor_id": 1,
                 "sailor_name": "Alice",
                 "boat_name": "Boaty",
                 "sail_no": "1",
@@ -21,7 +21,7 @@ def client(memory_store):
                 "current_handicap_s_per_hr": 100,
             },
             {
-                "competitor_id": "C2",
+                "competitor_id": 2,
                 "sailor_name": "Bob",
                 "boat_name": "Crafty",
                 "sail_no": "2",
@@ -29,7 +29,7 @@ def client(memory_store):
                 "current_handicap_s_per_hr": 100,
             },
             {
-                "competitor_id": "C3",
+                "competitor_id": 3,
                 "sailor_name": "Cara",
                 "boat_name": "Dinghy",
                 "sail_no": "3",
@@ -55,9 +55,9 @@ def client(memory_store):
                             "date": "2025-01-01",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1", "finish_time": "00:30:00"},
-                                {"competitor_id": "C2", "finish_time": "00:31:00"},
-                                {"competitor_id": "C3"},
+                                {"competitor_id": 1, "finish_time": "00:30:00"},
+                                {"competitor_id": 2, "finish_time": "00:31:00"},
+                                {"competitor_id": 3},
                             ],
                             "race_no": 1,
                         },
@@ -68,8 +68,8 @@ def client(memory_store):
                             "date": "2025-01-08",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1"},
-                                {"competitor_id": "C2", "finish_time": "00:32:00"},
+                                {"competitor_id": 1},
+                                {"competitor_id": 2, "finish_time": "00:32:00"},
                             ],
                             "race_no": 2,
                         },
@@ -99,4 +99,3 @@ def test_each_race_page_displays_finish_times(client):
         # Each recorded finish time should appear in the race page
         for t in expected_times:
             assert f'value="{t}"' in html
-

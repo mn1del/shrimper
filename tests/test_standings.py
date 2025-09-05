@@ -3,12 +3,10 @@ from app import routes, create_app
 
 
 def test_traditional_standings_include_non_finishers(memory_store):
-    memory_store["fleet"] = {
-        "competitors": [
-            {"competitor_id": "C1", "sailor_name": "Finisher", "boat_name": "Boat 1", "sail_no": "1", "starting_handicap_s_per_hr": 0},
-            {"competitor_id": "C2", "sailor_name": "NoFinish", "boat_name": "Boat 2", "sail_no": "2", "starting_handicap_s_per_hr": 0},
-        ]
-    }
+    memory_store["fleet"] = {"competitors": [
+        {"competitor_id": 1, "sailor_name": "Finisher", "boat_name": "Boat 1", "sail_no": "1", "starting_handicap_s_per_hr": 0},
+        {"competitor_id": 2, "sailor_name": "NoFinish", "boat_name": "Boat 2", "sail_no": "2", "starting_handicap_s_per_hr": 0},
+    ]}
     memory_store["seasons"] = [
         {
             "year": 2025,
@@ -24,8 +22,8 @@ def test_traditional_standings_include_non_finishers(memory_store):
                             "date": "2025-01-01",
                             "start_time": "10:00:00",
                             "competitors": [
-                                {"competitor_id": "C1", "initial_handicap": 0, "finish_time": "10:30:00"},
-                                {"competitor_id": "C2", "initial_handicap": 0, "status": "DNF"},
+                                {"competitor_id": 1, "initial_handicap": 0, "finish_time": "10:30:00"},
+                                {"competitor_id": 2, "initial_handicap": 0, "status": "DNF"},
                             ],
                             "race_no": 1,
                         }
@@ -46,12 +44,10 @@ def test_traditional_standings_include_non_finishers(memory_store):
 
 
 def test_absent_sailors_scored_as_dns(memory_store):
-    memory_store["fleet"] = {
-        "competitors": [
-            {"competitor_id": "C1", "sailor_name": "Finisher", "boat_name": "Boat 1", "sail_no": "1", "starting_handicap_s_per_hr": 0},
-            {"competitor_id": "C2", "sailor_name": "Absent", "boat_name": "Boat 2", "sail_no": "2", "starting_handicap_s_per_hr": 0},
-        ]
-    }
+    memory_store["fleet"] = {"competitors": [
+        {"competitor_id": 1, "sailor_name": "Finisher", "boat_name": "Boat 1", "sail_no": "1", "starting_handicap_s_per_hr": 0},
+        {"competitor_id": 2, "sailor_name": "Absent", "boat_name": "Boat 2", "sail_no": "2", "starting_handicap_s_per_hr": 0},
+    ]}
     memory_store["seasons"] = [
         {
             "year": 2025,
@@ -67,7 +63,7 @@ def test_absent_sailors_scored_as_dns(memory_store):
                             "date": "2025-01-01",
                             "start_time": "10:00:00",
                             "competitors": [
-                                {"competitor_id": "C1", "initial_handicap": 0, "finish_time": "10:30:00"}
+                                {"competitor_id": 1, "initial_handicap": 0, "finish_time": "10:30:00"}
                             ],
                             "race_no": 1,
                         }
@@ -130,12 +126,10 @@ def test_league_includes_absent_sailors(memory_store):
 
 
 def test_traditional_series_drops_high_scores(memory_store):
-    memory_store["fleet"] = {
-        "competitors": [
-            {"competitor_id": f"C{i}", "sailor_name": f"S{i}", "boat_name": f"B{i}", "sail_no": str(i), "starting_handicap_s_per_hr": 0}
-            for i in range(1, 6)
-        ]
-    }
+    memory_store["fleet"] = {"competitors": [
+        {"competitor_id": i, "sailor_name": f"S{i}", "boat_name": f"B{i}", "sail_no": str(i), "starting_handicap_s_per_hr": 0}
+        for i in range(1, 6)
+    ]}
     positions = [1, 2, 3, 4, 5]
     races = []
     for i, pos in enumerate(positions, start=1):
@@ -144,7 +138,7 @@ def test_traditional_series_drops_high_scores(memory_store):
         order.insert(pos - 1, 1)
         entrants = []
         for idx, comp in enumerate(order, start=1):
-            entrants.append({"competitor_id": f"C{comp}", "initial_handicap": 0, "finish_time": f"10:{30 + idx:02d}:00"})
+            entrants.append({"competitor_id": comp, "initial_handicap": 0, "finish_time": f"10:{30 + idx:02d}:00"})
         races.append({
             "race_id": f"RACE_{i}",
             "series_id": "SER_2024_TEST",
@@ -166,7 +160,7 @@ def test_traditional_series_drops_high_scores(memory_store):
 
 
 def test_invalid_race_zero_points(memory_store):
-    memory_store["fleet"] = {"competitors": [{"competitor_id": "C1", "sailor_name": "Solo", "boat_name": "Boat", "sail_no": "1", "starting_handicap_s_per_hr": 0}]}
+    memory_store["fleet"] = {"competitors": [{"competitor_id": 1, "sailor_name": "Solo", "boat_name": "Boat", "sail_no": "1", "starting_handicap_s_per_hr": 0}]}
     memory_store["seasons"] = [
         {
             "year": 2025,
@@ -176,8 +170,8 @@ def test_invalid_race_zero_points(memory_store):
                     "name": "Test",
                     "season": 2025,
                     "races": [
-                        {"race_id": "R1", "series_id": "SER_2025_TEST", "date": "2025-01-01", "competitors": [{"competitor_id": "C1", "initial_handicap": 0, "finish_time": "00:30:00"}], "race_no": 1},
-                        {"race_id": "R2", "series_id": "SER_2025_TEST", "date": "2025-01-02", "start_time": "10:00:00", "competitors": [{"competitor_id": "C1", "initial_handicap": 0, "status": "DNF"}], "race_no": 2},
+                        {"race_id": "R1", "series_id": "SER_2025_TEST", "date": "2025-01-01", "competitors": [{"competitor_id": 1, "initial_handicap": 0, "finish_time": "00:30:00"}], "race_no": 1},
+                        {"race_id": "R2", "series_id": "SER_2025_TEST", "date": "2025-01-02", "start_time": "10:00:00", "competitors": [{"competitor_id": 1, "initial_handicap": 0, "status": "DNF"}], "race_no": 2},
                     ],
                 }
             ],
@@ -191,7 +185,7 @@ def test_invalid_race_zero_points(memory_store):
 
 
 def test_race_with_no_entrants_included(memory_store):
-    memory_store["fleet"] = {"competitors": [{"competitor_id": "C1", "sailor_name": "Solo", "boat_name": "Boat", "sail_no": "1", "starting_handicap_s_per_hr": 0}]}
+    memory_store["fleet"] = {"competitors": [{"competitor_id": 1, "sailor_name": "Solo", "boat_name": "Boat", "sail_no": "1", "starting_handicap_s_per_hr": 0}]}
     memory_store["seasons"] = [{"year": 2025, "series": [{"series_id": "SER_2025_TEST", "name": "Test", "season": 2025, "races": [{"race_id": "R1", "series_id": "SER_2025_TEST", "date": "2025-01-01", "start_time": "10:00:00", "competitors": [], "race_no": 1}]}]}]
     standings, race_groups = routes._season_standings(2025, "league")
     assert race_groups[0]["races"][0]["race_id"] == "R1"
@@ -203,10 +197,9 @@ def test_race_with_no_entrants_included(memory_store):
 def test_standings_cells_link_to_race(memory_store):
     memory_store["fleet"] = {"competitors": [{"competitor_id": "C1", "sailor_name": "Solo", "boat_name": "Boat", "sail_no": "1", "starting_handicap_s_per_hr": 0}]}
     race_id = "RACE_2025-01-01_TEST_1"
-    memory_store["seasons"] = [{"year": 2025, "series": [{"series_id": "SER_2025_TEST", "name": "Test", "season": 2025, "races": [{"race_id": race_id, "series_id": "SER_2025_TEST", "date": "2025-01-01", "start_time": "10:00:00", "competitors": [{"competitor_id": "C1", "initial_handicap": 0, "finish_time": "10:30:00"}], "race_no": 1}]}]}]
+    memory_store["seasons"] = [{"year": 2025, "series": [{"series_id": "SER_2025_TEST", "name": "Test", "season": 2025, "races": [{"race_id": race_id, "series_id": "SER_2025_TEST", "date": "2025-01-01", "start_time": "10:00:00", "competitors": [{"competitor_id": 1, "initial_handicap": 0, "finish_time": "10:30:00"}], "race_no": 1}]}]}]
     app = create_app()
     client = app.test_client()
     resp = client.get("/standings?season=2025&format=league")
     assert resp.status_code == 200
     assert f'href="/series/SER_2025_TEST?race_id={race_id}"' in resp.get_data(as_text=True)
-

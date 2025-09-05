@@ -12,7 +12,7 @@ def client(memory_store):
     memory_store["fleet"] = {
         "competitors": [
             {
-                "competitor_id": "C1",
+                "competitor_id": 1,
                 "sailor_name": "Alice",
                 "boat_name": "Boaty",
                 "sail_no": "1",
@@ -22,7 +22,7 @@ def client(memory_store):
                 "notes": "",
             },
             {
-                "competitor_id": "C2",
+                "competitor_id": 2,
                 "sailor_name": "Bob",
                 "boat_name": "Crafty",
                 "sail_no": "2",
@@ -49,8 +49,8 @@ def client(memory_store):
                             "date": "2025-01-01",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1", "finish_time": "00:30:00"},
-                                {"competitor_id": "C2", "finish_time": "00:31:00"},
+                                {"competitor_id": 1, "finish_time": "00:30:00"},
+                                {"competitor_id": 2, "finish_time": "00:31:00"},
                             ],
                             "race_no": 1,
                         },
@@ -61,8 +61,8 @@ def client(memory_store):
                             "date": "2025-01-08",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1"},
-                                {"competitor_id": "C2", "finish_time": "00:32:00"},
+                                {"competitor_id": 1},
+                                {"competitor_id": 2, "finish_time": "00:32:00"},
                             ],
                             "race_no": 2,
                         },
@@ -129,8 +129,8 @@ def test_fleet_update_and_duplicates(client):
     # Duplicate sail number
     payload = {
         "competitors": [
-            {"competitor_id": "C1", "sailor_name": "A", "boat_name": "A", "sail_no": "1", "starting_handicap_s_per_hr": 100},
-            {"competitor_id": "C2", "sailor_name": "B", "boat_name": "B", "sail_no": "1", "starting_handicap_s_per_hr": 100},
+            {"competitor_id": 1, "sailor_name": "A", "boat_name": "A", "sail_no": "1", "starting_handicap_s_per_hr": 100},
+            {"competitor_id": 2, "sailor_name": "B", "boat_name": "B", "sail_no": "1", "starting_handicap_s_per_hr": 100},
         ]
     }
     res = client.post("/api/fleet", json=payload)
@@ -139,8 +139,8 @@ def test_fleet_update_and_duplicates(client):
     # Valid update propagates (send full fleet with unique sails)
     payload2 = {
         "competitors": [
-            {"competitor_id": "C1", "sailor_name": "New", "boat_name": "Boaty", "sail_no": "1", "starting_handicap_s_per_hr": 150},
-            {"competitor_id": "C2", "sailor_name": "Bob", "boat_name": "Crafty", "sail_no": "2", "starting_handicap_s_per_hr": 100},
+            {"competitor_id": 1, "sailor_name": "New", "boat_name": "Boaty", "sail_no": "1", "starting_handicap_s_per_hr": 150},
+            {"competitor_id": 2, "sailor_name": "Bob", "boat_name": "Crafty", "sail_no": "2", "starting_handicap_s_per_hr": 100},
         ]
     }
     res2 = client.post("/api/fleet", json=payload2)

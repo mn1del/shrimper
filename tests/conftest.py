@@ -63,13 +63,15 @@ def memory_store():
 
 @pytest.fixture(autouse=True)
 def patch_datastore(monkeypatch, memory_store):
-    # Patch app.datastore_pg with in-memory implementations
+    # Patch app.datastore_pg with in-memory implementations using integer competitor IDs.
     import app.datastore_pg as pg
 
     def load_data():
+        import copy
         return copy.deepcopy(memory_store)
 
     def save_data(data):
+        import copy
         memory_store.clear()
         memory_store.update(copy.deepcopy(data or {}))
 

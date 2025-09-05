@@ -11,12 +11,10 @@ from app.scoring import calculate_race_results
 @pytest.mark.usefixtures("patch_datastore")
 def test_recalculate_handicaps_uses_revised(memory_store):
     # Seed fleet and races in memory
-    memory_store["fleet"] = {
-        "competitors": [
-            {"competitor_id": f"C{i}", "sail_no": str(i), "sailor_name": f"S{i}", "boat_name": "", "starting_handicap_s_per_hr": 100, "current_handicap_s_per_hr": 100}
-            for i in range(1, 5)
-        ]
-    }
+    memory_store["fleet"] = {"competitors": [
+        {"competitor_id": i, "sail_no": str(i), "sailor_name": f"S{i}", "boat_name": "", "starting_handicap_s_per_hr": 100, "current_handicap_s_per_hr": 100}
+        for i in range(1, 5)
+    ]}
     memory_store["seasons"] = [
         {
             "year": 2025,
@@ -33,10 +31,10 @@ def test_recalculate_handicaps_uses_revised(memory_store):
                             "date": "2025-01-01",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1", "finish_time": "00:30:00"},
-                                {"competitor_id": "C2", "finish_time": "00:31:00"},
-                                {"competitor_id": "C3", "finish_time": "00:32:00"},
-                                {"competitor_id": "C4", "finish_time": "00:33:00"},
+                                {"competitor_id": 1, "finish_time": "00:30:00"},
+                                {"competitor_id": 2, "finish_time": "00:31:00"},
+                                {"competitor_id": 3, "finish_time": "00:32:00"},
+                                {"competitor_id": 4, "finish_time": "00:33:00"},
                             ],
                             "race_no": 1,
                         },
@@ -47,10 +45,10 @@ def test_recalculate_handicaps_uses_revised(memory_store):
                             "date": "2025-01-08",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1"},
-                                {"competitor_id": "C2"},
-                                {"competitor_id": "C3"},
-                                {"competitor_id": "C4"},
+                                {"competitor_id": 1},
+                                {"competitor_id": 2},
+                                {"competitor_id": 3},
+                                {"competitor_id": 4},
                             ],
                             "race_no": 2,
                         },
@@ -92,12 +90,10 @@ def test_recalculate_handicaps_uses_revised(memory_store):
 
 @pytest.mark.usefixtures("patch_datastore")
 def test_handicap_override(memory_store):
-    memory_store["fleet"] = {
-        "competitors": [
-            {"competitor_id": f"C{i}", "sail_no": str(i), "sailor_name": f"S{i}", "boat_name": "", "starting_handicap_s_per_hr": 100, "current_handicap_s_per_hr": 100}
-            for i in range(1, 5)
-        ]
-    }
+    memory_store["fleet"] = {"competitors": [
+        {"competitor_id": i, "sail_no": str(i), "sailor_name": f"S{i}", "boat_name": "", "starting_handicap_s_per_hr": 100, "current_handicap_s_per_hr": 100}
+        for i in range(1, 5)
+    ]}
     finish_order = ["00:30:00", "00:31:00", "00:32:00", "00:33:00"]
     memory_store["seasons"] = [
         {
@@ -115,7 +111,7 @@ def test_handicap_override(memory_store):
                             "date": "2025-01-01",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": f"C{i}", "finish_time": finish_order[i - 1]} for i in range(1, 5)
+                                {"competitor_id": i, "finish_time": finish_order[i - 1]} for i in range(1, 5)
                             ],
                             "race_no": 1,
                         },
@@ -126,10 +122,10 @@ def test_handicap_override(memory_store):
                             "date": "2025-01-08",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": "C1", "finish_time": finish_order[0], "handicap_override": 200},
-                                {"competitor_id": "C2", "finish_time": finish_order[1]},
-                                {"competitor_id": "C3", "finish_time": finish_order[2]},
-                                {"competitor_id": "C4", "finish_time": finish_order[3]},
+                                {"competitor_id": 1, "finish_time": finish_order[0], "handicap_override": 200},
+                                {"competitor_id": 2, "finish_time": finish_order[1]},
+                                {"competitor_id": 3, "finish_time": finish_order[2]},
+                                {"competitor_id": 4, "finish_time": finish_order[3]},
                             ],
                             "race_no": 2,
                         },
@@ -140,7 +136,7 @@ def test_handicap_override(memory_store):
                             "date": "2025-01-15",
                             "start_time": "00:00:00",
                             "competitors": [
-                                {"competitor_id": f"C{i}"} for i in range(1, 5)
+                                {"competitor_id": i} for i in range(1, 5)
                             ],
                             "race_no": 3,
                         },
@@ -153,7 +149,7 @@ def test_handicap_override(memory_store):
     # Expected maps
     start_sec = routes._parse_hms("00:00:00") or 0
     entries1 = [
-        {"competitor_id": f"C{i}", "start": start_sec, "finish": routes._parse_hms(finish_order[i - 1]), "initial_handicap": 100}
+        {"competitor_id": i, "start": start_sec, "finish": routes._parse_hms(finish_order[i - 1]), "initial_handicap": 100}
         for i in range(1, 5)
     ]
     res1 = calculate_race_results(entries1)
@@ -161,8 +157,8 @@ def test_handicap_override(memory_store):
 
     entries2 = []
     for i in range(1, 5):
-        cid = f"C{i}"
-        init = 200 if cid == "C1" else after_r1[cid]
+        cid = i
+        init = 200 if cid == 1 else after_r1[cid]
         entries2.append({"competitor_id": cid, "start": start_sec, "finish": routes._parse_hms(finish_order[i - 1]), "initial_handicap": init})
     res2 = calculate_race_results(entries2)
     after_r2 = {r["competitor_id"]: r["revised_handicap"] for r in res2}
@@ -173,9 +169,9 @@ def test_handicap_override(memory_store):
     r3 = memory_store["seasons"][0]["series"][0]["races"][2]
 
     r2_map = {e["competitor_id"]: e for e in r2["competitors"]}
-    assert r2_map["C1"]["initial_handicap"] == 200
-    assert r2_map["C1"]["handicap_override"] == 200
-    for cid in ["C2", "C3", "C4"]:
+    assert r2_map[1]["initial_handicap"] == 200
+    assert r2_map[1]["handicap_override"] == 200
+    for cid in [2, 3, 4]:
         assert r2_map[cid]["initial_handicap"] == after_r1[cid]
 
     r3_map = {e["competitor_id"]: e for e in r3["competitors"]}

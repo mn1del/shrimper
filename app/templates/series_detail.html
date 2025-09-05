@@ -349,7 +349,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const cur = finishInputs.find(i => i.dataset.cid === o.cid);
       if (!cur) continue;
       if ((cur.value || '') !== (o.value || '')) {
-        changedFinishTimes.push({ competitor_id: cur.dataset.cid, finish_time: cur.value });
+        const cidNum = parseInt(cur.dataset.cid, 10);
+        changedFinishTimes.push({ competitor_id: isNaN(cidNum) ? cur.dataset.cid : cidNum, finish_time: cur.value });
       }
     }
     const changedOverrides = [];
@@ -358,7 +359,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!cur) continue;
       const curVal = cur.dataset.cleared === '1' ? '' : (cur.value || '');
       if ((curVal || '') !== (o.value || '')) {
-        changedOverrides.push({ competitor_id: cur.dataset.cid, handicap: curVal });
+        const cidNum = parseInt(cur.dataset.cid, 10);
+        changedOverrides.push({ competitor_id: isNaN(cidNum) ? cur.dataset.cid : cidNum, handicap: curVal });
       }
     }
     const payload = {

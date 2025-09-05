@@ -161,3 +161,14 @@ If upgrading from a schema without `race_results.handicap_override`, either reru
 5. Keep documentation, especially this file, accurate when structure or workflow changes
 
 Note: If you change or upgrade the Bootstrap CDN version/URL, update the SRI hashes in `app/templates/base.html`.
+
+## Optional To‑Do (Future Cleanup)
+
+The app now uses integer competitor IDs end‑to‑end (DB FK to `competitors.id`) with no sail‑number fallbacks. These items can further simplify and harden the codebase:
+
+- Finalize column rename: switch `race_results.competitor_ref` (INT) to `race_results.competitor_id` (INT), drop the legacy varchar column and related indexes; update datastore SQL to select/insert `competitor_id` directly instead of aliasing. Files: `app/datastore_pg.py` (queries: SELECT, INSERT/UPSERT, UPDATE).
+- Remove deprecated helpers: delete `_next_competitor_id` in `app/routes.py` and the no‑op `normalize_competitor_ids()` in `app/datastore_pg.py`. Both are unnecessary in the integer‑ID model.
+- Drop legacy schema fallbacks: remove try/except code that tolerates missing columns (e.g., `handicap_override` or split settings columns) now that PostgreSQL schema is authoritative. Files: `app/datastore_pg.py` (settings load/save, race_results selects), `app/routes.py` (schema/health helpers).
+- Tests parity (then simplify): migrate tests to use integer competitor IDs directly (update fixtures and expected maps). After that, remove the conversion layer added in `tests/conftest.py` that translates between string IDs (e.g., "C1") and ints.
+- Health/index endpoints: once the column rename is complete, remove compatibility logic that recognizes both `competitor_ref` and legacy `competitor_id` in the index checks. Files: `app/routes.py` (`/health/indexes`, `/admin/indexes/apply`).
+- Documentation refresh: update this README (and AGENTS.md if present) to describe competitor IDs as integers (`competitors.id`) throughout; remove any references to `C_<sail>`/`C_UNK_*` placeholder IDs. Ensure schema examples and index recommendations match the final column names.

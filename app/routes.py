@@ -169,12 +169,17 @@ def health_indexes():
             'races(series_id)': has_index('races', 'series_id'),
             'races(date,start_time)': has_index('races', 'date, start_time'),
             'races(series_id,date,start_time)': has_index('races', 'series_id, date, start_time'),
-            # For race_results, (race_id, competitor_id) unique index covers race_id lookups
+            # For race_results, accept either competitor_ref (int FK) or legacy competitor_id
             'race_results(race_id)': (
-                has_index('race_results', 'race_id') or has_index('race_results', 'race_id, competitor_id')
+                has_index('race_results', 'race_id')
+                or has_index('race_results', 'race_id, competitor_ref')
+                or has_index('race_results', 'race_id, competitor_id')
             ),
-            'race_results(competitor_id)': (
-                has_index('race_results', 'competitor_id') or has_index('race_results', 'competitor_id, race_id')
+            'race_results(competitor)': (
+                has_index('race_results', 'competitor_ref')
+                or has_index('race_results', 'competitor_ref, race_id')
+                or has_index('race_results', 'competitor_id')
+                or has_index('race_results', 'competitor_id, race_id')
             ),
         }
         missing = [k for k, v in checks.items() if not v]
@@ -189,8 +194,8 @@ def health_indexes():
             suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series_date_time ON public.races(series_id, date, start_time);')
         if 'race_results(race_id)' in missing:
             suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_race ON public.race_results(race_id);')
-        if 'race_results(competitor_id)' in missing:
-            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor ON public.race_results(competitor_id);')
+        if 'race_results(competitor)' in missing:
+            suggestions.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor_ref ON public.race_results(competitor_ref);')
 
         return {
             'connected': True,
@@ -470,8 +475,15 @@ def apply_missing_indexes():
                     statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_date_time ON public.races(date, start_time);')
                 if not has_index('races', 'series_id, date, start_time'):
                     statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_races_series_date_time ON public.races(series_id, date, start_time);')
-                if not has_index('race_results', 'competitor_id') and not has_index('race_results', 'competitor_id, race_id'):
-                    statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor ON public.race_results(competitor_id);')
+                # Prefer competitor_ref; accept legacy competitor_id for compatibility
+                has_comp_idx = (
+                    has_index('race_results', 'competitor_ref')
+                    or has_index('race_results', 'competitor_ref, race_id')
+                    or has_index('race_results', 'competitor_id')
+                    or has_index('race_results', 'competitor_id, race_id')
+                )
+                if not has_comp_idx:
+                    statements.append('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_competitor_ref ON public.race_results(competitor_ref);')
 
                 applied: list[str] = []
                 for sql in statements:
@@ -484,22 +496,7 @@ def apply_missing_indexes():
         return {'ok': False, 'status': 'error', 'error': str(e)}
 
 
-@bp.route('/admin/normalize_ids', methods=['POST'])
-def admin_normalize_ids():
-    """Normalize competitor IDs in race_results to canonical fleet IDs.
-
-    This performs an in-place cleanup to replace fallback ids (e.g. C_<sail>) with
-    the stable competitor_id from the fleet register, merging duplicates where
-    necessary. Use this once after migrating legacy data.
-    """
-    try:
-        from . import datastore_pg as _pg
-        stats = _pg.normalize_competitor_ids()
-        # Bust caches so views reflect changes immediately
-        _cache_clear_all()
-        return {'ok': True, **stats}
-    except Exception as e:  # pragma: no cover
-        return {'ok': False, 'status': 'error', 'error': str(e)}, 500
+## Admin cleanup route removed: ID normalization no longer required
 
 
 #<getdata>
@@ -563,41 +560,25 @@ def _race_order_map() -> dict[str, int]:
 
 
 #<getdata>
-def _fleet_lookup() -> dict[str, dict]:
-    """Return mapping of competitor id to fleet details from data.json.
+def _fleet_lookup() -> dict:
+    """Return mapping of competitor_id -> fleet details (no fallbacks).
 
-    Many imported fleet registers do not assign a stable ``competitor_id`` but
-    do include a unique sail number. Race entries in this project typically use
-    ids of the form ``C_<sail_no>`` (e.g. ``C_298``). To ensure standings and
-    per-race calculations can join fleet metadata to race entrants, derive an
-    id from the sail number when ``competitor_id`` is missing.
+    Keys are the competitor_id values as provided by the datastore. In the
+    production Postgres path these are integers. In tests (patched datastore),
+    they may be strings. No sail-number derived fallbacks are produced.
     """
-    fleet = ds_get_fleet()
-    competitors = fleet.get("competitors", [])
-    mapping: dict[str, dict] = {}
+    fleet = ds_get_fleet() or {"competitors": []}
+    competitors = fleet.get("competitors", []) or []
+    mapping = {}
     for c in competitors:
         cid = c.get("competitor_id")
-        if cid:
+        if cid is not None:
             mapping[cid] = c
-            continue
-        sail = str((c.get("sail_no") or "")).strip()
-        if sail:
-            mapping[f"C_{sail}"] = c
     return mapping
 #</getdata>
 
 
-def _next_competitor_id(existing: set[str]) -> str:
-    """Return a new unique competitor id."""
-    max_id = 0
-    for cid in existing:
-        try:
-            num = int(cid.split("_")[1])
-            if num > max_id:
-                max_id = num
-        except (IndexError, ValueError):
-            continue
-    return f"C_{max_id + 1}"
+# Deprecated in integer-ID model; ids are DB-assigned
 
 
 #<getdata>
@@ -1083,38 +1064,25 @@ def series_detail(series_id):
             if start_seconds is None:
                 start_seconds = 0
             entrants = race.get('competitors', []) or []
-            entrants_map = {
-                e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
+            entrants_map: dict[int, dict] = {
+                int(e.get('competitor_id')): e for e in entrants if e.get('competitor_id') is not None
             }
-            fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
 
-            ordered_ids: list[str] = []
-            for idx, comp in enumerate(fleet):
-                raw_cid = comp.get('competitor_id')
-                sail = (comp.get('sail_no') or '').strip()
-                cid_guess = f'C_{sail}' if (not raw_cid and sail) else raw_cid
-                if cid_guess and cid_guess in entrants_map:
-                    cid = cid_guess
-                elif raw_cid:
-                    cid = raw_cid
-                elif sail:
-                    cid = f'C_UNK_{sail}'
-                else:
-                    cid = f'C_UNK_{idx+1}'
-                ordered_ids.append(cid)
-
+            ordered_ids: list[int] = []
+            for comp in fleet:
+                cid = comp.get('competitor_id')
+                if cid is not None:
+                    ordered_ids.append(int(cid))
             for cid in entrants_map.keys():
                 if cid not in ordered_ids:
                     ordered_ids.append(cid)
 
             # Precompute pre-race handicaps (used for display and as calc inputs)
-            pre_race_handicaps: dict[str, int] = {}
+            pre_race_handicaps: dict[int, int] = {}
+            fleet_map: dict[int, dict] = {int(c.get('competitor_id')): c for c in fleet if c.get('competitor_id') is not None}
             for cid in ordered_ids:
                 ent = entrants_map.get(cid, {})
-                comp = None
-                if cid.startswith('C_') and '_' in cid:
-                    sail = cid.split('_', 1)[1]
-                    comp = fleet_by_sail.get(sail)
+                comp = fleet_map.get(cid)
                 initial = None
                 if ent.get('handicap_override') is not None:
                     try:
@@ -1133,7 +1101,7 @@ def series_detail(series_id):
                     initial = comp.get('starting_handicap_s_per_hr')
                 if initial is None:
                     # Missing a usable starting handicap and no override/initial on entrant
-                    name = (comp.get('sailor_name') if comp else '') or cid
+                    name = (comp.get('sailor_name') if comp else '') or str(cid)
                     errors.append(f"No starting handicap available from the Fleet for competitor {name}.")
                     # Do not select a fallback value here; leave pre_race_handicaps without an entry
                     continue
@@ -1208,7 +1176,7 @@ def series_detail(series_id):
                 finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
                 fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100)) if finisher_count else 0
 
-                results: dict[str, dict] = {}
+                results: dict[int, dict] = {}
                 for res in results_list:
                     cid = res.get('competitor_id')
                     entrant = entrants_map.get(cid, {})
@@ -1245,21 +1213,7 @@ def series_detail(series_id):
                         'place': res.get('status'),
                         'handicap_override': entrant.get('handicap_override'),
                     }
-                # Also provide result entries keyed by canonical fleet IDs when possible
-                try:
-                    if fleet:
-                        # Map sail number -> competitor record for id normalization
-                        fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
-                        for cid_key in list(results.keys()):
-                            if isinstance(cid_key, str) and cid_key.startswith('C_') and '_' in cid_key:
-                                sail = cid_key.split('_', 1)[1]
-                                comp = fleet_by_sail.get(sail)
-                                canon = comp.get('competitor_id') if comp else None
-                                if canon and canon not in results:
-                                    results[canon] = results[cid_key]
-                except Exception:
-                    # Best effort normalization; ignore failures
-                    pass
+                # Keys are canonical integer ids; no normalization required
 
                 _cache_set_race(race_id, results, fleet_adjustment)
 
@@ -1282,13 +1236,13 @@ def series_detail(series_id):
                 race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
 
             pre_race_handicaps = handicap_map
-            results: dict[str, dict] = {}
+            results: dict[int, dict] = {}
 
             for race in race_objs:
                 start_seconds = _parse_hms(race.get('start_time'))
                 entrants = race.get('competitors', [])
-                entrants_map = {
-                    e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
+                entrants_map: dict[int, dict] = {
+                    int(e.get('competitor_id')): e for e in entrants if e.get('competitor_id') is not None
                 }
                 snapshot = handicap_map.copy()
             
@@ -1299,25 +1253,12 @@ def series_detail(series_id):
                     calc_entries: list[dict] = []
 
                     # Helper maps by sail number for fleets without competitor_id
-                    fleet_by_sail = {
-                        str((c.get('sail_no') or '')).strip(): c for c in fleet
-                    }
-
-                    # Build ordered ids using fleet order (derive C_<sail> when possible)
-                    ordered_ids: list[str] = []
-                    for idx, comp in enumerate(fleet):
-                        raw_cid = comp.get('competitor_id')
-                        sail = (comp.get('sail_no') or '').strip()
-                        cid_guess = f'C_{sail}' if (not raw_cid and sail) else raw_cid
-                        if cid_guess and cid_guess in entrants_map:
-                            cid = cid_guess
-                        elif raw_cid:
-                            cid = raw_cid
-                        elif sail:
-                            cid = f'C_UNK_{sail}'
-                        else:
-                            cid = f'C_UNK_{idx+1}'
-                        ordered_ids.append(cid)
+                    # Build ordered ids using fleet order (canonical integer ids)
+                    ordered_ids: list[int] = []
+                    for comp in fleet:
+                        cid = comp.get('competitor_id')
+                        if cid is not None:
+                            ordered_ids.append(int(cid))
 
                     # Append any remaining entrants not represented in fleet
                     for cid in entrants_map.keys():
@@ -1325,13 +1266,11 @@ def series_detail(series_id):
                             ordered_ids.append(cid)
 
                     # Build calc entries
+                    fleet_map: dict[int, dict] = {int(c.get('competitor_id')): c for c in fleet if c.get('competitor_id') is not None}
                     for cid in ordered_ids:
                         ent = entrants_map.get(cid, {})
                         # Find fleet record for this id if possible
-                        comp = None
-                        if cid.startswith('C_') and '_' in cid:
-                            sail = cid.split('_', 1)[1]
-                            comp = fleet_by_sail.get(sail)
+                        comp = fleet_map.get(cid)
                         # initial handicap preference: per-race override -> snapshot ->
                         # entrant initial -> fleet current/starting -> 0
                         initial = snapshot.get(cid)
@@ -1410,19 +1349,7 @@ def series_detail(series_id):
                             'handicap_override': entrant.get('handicap_override'),
                         }
 
-                    # Normalize result keys to include canonical fleet IDs when possible
-                    try:
-                        if fleet:
-                            fleet_by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
-                            for cid_key in list(results.keys()):
-                                if isinstance(cid_key, str) and cid_key.startswith('C_') and '_' in cid_key:
-                                    sail = cid_key.split('_', 1)[1]
-                                    comp = fleet_by_sail.get(sail)
-                                    canon = comp.get('competitor_id') if comp else None
-                                    if canon and canon not in results:
-                                        results[canon] = results[cid_key]
-                    except Exception:
-                        pass
+                    # Keys are canonical integer ids; no normalization required
 
                     selected_race = race
                     pre_race_handicaps = snapshot
@@ -1478,24 +1405,14 @@ def series_detail(series_id):
                 if e.get('competitor_id')
             }
 
-            seen: set[str] = set()
+            seen: set[int] = set()
 
-            # 1) Add every fleet record, even if competitor_id is missing.
-            #    Use a stable fallback id based on sail number when needed.
-            for idx, f in enumerate(fleet):
-                raw_cid = f.get('competitor_id')
-                sail = (f.get('sail_no') or '').strip()
-                # Prefer a matching entrant id when fleet lacks an id
-                cid_guess = f'C_{sail}' if (not raw_cid and sail) else raw_cid
-                cid = None
-                if cid_guess and cid_guess in local_entrants_map:
-                    cid = cid_guess
-                elif raw_cid:
-                    cid = raw_cid
-                elif sail:
-                    cid = f'C_UNK_{sail}'
-                else:
-                    cid = f'C_UNK_{idx+1}'
+            # 1) Add every fleet record using canonical integer competitor ids
+            for f in fleet:
+                cid = f.get('competitor_id')
+                if cid is None:
+                    continue
+                cid = int(cid)
                 seen.add(cid)
                 ent = local_entrants_map.get(cid, {})
                 display_list.append({
@@ -1508,9 +1425,7 @@ def series_detail(series_id):
                         if cid in pre_race_handicaps else (
                             ent.get('initial_handicap')
                             if ent.get('initial_handicap') is not None
-                            else f.get('starting_handicap_s_per_hr')
-                            or f.get('current_handicap_s_per_hr')
-                            or 0
+                            else f.get('starting_handicap_s_per_hr') or f.get('current_handicap_s_per_hr') or 0
                         )
                     ),
                 })
@@ -1660,49 +1575,36 @@ def update_fleet():
     fleet_data = ds_get_fleet()
     if not fleet_data:
         fleet_data = {'competitors': []}
-    existing = {
-        c.get('competitor_id'): c
-        for c in fleet_data.get('competitors', [])
-        if c.get('competitor_id')
-    }
-    ids = set(existing.keys())
+    # Normalize incoming list; preserve id when provided; let datastore assign when missing
+    normalized: list[dict] = []
     for comp in comps:
         cid = comp.get('competitor_id')
-        if not cid:
-            cid = _next_competitor_id(ids)
-            ids.add(cid)
-        entry = existing.get(
-            cid,
-            {
-                'competitor_id': cid,
-                'current_handicap_s_per_hr': comp.get('starting_handicap_s_per_hr', 0),
-                'active': True,
-                'notes': '',
-            },
-        )
-        entry.update(
-            {
-                'sailor_name': comp.get('sailor_name', ''),
-                'boat_name': comp.get('boat_name', ''),
-                'sail_no': comp.get('sail_no', ''),
-                'starting_handicap_s_per_hr': comp.get('starting_handicap_s_per_hr', 0),
-            }
-        )
-        if 'current_handicap_s_per_hr' not in entry:
-            entry['current_handicap_s_per_hr'] = entry['starting_handicap_s_per_hr']
-        existing[cid] = entry
-    # Ensure sail numbers are unique
-    sail_counts: dict[str, int] = {}
-    for c in existing.values():
-        sail_no = c.get('sail_no', '').strip()
-        if not sail_no:
-            continue
-        sail_counts[sail_no] = sail_counts.get(sail_no, 0) + 1
-    duplicates = [sn for sn, count in sail_counts.items() if count > 1]
-    if duplicates:
-        return {'error': f"Duplicate sail numbers: {', '.join(sorted(duplicates))}"}, 400
+        try:
+            cid = int(cid) if cid is not None else None
+        except Exception:
+            cid = None
+        entry = {
+            'competitor_id': cid,
+            'sailor_name': comp.get('sailor_name', ''),
+            'boat_name': comp.get('boat_name', ''),
+            'sail_no': comp.get('sail_no', ''),
+            'starting_handicap_s_per_hr': comp.get('starting_handicap_s_per_hr', 0),
+            'current_handicap_s_per_hr': comp.get('current_handicap_s_per_hr', comp.get('starting_handicap_s_per_hr', 0)),
+        }
+        normalized.append(entry)
 
-    fleet_data['competitors'] = list(existing.values())
+    # Enforce unique sail numbers (non-empty)
+    sail_counts: dict[str, int] = {}
+    for c in normalized:
+        sail = (c.get('sail_no') or '').strip()
+        if not sail:
+            continue
+        sail_counts[sail] = sail_counts.get(sail, 0) + 1
+    dups = [sn for sn, cnt in sail_counts.items() if cnt > 1]
+    if dups:
+        return {'error': f"Duplicate sail numbers: {', '.join(sorted(dups))}"}, 400
+
+    fleet_data['competitors'] = normalized
     fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
     # Persist only fleet changes via datastore helper
     ds_set_fleet(fleet_data)
@@ -1822,47 +1724,28 @@ def update_race(race_id):
 
     store = load_data()
 
-    # Build canonicalization helpers to enforce stable competitor IDs
+    # Validate incoming payload competitor IDs as integers existing in fleet
     fleet = ds_get_fleet().get('competitors', [])
-    by_cid = {str(c.get('competitor_id')): c for c in (fleet or []) if c.get('competitor_id')}
-    by_sail = {str((c.get('sail_no') or '')).strip(): c for c in (fleet or []) if (c.get('sail_no') or '')}
+    valid_ids = {int(c.get('competitor_id')) for c in (fleet or []) if c.get('competitor_id') is not None}
 
-    def _canon_cid(raw: str | None) -> str | None:
-        if not raw:
-            return None
-        if raw in by_cid:
-            return raw
-        if raw.startswith('C_UNK_'):
-            sail = raw[6:]
-            comp = by_sail.get(sail)
-            return comp.get('competitor_id') if comp and comp.get('competitor_id') else None
-        # Handle ids of the form C_<sail> by mapping to fleet record
-        if raw.startswith('C_') and '_' in raw:
-            sail = raw.split('_', 1)[1]
-            comp = by_sail.get(sail)
-            return comp.get('competitor_id') if comp and comp.get('competitor_id') else None
-        # Unknown id that doesn't exist in fleet
-        return None
+    def _parse_cid(val) -> int:
+        try:
+            cid = int(val)
+        except Exception:
+            abort(400, description=f"Invalid competitor id '{val}'. Must be an integer id from the Fleet.")
+        if cid not in valid_ids:
+            abort(400, description=f"Unknown competitor id: {cid}. Add to Fleet first.")
+        return cid
 
-    # Canonicalize incoming payload competitor IDs; reject unknowns to enforce stability
-    def _canon_list(items: list[dict], key: str) -> list[dict]:
-        out: list[dict] = []
-        missing: list[str] = []
-        for it in (items or []):
-            cid = _canon_cid(str(it.get(key)))
-            if cid is None:
-                missing.append(str(it.get(key)))
-                continue
-            itm = dict(it)
-            itm[key] = cid
-            out.append(itm)
-        if missing:
-            # Surface a clear error to guide adding/updating the fleet first
-            abort(400, description=f"Unknown competitor ids: {', '.join(sorted(set(missing)))}. Add them to Fleet first.")
-        return out
-
-    finish_times = _canon_list(finish_times, 'competitor_id')
-    handicap_overrides = _canon_list(handicap_overrides, 'competitor_id')
+    # Normalize finish_times and overrides to use integer ids
+    finish_times = [
+        {'competitor_id': _parse_cid(ft.get('competitor_id')), 'finish_time': ft.get('finish_time')}
+        for ft in (finish_times or [])
+    ]
+    handicap_overrides = [
+        {'competitor_id': _parse_cid(o.get('competitor_id')), 'handicap': o.get('handicap')}
+        for o in (handicap_overrides or [])
+    ]
 
     def _apply_overrides(entrants_list: list[dict]):
         if not handicap_overrides:
@@ -1899,24 +1782,13 @@ def update_race(race_id):
             if not series_obj:
                 abort(400)
         series_id_val = series_obj.get('series_id')
-        # Build competitors from (canonicalized) finish_times
+        # Build competitors from validated integer finish_times
         competitors: list[dict] = []
         for ft in finish_times:
             ent = {'competitor_id': ft['competitor_id'], 'finish_time': ft.get('finish_time')}
             competitors.append(ent)
         competitors = _apply_overrides(competitors)
-        # Normalize competitor_ids to canonical fleet IDs
-        normalized_new: list[dict] = []
-        for ent in competitors:
-            cid_old = ent.get('competitor_id')
-            cid_new = _canon_cid(cid_old)
-            if not cid_new:
-                abort(400, description=f"Unknown competitor id: {cid_old}. Add to Fleet first.")
-            if cid_new != cid_old:
-                ent = dict(ent)
-                ent['competitor_id'] = cid_new
-            normalized_new.append(ent)
-        competitors = normalized_new
+        # competitor_ids are already canonical integers
         # Append new race, then renumber to assign id and sequence
         series_obj.setdefault('races', []).append({
             'race_id': '',
@@ -1986,20 +1858,14 @@ def update_race(race_id):
         ov_map = {o['competitor_id']: o.get('handicap') for o in (handicap_overrides or [])}
 
         entrants_list = race_obj.setdefault('competitors', [])
-        existing = {e.get('competitor_id'): e for e in entrants_list if e.get('competitor_id')}
+        existing = {int(e.get('competitor_id')): e for e in entrants_list if e.get('competitor_id') is not None}
 
-        # Helper: lookup baseline handicap by sail number when using fallback ids
-        fleet = ds_get_fleet().get('competitors', [])
-        by_sail = {str((c.get('sail_no') or '')).strip(): c for c in fleet}
-        def _baseline_for_cid(cid: str) -> int | None:
-            if not cid:
-                return None
-            if cid.startswith('C_UNK_'):
-                sail = cid[6:]
-                comp = by_sail.get(sail)
-                if comp:
-                    # Prefer starting handicap as the seed; do not fall back silently
-                    return comp.get('starting_handicap_s_per_hr')
+        # Helper: lookup baseline handicap directly from fleet by integer id
+        fleet_map = {int(c.get('competitor_id')): c for c in fleet if c.get('competitor_id') is not None}
+        def _baseline_for_cid(cid: int) -> int | None:
+            comp = fleet_map.get(int(cid))
+            if comp:
+                return comp.get('starting_handicap_s_per_hr')
             return None
 
         # Update existing entrants with new finish times
@@ -2038,17 +1904,15 @@ def update_race(race_id):
         # Apply overrides across the (possibly expanded) entrant list
         _apply_overrides(entrants_list)
 
-        # Normalize any non-canonical competitor_ids now present in entrants_list
+        # Ensure competitor ids are integers in entrants_list
         normalized_existing: list[dict] = []
         for ent in entrants_list:
-            cid_old = ent.get('competitor_id')
-            cid_new = _canon_cid(cid_old)
-            if not cid_new:
-                abort(400, description=f"Unknown competitor id: {cid_old}. Add to Fleet first.")
-            if cid_new != cid_old:
-                ent = dict(ent)
-                ent['competitor_id'] = cid_new
-            normalized_existing.append(ent)
+            try:
+                ent['competitor_id'] = int(ent.get('competitor_id'))
+                normalized_existing.append(ent)
+            except Exception:
+                # Skip invalid entries
+                continue
         race_obj['competitors'] = normalized_existing
 
     race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
