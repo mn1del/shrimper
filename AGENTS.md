@@ -30,3 +30,4 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 4. Run tests: `pytest`
 5. Keep documentation, especially this file, accurate when structure or workflow changes
 6. In VS Code Codex has DB connectivity from the shell using psycopg2-binary
+7. Do not make changes on the main branch. Create a new branch, name it appropriately, and work on that.
