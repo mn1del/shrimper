@@ -604,8 +604,9 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                         "start": start_seconds,
                         "initial_handicap": entrants_map.get(cid, {}).get(
                             "initial_handicap",
-                            info.get("current_handicap_s_per_hr")
-                            or info.get("starting_handicap_s_per_hr", 0),
+                            info.get("starting_handicap_s_per_hr")
+                            or info.get("current_handicap_s_per_hr")
+                            or 0,
                         ),
                         "sailor": info.get("sailor_name"),
                         "boat": info.get("boat_name"),
@@ -927,12 +928,22 @@ def series_detail(series_id):
             for comp in fleet
             if comp.get('competitor_id')
         }
+        errors: list[str] = []
 
         # Fast path: compute only the selected race without scanning all races
         skip_heavy = False
         race = _find_race(race_id)
         if race is not None:
-            start_seconds = _parse_hms(race.get('start_time')) or 0
+            # Validate start time format when finishers present
+            start_raw = race.get('start_time')
+            try:
+                start_seconds = _parse_hms(start_raw)
+            except Exception:
+                start_seconds = None
+                if any((e.get('finish_time') or '').strip() for e in (race.get('competitors') or [])):
+                    errors.append(f"Unable to parse start time '{start_raw}' for this race. Expected HH:MM:SS.")
+            if start_seconds is None:
+                start_seconds = 0
             entrants = race.get('competitors', []) or []
             entrants_map = {
                 e.get('competitor_id'): e for e in entrants if e.get('competitor_id')
@@ -980,17 +991,18 @@ def series_detail(series_id):
                         except (ValueError, TypeError):
                             initial = None
                 if initial is None and comp is not None:
-                    initial = (
-                        comp.get('current_handicap_s_per_hr')
-                        or comp.get('starting_handicap_s_per_hr')
-                        or 0
-                    )
+                    # Default baseline should be starting handicap; use current only if starting is missing
+                    initial = comp.get('starting_handicap_s_per_hr')
                 if initial is None:
-                    initial = 0
+                    # Missing a usable starting handicap and no override/initial on entrant
+                    name = (comp.get('sailor_name') if comp else '') or cid
+                    errors.append(f"No starting handicap available from the Fleet for competitor {name}.")
+                    # Do not select a fallback value here; leave pre_race_handicaps without an entry
+                    continue
                 pre_race_handicaps[cid] = int(initial)
 
             cached = _cache_get_race(race_id)
-            if cached is not None:
+            if cached is not None and not errors:
                 results, fleet_adjustment = cached
                 # Ensure finisher count reflects cached results for display
                 try:
@@ -1000,23 +1012,61 @@ def series_detail(series_id):
                 except Exception:
                     finisher_count = 0
             else:
+                if errors:
+                    # Skip heavy calculation; surface basic results with errors
+                    results = {}
+                    basic: dict[str, dict] = {}
+                    for ent in entrants:
+                        cid = ent.get('competitor_id')
+                        if not cid:
+                            continue
+                        basic[cid] = {
+                            'finish_time': ent.get('finish_time')
+                        }
+                    selected_race = race
+                    selected_race['results'] = basic
+                    return render_template(
+                        'series_detail.html',
+                        title=series.get('name') or 'Series',
+                        breadcrumbs=[('Races', url_for('main.races')), (series.get('name'), None)],
+                        series=series,
+                        races=races,
+                        selected_race=selected_race,
+                        finisher_display=f"Number of Finishers: {sum(1 for v in basic.values() if v.get('finish_time'))}",
+                        fleet=fleet,
+                        series_list=[entry['series'] for entry in _load_series_entries()],
+                        unlocked=False,
+                        fleet_adjustment=0,
+                        errors=errors,
+                    )
                 calc_entries: list[dict] = []
                 for cid in ordered_ids:
                     ent = entrants_map.get(cid, {})
                     entry = {
                         'competitor_id': cid,
                         'start': start_seconds,
-                        'initial_handicap': pre_race_handicaps.get(cid, 0),
+                        'initial_handicap': pre_race_handicaps.get(cid),
                     }
-                    ft = _parse_hms(ent.get('finish_time')) if ent else None
+                    try:
+                        ft = _parse_hms(ent.get('finish_time')) if ent else None
+                    except Exception:
+                        ft = None
+                        if (ent.get('finish_time') or '').strip():
+                            errors.append(f"Invalid finish time '{ent.get('finish_time')}' for competitor {cid}. Expected HH:MM:SS.")
                     if ft is not None:
                         entry['finish'] = ft
                     status = ent.get('status') if ent else None
                     if status:
                         entry['status'] = status
-                    calc_entries.append(entry)
+                    # Only include entries with a valid initial handicap
+                    if entry['initial_handicap'] is not None:
+                        calc_entries.append(entry)
 
-                results_list = calculate_race_results(calc_entries)
+                if errors:
+                    # Surface errors without calculating potentially incorrect results
+                    results_list = []
+                else:
+                    results_list = calculate_race_results(calc_entries)
                 finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
                 fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100)) if finisher_count else 0
 
@@ -1157,8 +1207,8 @@ def series_detail(series_id):
                             initial = ent.get('initial_handicap')
                         if initial is None and comp is not None:
                             initial = (
-                                comp.get('current_handicap_s_per_hr')
-                                or comp.get('starting_handicap_s_per_hr')
+                                comp.get('starting_handicap_s_per_hr')
+                                or comp.get('current_handicap_s_per_hr')
                                 or 0
                             )
                         if initial is None:
@@ -1320,8 +1370,9 @@ def series_detail(series_id):
                         if cid in pre_race_handicaps else (
                             ent.get('initial_handicap')
                             if ent.get('initial_handicap') is not None
-                            else f.get('current_handicap_s_per_hr')
-                            or f.get('starting_handicap_s_per_hr', 0)
+                            else f.get('starting_handicap_s_per_hr')
+                            or f.get('current_handicap_s_per_hr')
+                            or 0
                         )
                     ),
                 })
@@ -1375,6 +1426,11 @@ def series_detail(series_id):
         all_races = []
 
     series_list = [entry['series'] for entry in _load_series_entries()]
+    # Ensure errors variable exists for template
+    try:
+        errors
+    except NameError:
+        errors = []
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
@@ -1387,6 +1443,7 @@ def series_detail(series_id):
         series_list=series_list,
         fleet_adjustment=fleet_adjustment,
         all_races=all_races,
+        errors=errors,
     )
 
 
@@ -1608,6 +1665,23 @@ def update_race(race_id):
     finish_times = data.get('finish_times', [])
     handicap_overrides = data.get('handicap_overrides', [])
 
+    # Validate start_time format if provided
+    if isinstance(start_time, str) and start_time.strip():
+        try:
+            _ = _parse_hms(start_time)
+        except Exception:
+            abort(400, description=f"Invalid start time '{start_time}'. Expected HH:MM:SS.")
+
+    # Validate finish time formats in payload
+    for ft in (finish_times or []):
+        val = (ft or {}).get('finish_time')
+        if isinstance(val, str) and val.strip():
+            try:
+                _ = _parse_hms(val)
+            except Exception:
+                who = (ft or {}).get('competitor_id') or 'unknown competitor'
+                abort(400, description=f"Invalid finish time '{val}' for {who}. Expected HH:MM:SS.")
+
     store = load_data()
 
     # Build canonicalization helpers to enforce stable competitor IDs
@@ -1785,11 +1859,8 @@ def update_race(race_id):
                 sail = cid[6:]
                 comp = by_sail.get(sail)
                 if comp:
-                    return (
-                        comp.get('current_handicap_s_per_hr')
-                        or comp.get('starting_handicap_s_per_hr')
-                        or 0
-                    )
+                    # Prefer starting handicap as the seed; do not fall back silently
+                    return comp.get('starting_handicap_s_per_hr')
             return None
 
         # Update existing entrants with new finish times
@@ -1802,6 +1873,9 @@ def update_race(race_id):
             if cid and cid not in existing and (finish not in (None, '')):
                 ent = {'competitor_id': cid, 'finish_time': finish}
                 base = _baseline_for_cid(cid)
+                # If no override is provided for this competitor, ensure a starting handicap exists
+                if (cid not in ov_map or ov_map.get(cid) in (None, '')) and base is None:
+                    abort(400, description=f"No starting handicap available from the Fleet for competitor {cid}. Add a starting handicap or provide a race override.")
                 if base is not None:
                     ent['initial_handicap'] = int(base)
                 entrants_list.append(ent)
@@ -1812,8 +1886,13 @@ def update_race(race_id):
             if cid and cid not in existing and (handicap not in (None, '')):
                 ent = {'competitor_id': cid}
                 base = _baseline_for_cid(cid)
-                if base is not None:
-                    ent['initial_handicap'] = int(base)
+                # When an override is provided, it's acceptable for baseline to be missing;
+                # initial_handicap can be omitted or set from override for clarity.
+                try:
+                    ent['initial_handicap'] = int(handicap)
+                except Exception:
+                    if base is not None:
+                        ent['initial_handicap'] = int(base)
                 entrants_list.append(ent)
                 existing[cid] = ent
 

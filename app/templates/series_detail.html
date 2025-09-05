@@ -17,6 +17,16 @@
 </div>
 <div class="card mb-3">
   <div class="card-body">
+    {% if errors %}
+    <div class="alert alert-danger" role="alert">
+      <div class="fw-bold mb-1">Cannot calculate results due to the following issues:</div>
+      <ul class="mb-0">
+        {% for e in errors %}
+          <li>{{ e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
     <div class="row mb-3">
       <label class="col-md-3 col-form-label">Series</label>
       <div class="col-md-9">
