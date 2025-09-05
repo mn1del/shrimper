@@ -375,14 +375,13 @@ document.addEventListener('DOMContentLoaded', () => {
       body: JSON.stringify(payload)
     }).then(async r => {
       if (!r.ok) {
+        const raw = await r.text();
+        let msg = raw;
         try {
-          const j = await r.json();
-          const msg = j.error || j.message || JSON.stringify(j);
-          throw new Error(msg);
-        } catch (e) {
-          const txt = await r.text();
-          throw new Error(txt || `Request failed with status ${r.status}`);
-        }
+          const j = JSON.parse(raw);
+          msg = j.error || j.message || raw;
+        } catch (_) {}
+        throw new Error(msg || `Request failed with status ${r.status}`);
       }
       return r.json();
     }).then(data => {

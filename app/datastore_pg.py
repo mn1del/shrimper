@@ -431,6 +431,9 @@ def save_data(data: Dict[str, Any]) -> None:
                             cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
                             for ent in race.get("competitors", []) or []:
                                 # Attempt to upsert including handicap_override; fall back if column missing
+                                # Normalize finish_time: empty string -> NULL for TIME columns
+                                _ft = ent.get("finish_time")
+                                finish_val = None if (_ft is None or _ft == "") else _ft
                                 try:
                                     cur.execute(
                                         """
@@ -445,7 +448,7 @@ def save_data(data: Dict[str, Any]) -> None:
                                             rid,
                                             ent.get("competitor_id"),
                                             ent.get("initial_handicap"),
-                                            ent.get("finish_time"),
+                                            finish_val,
                                             ent.get("handicap_override"),
                                         ),
                                     )
@@ -463,7 +466,7 @@ def save_data(data: Dict[str, Any]) -> None:
                                                 rid,
                                                 ent.get("competitor_id"),
                                                 ent.get("initial_handicap"),
-                                                ent.get("finish_time"),
+                                                finish_val,
                                             ),
                                         )
                                     else:
