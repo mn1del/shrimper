@@ -343,25 +343,57 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function saveChanges() {
+    // Only send actual changes to reduce server-side rejections on unknown ids
+    const changedFinishTimes = [];
+    for (const o of orig.finish_times) {
+      const cur = finishInputs.find(i => i.dataset.cid === o.cid);
+      if (!cur) continue;
+      if ((cur.value || '') !== (o.value || '')) {
+        changedFinishTimes.push({ competitor_id: cur.dataset.cid, finish_time: cur.value });
+      }
+    }
+    const changedOverrides = [];
+    for (const o of orig.handicap_overrides) {
+      const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
+      if (!cur) continue;
+      const curVal = cur.dataset.cleared === '1' ? '' : (cur.value || '');
+      if ((curVal || '') !== (o.value || '')) {
+        changedOverrides.push({ competitor_id: cur.dataset.cid, handicap: curVal });
+      }
+    }
     const payload = {
       series_id: seriesSelect.value,
       new_series_name: newSeriesName.value,
       date: raceDate.value,
       start_time: startTime.value,
-      finish_times: finishInputs.map(inp => ({competitor_id: inp.dataset.cid, finish_time: inp.value})),
-      handicap_overrides: hcpInputs.map(inp => ({competitor_id: inp.dataset.cid, handicap: inp.dataset.cleared === '1' ? '' : inp.value}))
+      finish_times: changedFinishTimes,
+      handicap_overrides: changedOverrides,
     };
     return fetch('{{ url_for('main.update_race', race_id=selected_race.race_id) }}', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
-    }).then(r => r.json()).then(data => {
+    }).then(async r => {
+      if (!r.ok) {
+        try {
+          const j = await r.json();
+          const msg = j.error || j.message || JSON.stringify(j);
+          throw new Error(msg);
+        } catch (e) {
+          const txt = await r.text();
+          throw new Error(txt || `Request failed with status ${r.status}`);
+        }
+      }
+      return r.json();
+    }).then(data => {
       finisherDiv.textContent = `Number of Finishers: ${data.finisher_count}`;
       if (data.redirect) {
         window.location = data.redirect;
       } else {
         window.location.reload();
       }
+    }).catch(err => {
+      alert(`Save failed: ${err.message}`);
     });
   }
 
