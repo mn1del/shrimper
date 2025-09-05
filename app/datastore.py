@@ -44,7 +44,29 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
 
 
 def get_races() -> List[str]:
-    return _pg.get_races()
+    """Return race_ids in chronological order.
+
+    Primary source is the PostgreSQL implementation. If unavailable or
+    patched out (e.g., in tests), falls back to deriving order from
+    ``list_all_races`` sorted by (date, start_time) ascending.
+    """
+    try:
+        fn = getattr(_pg, "get_races", None)
+        if callable(fn):
+            return fn()  # type: ignore[misc]
+    except Exception:
+        # Fall through to derive from list_all_races
+        pass
+    try:
+        races = _pg.list_all_races(data=None) or []
+    except Exception:
+        return []
+    def _key(r: Dict[str, Any]):
+        d = r.get("date") or ""
+        t = r.get("start_time") or ""
+        return (d, t)
+    races_sorted = sorted(races, key=_key)
+    return [str(r.get("race_id")) for r in races_sorted if r.get("race_id")]
 
 def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return _pg.list_season_races_with_results(season_year, data=data)

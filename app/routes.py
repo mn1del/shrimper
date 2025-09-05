@@ -23,6 +23,7 @@ from .datastore import (
     get_settings as ds_get_settings,
     set_settings as ds_set_settings,
 )
+from .datastore import get_races as ds_get_races
 
 
 bp = Blueprint('main', __name__)
@@ -445,6 +446,18 @@ def _parse_hms(t: str | None) -> int | None:
     return h * 3600 + m * 60 + s
 
 
+def _race_order_map() -> dict[str, int]:
+    """Return mapping race_id -> chronological index (0=earliest).
+
+    Uses datastore.get_races(); returns empty dict on failure.
+    """
+    try:
+        ids = ds_get_races() or []
+        return {rid: idx for idx, rid in enumerate(ids) if rid}
+    except Exception:
+        return {}
+
+
 #<getdata>
 def _fleet_lookup() -> dict[str, dict]:
     """Return mapping of competitor id to fleet details from data.json.
@@ -509,7 +522,11 @@ def recalculate_handicaps() -> None:
             for race in series.get("races", []):
                 race_list.append(race)
 
-    race_list.sort(key=lambda r: (r.get("date"), r.get("start_time")))
+    order = _race_order_map()
+    if order:
+        race_list.sort(key=lambda r: order.get(r.get("race_id"), 10**9))
+    else:
+        race_list.sort(key=lambda r: (r.get("date"), r.get("start_time")))
 
     for race in race_list:
         start_seconds = _parse_hms(race.get("start_time")) or 0
@@ -613,7 +630,11 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     }
                 )
             if group["races"]:
-                group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
+                order = _race_order_map()
+                if order:
+                    group["races"].sort(key=lambda r: order.get(r.get("race_id"), 10**9))
+                else:
+                    group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
                 race_groups.append(group)
 
     race_groups.sort(key=lambda g: g["series_name"] or "")
@@ -1065,7 +1086,12 @@ def series_detail(series_id):
                 for s in season.get('series', []):
                     for r in s.get('races', []):
                         race_objs.append(r)
-            race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
+            # Use global chronological order when available
+            order = _race_order_map()
+            if order:
+                race_objs.sort(key=lambda r: order.get(r.get('race_id'), 10**9))
+            else:
+                race_objs.sort(key=lambda r: (r.get('date'), r.get('start_time')))
 
             pre_race_handicaps = handicap_map
             results: dict[str, dict] = {}
@@ -1341,6 +1367,9 @@ def series_detail(series_id):
     if selected_race:
         breadcrumbs = None
         all_races = _load_all_races()
+        order = _race_order_map()
+        if order:
+            all_races.sort(key=lambda r: order.get(r.get('race_id'), 10**9))
     else:
         breadcrumbs = [('Races', url_for('main.races')), (series.get('name', series_id), None)]
         all_races = []
@@ -1544,13 +1573,17 @@ def competitor():
     boats = sorted({(c.get('boat_name') or '').strip() for c in fleet if (c.get('boat_name') or '').strip()})
     sail_nos = sorted({str((c.get('sail_no') or '')).strip() for c in fleet if str((c.get('sail_no') or '')).strip()})
 
-    # Load all races and sort chronologically (date, start_time ascending)
+    # Load all races and sort via get_races() chronological order
     races = _load_all_races() or []
-    def _key(r):
-        d = r.get('date') or ''
-        t = r.get('start_time') or ''
-        return (d, t)
-    races_sorted = sorted(races, key=_key)
+    order = _race_order_map()
+    if order:
+        races_sorted = sorted(races, key=lambda r: order.get(r.get('race_id'), 10**9))
+    else:
+        def _key(r):
+            d = r.get('date') or ''
+            t = r.get('start_time') or ''
+            return (d, t)
+        races_sorted = sorted(races, key=_key)
 
     return render_template(
         'competitor.html',
