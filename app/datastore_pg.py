@@ -332,7 +332,17 @@ def save_data(data: Dict[str, Any]) -> None:
                     )
                 except Exception as e:
                     if isinstance(e, getattr(pg_errors, "UndefinedColumn", tuple())) or isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
-                        cur.execute("INSERT INTO settings (config) VALUES (%s)", (json.dumps(settings),))
+                        # The first INSERT failed due to schema shape; rollback the
+                        # failed statement so we can run a simplified fallback.
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        with conn.cursor() as cur2:
+                            cur2.execute(
+                                "INSERT INTO settings (config) VALUES (%s)",
+                                (json.dumps(settings),),
+                            )
                     else:
                         raise
 

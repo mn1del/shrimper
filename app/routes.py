@@ -684,9 +684,13 @@ def recalculate_handicaps() -> None:
             )
 
     data["fleet"] = fleet_data
-    # Persist via JSON-like path for in-memory/testing backends
+    # Persist via JSON-like path for in-memory/testing backends.
+    # Write only the sections we actually changed: seasons (race seeds) and fleet.
     try:
-        save_data(data)
+        save_data({
+            'seasons': data.get('seasons', []),
+            'fleet': data.get('fleet', {}),
+        })
     except Exception:
         # Best-effort: do not fail if JSON-like save is unavailable
         pass
@@ -1932,7 +1936,8 @@ def update_race(race_id):
         new_race = series_obj['races'][-1]
         new_race_id = new_race.get('race_id')
         # Persist
-        save_data(store)
+        # Persist only races/series/seasons to avoid touching settings unnecessarily
+        save_data({'seasons': store.get('seasons', [])})
         recalculate_handicaps()
         finisher_count = sum(1 for ft in finish_times if ft.get('finish_time'))
         redirect_url = url_for('main.series_detail', series_id=series_id_val, race_id=new_race_id)
@@ -2054,7 +2059,8 @@ def update_race(race_id):
         ds_renumber_races(series_obj)
 
     # Persist and recalc
-    save_data(store)
+    # Persist only races/series/seasons to avoid unintended settings writes
+    save_data({'seasons': store.get('seasons', [])})
     recalculate_handicaps()
 
     # Bust caches after race update
@@ -2079,7 +2085,8 @@ def delete_race(race_id):
     series_id = series_obj.get('series_id')
     series_obj['races'].remove(race_obj)
     ds_renumber_races(series_obj)
-    save_data(store)
+    # Persist only races/series/seasons for deletion
+    save_data({'seasons': store.get('seasons', [])})
     redirect_url = url_for('main.series_detail', series_id=series_id)
     # Bust caches after race deletion
     _cache_clear_all()
