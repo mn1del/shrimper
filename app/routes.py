@@ -697,6 +697,115 @@ def recalculate_handicaps() -> None:
 
 
 #<getdata>
+def recalculate_handicaps_from(start_race_id: str) -> None:
+    """Forward-only recalculation starting from a specific race.
+
+    - Uses persisted initial_handicap values for the start race as the
+      pre-race seeds, honoring any handicap_override values
+    - Propagates revised handicaps forward to subsequent races only
+    - Writes updated pre-race seeds for affected races and updates fleet
+      current handicaps for competitors impacted in the forward pass
+    """
+    try:
+        order_map = _race_order_map() or {}
+        all_ids = ds_get_races() or []
+    except Exception:
+        order_map = {}
+        all_ids = []
+    if not all_ids:
+        # Fallback: materialize via list_all_races if ordering unavailable
+        all_races = _load_all_races() or []
+        order_map = {r.get('race_id'): idx for idx, r in enumerate(all_races)}
+        all_ids = [r.get('race_id') for r in all_races if r.get('race_id')]
+    try:
+        start_idx = all_ids.index(start_race_id)
+    except ValueError:
+        # If race id not found, fall back to full recalculation
+        # Only recalc forward from the newly created race
+        recalculate_handicaps_from(new_race_id)
+        return
+
+    forward_ids = all_ids[start_idx:]
+    if not forward_ids:
+        return
+
+    pre_by_race: dict[str, dict[int, int]] = {}
+    revised_latest: dict[int, int] = {}
+
+    for rid in forward_ids:
+        # Fetch entrants for this race directly from datastore/DB
+        _season, _series, race = ds_find_race(rid)
+        if not race:
+            continue
+        start_seconds = _parse_hms(race.get('start_time')) or 0
+        entrants = race.get('competitors', []) or []
+        calc_entries: list[dict] = []
+        seeds_for_race: dict[int, int] = {}
+
+        for ent in entrants:
+            cid = ent.get('competitor_id')
+            if cid is None:
+                continue
+            initial = None
+            ov = ent.get('handicap_override')
+            if ov is not None:
+                try:
+                    initial = int(ov)
+                except Exception:
+                    initial = None
+            if initial is None:
+                # If we have a revised handicap from a prior race in this forward pass, prefer it
+                if int(cid) in revised_latest:
+                    initial = int(revised_latest[int(cid)])
+                else:
+                    ih = ent.get('initial_handicap')
+                    try:
+                        initial = int(ih) if ih is not None else None
+                    except Exception:
+                        initial = None
+            entry = {
+                'competitor_id': int(cid),
+                'start': start_seconds,
+                'initial_handicap': initial,
+            }
+            ft_raw = ent.get('finish_time')
+            try:
+                ft = _parse_hms(ft_raw)
+            except Exception:
+                ft = None
+            if ft is not None:
+                entry['finish'] = ft
+            status = ent.get('status')
+            if status:
+                entry['status'] = status
+
+            calc_entries.append(entry)
+            if initial is not None:
+                seeds_for_race[int(cid)] = int(initial)
+
+        if calc_entries:
+            results = calculate_race_results(calc_entries)
+            for res in results:
+                cid = res.get('competitor_id')
+                revised = res.get('revised_handicap')
+                if cid is not None and revised is not None:
+                    revised_latest[int(cid)] = int(revised)
+
+        if seeds_for_race:
+            pre_by_race[str(rid)] = seeds_for_race
+
+    # Build a partial fleet current map for touched competitors
+    fleet_current: dict[int, int] = {cid: h for cid, h in revised_latest.items()}
+
+    try:
+        from . import datastore_pg as _pg
+        if pre_by_race:
+            _pg.apply_recalculated_handicaps(pre_by_race, fleet_current)
+    except Exception:
+        # If Postgres helpers are unavailable (e.g., during tests), ignore
+        pass
+#</getdata>
+#<getdata>
 def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]]:
     """Compute standings and per-race metadata for a season."""
     fleet = _fleet_lookup()
@@ -1608,6 +1717,7 @@ def update_fleet():
     fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
     # Persist only fleet changes via datastore helper
     ds_set_fleet(fleet_data)
+    # Fleet changes affect baselines for all races: do a full recalc
     recalculate_handicaps()
     # Bust caches after fleet update
     _cache_clear_all()
