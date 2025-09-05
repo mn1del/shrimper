@@ -1182,3 +1182,54 @@ def normalize_competitor_ids() -> Dict[str, Any]:
 
         conn.commit()
     return stats
+
+
+def apply_recalculated_handicaps(
+    pre_by_race: Dict[str, Dict[str, int]],
+    fleet_current: Optional[Dict[str, int]] = None,
+) -> Dict[str, int]:
+    """Apply computed pre-race handicaps and fleet currents directly in PostgreSQL.
+
+    - Updates race_results.initial_handicap for each (race_id, competitor_id) where
+      there is no manual override (handicap_override IS NULL) and the stored value
+      differs from the computed seed. Uses IS DISTINCT FROM to handle NULL safely.
+    - Optionally updates competitors.current_handicap_s_per_hr from the provided map.
+
+    Returns a stats dict with counts of updated rows.
+    """
+    stats = {"race_rows_updated": 0, "competitors_updated": 0}
+    if not pre_by_race:
+        return stats
+    with _get_conn() as conn, conn.cursor() as cur:
+        # Update race_results seeds
+        for rid, cmap in pre_by_race.items():
+            if not rid or not isinstance(cmap, dict):
+                continue
+            for cid, seed in cmap.items():
+                cur.execute(
+                    """
+                    UPDATE race_results
+                    SET initial_handicap = %s
+                    WHERE race_id = %s
+                      AND competitor_id = %s
+                      AND (handicap_override IS NULL)
+                      AND (initial_handicap IS DISTINCT FROM %s)
+                    """,
+                    (int(seed), rid, cid, int(seed)),
+                )
+                stats["race_rows_updated"] += cur.rowcount or 0
+
+        # Update fleet currents if provided
+        if fleet_current:
+            for cid, cur_h in fleet_current.items():
+                cur.execute(
+                    """
+                    UPDATE competitors
+                    SET current_handicap_s_per_hr = %s
+                    WHERE competitor_id = %s
+                    """,
+                    (int(cur_h), cid),
+                )
+                stats["competitors_updated"] += cur.rowcount or 0
+        conn.commit()
+    return stats

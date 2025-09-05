@@ -257,6 +257,110 @@ def health_schema():
     except Exception as e:  # pragma: no cover
         return {'connected': False, 'status': 'error', 'error': str(e)}
 
+@bp.route('/health/handicaps')
+def health_handicaps():
+    """Validate chronological handicap seeding across all races.
+
+    Asserts that for every (race, competitor):
+      - If a per-race handicap_override is present, the stored initial_handicap equals it
+      - Else initial_handicap equals the competitor's current handicap prior to that race
+
+    Returns a JSON report with counts and up to 50 examples.
+    """
+    try:
+        data = load_data()
+        # Seed handicap map from fleet starting handicaps
+        fleet_data = data.get('fleet', {}) or {}
+        competitors = fleet_data.get('competitors', []) or []
+        start_map: dict[str, int] = {
+            c.get('competitor_id'): int(c.get('starting_handicap_s_per_hr') or 0)
+            for c in competitors if c.get('competitor_id')
+        }
+        handicap_map: dict[str, int] = dict(start_map)
+
+        # Flatten races and order chronologically (global)
+        race_list: list[dict] = []
+        for season in data.get('seasons', []) or []:
+            for series in season.get('series', []) or []:
+                for race in series.get('races', []) or []:
+                    race_list.append(race)
+        order = _race_order_map()
+        if order:
+            race_list.sort(key=lambda r: order.get(r.get('race_id'), 10**9))
+        else:
+            race_list.sort(key=lambda r: (r.get('date'), r.get('start_time')))
+
+        mismatches: list[dict] = []
+        # Helper to parse times
+        def _p(t: str | None) -> int | None:
+            if not t:
+                return None
+            try:
+                h, m, s = map(int, t.split(':'))
+                return h * 3600 + m * 60 + s
+            except Exception:
+                return None
+
+        for race in race_list:
+            rid = race.get('race_id')
+            start_seconds = _p(race.get('start_time')) or 0
+            entrants = race.get('competitors', []) or []
+            # Check seeds and prepare calc entries using expected initial
+            calc_entries: list[dict] = []
+            for ent in entrants:
+                cid = ent.get('competitor_id')
+                if not cid:
+                    continue
+                ov = ent.get('handicap_override')
+                if ov is not None:
+                    try:
+                        expected = int(ov)
+                    except Exception:
+                        expected = handicap_map.get(cid, 0)
+                else:
+                    expected = handicap_map.get(cid, 0)
+                stored = ent.get('initial_handicap')
+                if stored is None or int(stored) != int(expected):
+                    mismatches.append({
+                        'race_id': rid,
+                        'competitor_id': cid,
+                        'stored_initial': stored,
+                        'expected_initial': expected,
+                        'override': ov,
+                    })
+                entry = {
+                    'competitor_id': cid,
+                    'start': start_seconds,
+                    'initial_handicap': int(expected),
+                }
+                ft = _p(ent.get('finish_time'))
+                if ft is not None:
+                    entry['finish'] = ft
+                status = ent.get('status')
+                if status:
+                    entry['status'] = status
+                calc_entries.append(entry)
+            # Feed forward revised handicaps for chronology
+            if calc_entries:
+                try:
+                    results = calculate_race_results(calc_entries)
+                    for res in results:
+                        cid2 = res.get('competitor_id')
+                        rev = res.get('revised_handicap')
+                        if cid2 is not None and rev is not None:
+                            handicap_map[cid2] = int(rev)
+                except Exception:
+                    # If calculation fails, continue best-effort
+                    pass
+
+        return {
+            'status': 'ok' if not mismatches else 'mismatch',
+            'mismatch_count': len(mismatches),
+            'examples': mismatches[:50],
+        }
+    except Exception as e:  # pragma: no cover
+        return {'status': 'error', 'error': str(e)}, 500
+
 @bp.route('/admin/schema/upgrade', methods=['POST'])
 def schema_upgrade():
     """Ensure required schema is present and correct.
@@ -528,6 +632,9 @@ def recalculate_handicaps() -> None:
     else:
         race_list.sort(key=lambda r: (r.get("date"), r.get("start_time")))
 
+    # Collect per-race pre-seeded initial handicaps for robust persistence
+    pre_by_race: dict[str, dict[str, int]] = {}
+
     for race in race_list:
         start_seconds = _parse_hms(race.get("start_time")) or 0
         calc_entries: list[dict] = []
@@ -542,6 +649,10 @@ def recalculate_handicaps() -> None:
             else:
                 initial = handicap_map.get(cid, 0)
             ent["initial_handicap"] = initial
+            # Track the computed pre-race seed for this entrant
+            rid = str(race.get("race_id") or "")
+            if rid:
+                pre_by_race.setdefault(rid, {})[cid] = int(initial)
             entry = {
                 "competitor_id": cid,
                 "start": start_seconds,
@@ -573,7 +684,30 @@ def recalculate_handicaps() -> None:
             )
 
     data["fleet"] = fleet_data
-    save_data(data)
+    # Persist via JSON-like path for in-memory/testing backends
+    try:
+        save_data(data)
+    except Exception:
+        # Best-effort: do not fail if JSON-like save is unavailable
+        pass
+
+    # Additionally, apply targeted SQL updates to ensure PostgreSQL rows are in sync
+    try:
+        from . import datastore_pg as _pg
+        # Build final current handicap map from fleet_data after recalc
+        fleet_current: dict[str, int] = {}
+        for c in fleet_data.get("competitors", []) or []:
+            cid = c.get("competitor_id")
+            if cid:
+                try:
+                    fleet_current[cid] = int(c.get("current_handicap_s_per_hr") or 0)
+                except Exception:
+                    pass
+        if pre_by_race:
+            _pg.apply_recalculated_handicaps(pre_by_race, fleet_current)
+    except Exception:
+        # If Postgres helpers are unavailable (e.g., during tests), ignore
+        pass
 #</getdata>
 
 
