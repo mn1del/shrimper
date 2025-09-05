@@ -686,6 +686,35 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
     return out
 
 
+def get_races() -> List[str]:
+    """Return race IDs in chronological order by date then start_time.
+
+    - Orders ascending (earliest first)
+    - Places NULL dates/times last for deterministic ordering
+    - Breaks ties by race_id for stability
+    """
+    ids: List[str] = []
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute(
+                """
+                SELECT r.race_id
+                FROM races r
+                ORDER BY r.date ASC NULLS LAST,
+                         r.start_time ASC NULLS LAST,
+                         r.race_id ASC
+                """
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return []
+            raise
+        for r in cur.fetchall() or []:
+            rid = r.get("race_id")
+            if rid:
+                ids.append(rid)
+    return ids
+
 def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return a single season object with its series and races (with entrants).
 

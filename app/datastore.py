@@ -43,6 +43,9 @@ def list_all_races(data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]
     return _pg.list_all_races(data=data)
 
 
+def get_races() -> List[str]:
+    return _pg.get_races()
+
 def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return _pg.list_season_races_with_results(season_year, data=data)
 
