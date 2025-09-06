@@ -55,7 +55,10 @@
     <div class="row mb-3">
       <label for="start_time" class="col-md-3 col-form-label">Start Time</label>
       <div class="col-md-9">
-        <input type="time" id="start_time" step="1" class="form-control" value="{{ selected_race.start_time or '' }}" disabled>
+        <div class="input-group">
+          <input type="time" id="start_time" step="1" class="form-control" value="{{ selected_race.start_time or '' }}" disabled>
+          <button type="button" class="btn btn-outline-secondary clear-time" aria-label="Clear start time" title="Clear" >&times;</button>
+        </div>
       </div>
     </div>
     <div class="row mb-3">
@@ -161,7 +164,12 @@
         <td>
           <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
         </td>
-        <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}"><input type="time" step="1" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled></td>
+        <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
+          <div class="input-group input-group-sm">
+            <input type="time" step="1" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled>
+            <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
+          </div>
+        </td>
         <td class="on-course">{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
         <td class="allowance">{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
         <td class="adj-time">{{ result.adj_time or '' }}</td>
@@ -219,6 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const startTime = document.getElementById('start_time');
   const finishInputs = Array.from(document.querySelectorAll('.finish-time'));
   const hcpInputs = Array.from(document.querySelectorAll('.handicap-override'));
+  const clearTimeBtns = Array.from(document.querySelectorAll('.clear-time'));
   hcpInputs.forEach(inp => {
     inp.dataset.base = inp.placeholder;
   });
@@ -391,6 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateLocked() {
     [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs, ...hcpInputs].forEach(inp => inp.disabled = locked);
+    clearTimeBtns.forEach(btn => btn.disabled = locked);
     toggle.textContent = locked ? '🔒' : '🔓';
     updateButtons();
     deleteBtn.classList.toggle('d-none', locked);
@@ -503,6 +513,23 @@ document.addEventListener('DOMContentLoaded', () => {
     inp.addEventListener('change', () => {
       computeFinishers();
       toggleSeries();
+      updateButtons();
+    });
+  });
+
+  clearTimeBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const group = e.currentTarget.closest('.input-group');
+      if (!group) return;
+      const input = group.querySelector('input[type="time"]');
+      if (!input || input.disabled) return;
+      input.value = '';
+      // Update sort key for finish rows if applicable
+      const td = group.closest('td.finish-time-cell');
+      if (td) td.setAttribute('sorttable_customkey', '');
+      // Trigger input/change handlers to update UI state
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
       updateButtons();
     });
   });
