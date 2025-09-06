@@ -171,11 +171,11 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>
-          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
+          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
         </td>
         <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
           <div class="input-group input-group-sm">
-            <input type="time" step="1" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.sailor_name }}" value="{{ result.finish_time or '' }}" disabled>
+            <input type="time" step="1" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" value="{{ result.finish_time or '' }}" disabled>
             <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
           </div>
         </td>
