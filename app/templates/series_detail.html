@@ -55,7 +55,7 @@
     <div class="row mb-3">
       <label for="start_time" class="col-md-3 col-form-label">Start Time</label>
       <div class="col-md-9">
-        <input type="text" id="start_time" class="form-control" value="{{ selected_race.start_time }}" disabled>
+        <input type="text" id="start_time" class="form-control" value="{{ selected_race.start_time or '' }}" disabled>
       </div>
     </div>
     <div class="row mb-3">
@@ -460,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
       series_id: seriesSelect.value,
       new_series_name: newSeriesName.value,
       date: raceDate.value,
-      start_time: startTime.value,
+      start_time: (startTime.value || '').trim() === '' ? null : startTime.value,
       finish_times: changedFinishTimes,
       handicap_overrides: changedOverrides,
     };
@@ -666,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     const payload = {
-      start_time: startTime.value,
+      start_time: (startTime.value || '').trim() === '' ? null : startTime.value,
       finish_times: changedFinishTimes,
       handicap_overrides: changedOverrides,
     };
