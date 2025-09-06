@@ -522,13 +522,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (curVal === o.value) return;
       const oldVal = o.value || o.base;
       if (cur.dataset.cleared === '1') {
-        // Clarify that we're removing a manual override, even if base matches old value
-        const base = cur.dataset.base || '';
-        if (String(oldVal) === String(base)) {
-          changes.push(`${o.name} SP handicap: remove manual override (stays "${base}")`);
-        } else {
-          changes.push(`${o.name} SP handicap: remove manual override ("${oldVal}" → base "${base}")`);
-        }
+        // Always present a simple, unambiguous message when clearing
+        changes.push(`${o.name} SP handicap: remove manual override`);
       } else {
         changes.push(`${o.name} SP handicap: "${oldVal}" → "${cur.value}"`);
       }
