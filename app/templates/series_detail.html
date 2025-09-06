@@ -137,6 +137,15 @@
   input[type="time"]::-webkit-clear-button { display: none; }
   input[type="time"]::-ms-clear { display: none; }
   input[type="time"] { appearance: textfield; -moz-appearance: textfield; }
+  /* Tasteful highlight for key scoring columns */
+  .race-table-wrapper thead th.col-race-pts,
+  .race-table-wrapper tbody td.race-pts,
+  .race-table-wrapper thead th.col-league-pts,
+  .race-table-wrapper tbody td.league-pts,
+  .race-table-wrapper thead th.col-revised-hcp,
+  .race-table-wrapper tbody td.revised-hcp {
+    background-color: #eef7ff; /* soft blue highlight */
+  }
 </style>
 
 <div class="table-responsive race-table-wrapper">
@@ -150,9 +159,9 @@
         <th style="width: 80px;">Sail No.</th>
         <th style="width: 110px;">Hcp (s/hr)</th>
         <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
-        <th style="width: 70px;">Race Pts (Trad)</th>
-        <th style="width: 70px;">League Pts (Adj)</th>
-        <th style="width: 110px;">Revised Hcp (s/hr)</th>
+        <th class="col-race-pts" style="width: 70px;">Race Pts (Trad)</th>
+        <th class="col-league-pts" style="width: 70px;">League Pts (Adj)</th>
+        <th class="col-revised-hcp" style="width: 110px;">Revised Hcp (s/hr)</th>
         <th style="width: 110px;">On Course Time (s)</th>
         <th style="width: 110px;">Hcp Allowance (s)</th>
         <th style="width: 120px;">Adj Time (hh:mm:ss)</th>
