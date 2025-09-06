@@ -95,7 +95,7 @@
     <div id="recalcOverlay" class="recalc-overlay d-none" aria-live="polite" aria-atomic="true">
       <div class="content">
         <div class="spinner-border text-light" role="status" aria-hidden="true"></div>
-        <div class="msg">Scores are being recalculated. The page will reload when done.</div>
+        <div class="msg">Standings are being recalculated. The page will reload when done.</div>
       </div>
     </div>
     <script>
@@ -152,8 +152,9 @@
             localStorage.removeItem(RECALC_FLAG);
             localStorage.removeItem(RECALC_STARTED_AT);
             localStorage.removeItem(RECALC_OBSERVED_ACTIVE);
-            hideOverlay();
+            // Trigger reload first so the overlay remains visible until navigation
             try { window.location.reload(); } catch (_) {}
+            // Do not call hideOverlay here; allow the overlay to persist until unload
             return;
           }
           // Neither active nor observed yet: keep overlay and keep polling
