@@ -593,6 +593,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     } else {
+      // Lock immediately at the beginning of the workflow
+      locked = true;
+      updateLocked();
+      // Prevent users from unlocking while processing
+      if (toggle) toggle.disabled = true;
+      // Show recalculation feedback right away
+      if (recalcToast) recalcToast.show();
+      startRecalcPolling();
+      // Proceed with save
       saveChanges();
     }
     confirmModal.hide();
