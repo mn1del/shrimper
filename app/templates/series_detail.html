@@ -12,7 +12,6 @@
 </div>
 <div class="d-flex justify-content-end mb-2 align-items-center">
   <button type="button" class="btn btn-success me-2 d-none" id="saveChanges">Save Changes</button>
-  <span id="previewBadge" class="badge bg-info d-none me-2">Preview</span>
   <button type="button" class="btn btn-danger me-2 d-none" id="cancelChanges">Cancel Changes</button>
   <button type="button" class="btn btn-outline-secondary" id="editToggle">🔒</button>
 </div>
@@ -229,13 +228,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const changeList = document.getElementById('changeList');
   const confirmSave = document.getElementById('confirmSave');
   const deleteBtn = document.getElementById('deleteRace');
-  const previewBadge = document.getElementById('previewBadge');
   const recalcToastEl = document.getElementById('recalcToast');
   const recalcToast = recalcToastEl ? new bootstrap.Toast(recalcToastEl) : null;
 
   let orig = {};
   let pendingAction = null;
-  let previewActive = false;
   let recalcPoll = null;
 
   function captureOrig() {
@@ -324,8 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.fleet-adjustment-cell').forEach(td => td.textContent = txt || '');
       }
       finisherDiv.textContent = orig.finisher_text || finisherDiv.textContent;
-      previewActive = false;
-      previewBadge.classList.add('d-none');
+      // No preview badge; nothing to toggle here
     }
   }
 
@@ -687,8 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const data = await res.json();
     applyPreviewResults(data);
-    previewActive = true;
-    previewBadge.classList.remove('d-none');
+    // Preview applied; preview badge removed per UI tweak
   }
   updateLocked();
   // On page load, if background recalc is active, show toast and start polling
