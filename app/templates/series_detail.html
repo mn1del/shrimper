@@ -751,24 +751,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const setFleetAdj = (val) => {
       document.querySelectorAll('.fleet-adjustment-cell').forEach(td => td.textContent = (val ?? '') === '' ? '' : String(val));
     };
+    const toRounded = (v) => {
+      if (v === null || v === undefined || v === '') return '';
+      const n = Number(v);
+      if (Number.isNaN(n)) return String(v);
+      return String(Math.round(n));
+    };
     Object.keys(res).forEach(k => {
       const cid = String(k);
       const tr = document.querySelector(`tbody tr[data-cid="${cid}"]`);
       if (!tr) return;
       const r = res[k] || {};
       const setText = (sel, val) => { const el = tr.querySelector(sel); if (el) el.textContent = (val ?? '') === '' ? '' : String(val); };
-      setText('.abs-pos', r.abs_pos);
-      setText('.hcp-pos', r.hcp_pos);
+      // Positions as integers
+      setText('.abs-pos', toRounded(r.abs_pos));
+      setText('.hcp-pos', toRounded(r.hcp_pos));
       const fi = tr.querySelector('.finish-time'); if (fi) fi.value = r.finish_time || '';
       const ftc = tr.querySelector('.finish-time-cell'); if (ftc) ftc.setAttribute('sorttable_customkey', r.finish_time || '');
-      setText('.on-course', r.on_course_secs);
-      setText('.allowance', r.allowance);
-      setText('.adj-time', r.adj_time);
-      setText('.full-delta', r.full_delta);
-      setText('.actual-delta', r.actual_delta);
-      setText('.revised-hcp', r.revised_hcp);
-      setText('.race-pts', r.race_pts);
-      setText('.league-pts', r.league_pts);
+      // Numeric fields rounded as per initial render
+      setText('.on-course', toRounded(r.on_course_secs));
+      setText('.allowance', toRounded(r.allowance));
+      setText('.adj-time', r.adj_time || '');
+      setText('.full-delta', toRounded(r.full_delta));
+      setText('.actual-delta', toRounded(r.actual_delta));
+      setText('.revised-hcp', toRounded(r.revised_hcp));
+      setText('.race-pts', toRounded(r.race_pts));
+      setText('.league-pts', toRounded(r.league_pts));
     });
     finisherDiv.textContent = `Number of Finishers: ${payload?.finisher_count ?? 0}`;
     setFleetAdj(payload?.fleet_adjustment ?? '');
