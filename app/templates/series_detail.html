@@ -150,15 +150,15 @@
         <th style="width: 80px;">Sail No.</th>
         <th style="width: 110px;">Hcp (s/hr)</th>
         <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
+        <th style="width: 70px;">Race Pts (Trad)</th>
+        <th style="width: 70px;">League Pts (Adj)</th>
+        <th style="width: 110px;">Revised Hcp (s/hr)</th>
         <th style="width: 110px;">On Course Time (s)</th>
         <th style="width: 110px;">Hcp Allowance (s)</th>
         <th style="width: 120px;">Adj Time (hh:mm:ss)</th>
         <th style="width: 120px;">Full Hcp Change (s/hr)</th>
         <th style="width: 80px;">Fleet Adj (%)</th>
         <th style="width: 140px;">Adjusted Hcp Change (s/hr)</th>
-        <th style="width: 110px;">Revised Hcp (s/hr)</th>
-        <th style="width: 70px;">Race Pts (Trad)</th>
-        <th style="width: 70px;">League Pts (Adj)</th>
       </tr>
     </thead>
     <tbody>
@@ -179,15 +179,16 @@
             <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
           </div>
         </td>
+        <td class="race-pts">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
+        <td class="league-pts">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
+        <td class="revised-hcp">{{ result.revised_hcp|round|int if result.revised_hcp is defined and result.revised_hcp is not none else '' }}</td>
         <td class="on-course">{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
         <td class="allowance">{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
         <td class="adj-time">{{ result.adj_time or '' }}</td>
         <td class="full-delta">{{ result.full_delta|round|int if result.full_delta is defined and result.full_delta is not none else '' }}</td>
         <td class="fleet-adjustment-cell">{{ fleet_adjustment if fleet_adjustment is not none else '' }}</td>
         <td class="actual-delta">{{ result.actual_delta|round|int if result.actual_delta is defined and result.actual_delta is not none else '' }}</td>
-        <td class="revised-hcp">{{ result.revised_hcp|round|int if result.revised_hcp is defined and result.revised_hcp is not none else '' }}</td>
-        <td class="race-pts">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
-        <td class="league-pts">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
+        
       </tr>
     {% endfor %}
     </tbody>
