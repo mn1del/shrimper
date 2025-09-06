@@ -5,7 +5,7 @@
 <div class="d-flex align-items-center mb-3">
   <a href="{{ url_for('main.races') }}">Races</a>
   <select class="form-select w-auto ms-2" onchange="window.location=this.value">
-    {% for race in all_races %}
+    {% for race in all_races|sort(attribute='date', reverse=True) %}
       <option value="{{ url_for('main.race_sheet', race_id=race.race_id) }}" {% if race.race_id == selected_race.race_id %}selected{% endif %}>{{ race.date }} {{ race.start_time or '' }} ({{ race.series_name }})</option>
     {% endfor %}
   </select>
@@ -74,7 +74,7 @@
 <form method="get" class="mb-3">
   <select name="race_id" class="form-select" onchange="this.form.submit()">
     <option value="">Select a race</option>
-    {% for race in races %}
+    {% for race in races|sort(attribute='date', reverse=True) %}
       <option value="{{ race.race_id }}">{{ race.name }} ({{ race.date }})</option>
     {% endfor %}
     <option value="__new__">Create New Race</option>
