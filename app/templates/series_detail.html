@@ -331,7 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function checkRecalcOnce() {
     try {
-      const url = new URL('{{ url_for('main.recalc_status') }}', window.location.origin);
+      // Use literal path to avoid BuildError if endpoint name not registered
+      const url = new URL('/api/recalc/status', window.location.origin);
       url.searchParams.set('race_id', '{{ selected_race.race_id }}');
       const res = await fetch(url.toString());
       const data = await res.json();
