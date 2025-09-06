@@ -180,7 +180,7 @@
         <td>{{ comp.boat_name }}</td>
         <td>{{ comp.sail_no }}</td>
         <td>
-          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override|int if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
+          <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
         </td>
         <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
           <div class="input-group input-group-sm">
@@ -517,13 +517,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     orig.handicap_overrides.forEach(o => {
       const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
-      if (cur) {
-        const curVal = cur.dataset.cleared === '1' ? '' : cur.value;
-        if (curVal !== o.value) {
-          const oldVal = o.value || o.base;
-          const newVal = cur.dataset.cleared === '1' ? cur.dataset.base : cur.value;
-          changes.push(`${o.name} SP handicap: "${oldVal}" → "${newVal}"`);
+      if (!cur) return;
+      const curVal = cur.dataset.cleared === '1' ? '' : cur.value;
+      if (curVal === o.value) return;
+      const oldVal = o.value || o.base;
+      if (cur.dataset.cleared === '1') {
+        // Clarify that we're removing a manual override, even if base matches old value
+        const base = cur.dataset.base || '';
+        if (String(oldVal) === String(base)) {
+          changes.push(`${o.name} SP handicap: remove manual override (stays "${base}")`);
+        } else {
+          changes.push(`${o.name} SP handicap: remove manual override ("${oldVal}" → base "${base}")`);
         }
+      } else {
+        changes.push(`${o.name} SP handicap: "${oldVal}" → "${cur.value}"`);
       }
     });
     return changes;
@@ -629,15 +636,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   
   hcpInputs.forEach(inp => {
+    // When focusing the input, do not inject the base value.
+    // Keep it truly blank if cleared, so users see an empty field until save.
     inp.addEventListener('focus', () => {
       inp.placeholder = '';
       if (inp.dataset.cleared === '1') {
         inp.value = '';
-      } else if (inp.value === '') {
-        inp.value = inp.dataset.base;
-        inp.dataset.fromPlaceholder = '1';
       }
-      inp.select();
+      // Select current content for quick overwrite
+      try { inp.select(); } catch (_) {}
     });
     inp.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
@@ -647,6 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     inp.addEventListener('input', () => {
       if (inp.value === '') {
+        // Mark as cleared (request to remove override) but keep field empty
         inp.dataset.cleared = '1';
         inp.classList.remove('text-danger');
         inp.style.color = '';
@@ -658,14 +666,8 @@ document.addEventListener('DOMContentLoaded', () => {
       updateButtons();
     });
     inp.addEventListener('blur', () => {
-      if (inp.dataset.fromPlaceholder === '1') {
-        if (inp.value === inp.dataset.base) {
-          inp.value = '';
-        }
-        inp.dataset.fromPlaceholder = '';
-      }
+      // On blur, if left empty, keep it empty and mark as cleared.
       if (inp.value === '') {
-        inp.value = inp.dataset.base;
         inp.dataset.cleared = '1';
         inp.classList.remove('text-danger');
         inp.style.color = '';
@@ -674,6 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
         inp.classList.add('text-danger');
         inp.style.color = 'red';
       }
+      // Always restore the base handicap as placeholder for clarity
       inp.placeholder = inp.dataset.base;
       updateButtons();
     });
