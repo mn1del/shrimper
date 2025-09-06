@@ -128,6 +128,13 @@
   .handicap-override {
     min-width: 8ch;
   }
+  /* Make finish time column wider for input + clear button */
+  td.finish-time-cell { min-width: 16ch; }
+  /* Hide native time picker icons */
+  input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+  input[type="time"]::-webkit-clear-button { display: none; }
+  input[type="time"]::-ms-clear { display: none; }
+  input[type="time"] { appearance: textfield; -moz-appearance: textfield; }
 </style>
 
 <div class="table-responsive race-table-wrapper">
@@ -400,7 +407,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateLocked() {
     [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs, ...hcpInputs].forEach(inp => inp.disabled = locked);
-    clearTimeBtns.forEach(btn => btn.disabled = locked);
+    clearTimeBtns.forEach(btn => {
+      btn.disabled = locked;
+      btn.classList.toggle('d-none', locked);
+    });
     toggle.textContent = locked ? '🔒' : '🔓';
     updateButtons();
     deleteBtn.classList.toggle('d-none', locked);
