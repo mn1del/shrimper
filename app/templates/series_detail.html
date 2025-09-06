@@ -128,6 +128,8 @@
   .handicap-override {
     min-width: 8ch;
   }
+  /* Invalid time highlight */
+  td.finish-time-cell.time-invalid { background-color: #f8d7da; }
   /* Make finish time column wider for input + clear button */
   td.finish-time-cell { min-width: 16ch; }
   /* Hide native time picker icons */
@@ -251,6 +253,35 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingAction = null;
   let recalcPoll = null;
 
+  function parseTimeToSeconds(v) {
+    if (!v) return null;
+    const parts = String(v).split(':');
+    if (parts.length < 2) return null;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const s = parts.length > 2 ? parseInt(parts[2], 10) : 0;
+    if ([h, m, s].some(n => Number.isNaN(n))) return null;
+    return h * 3600 + m * 60 + s;
+  }
+
+  function validateTimesAndUpdateUI() {
+    const startSecs = parseTimeToSeconds(startTime.value);
+    let invalid = 0;
+    finishInputs.forEach(inp => {
+      const td = inp.closest('td.finish-time-cell');
+      if (!td) return;
+      td.classList.remove('time-invalid');
+      td.removeAttribute('title');
+      const finSecs = parseTimeToSeconds(inp.value);
+      if (startSecs != null && finSecs != null && finSecs <= startSecs) {
+        td.classList.add('time-invalid');
+        td.setAttribute('title', 'Finish times must be after the race start time');
+        invalid++;
+      }
+    });
+    return invalid > 0;
+  }
+
   function captureOrig() {
     orig = {
       series_id: seriesSelect.value,
@@ -311,6 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     computeFinishers();
     toggleSeries();
+    validateTimesAndUpdateUI();
     if (orig.results) {
       document.querySelectorAll('tbody tr[data-cid]').forEach(tr => {
         const cid = tr.dataset.cid;
@@ -393,8 +425,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateButtons() {
     const dirty = !locked && hasChanges();
+    const invalid = validateTimesAndUpdateUI();
     saveBtn.classList.toggle('d-none', !dirty);
     cancelBtn.classList.toggle('d-none', !dirty);
+    saveBtn.disabled = invalid || !dirty;
   }
 
   function toggleSeries() {
@@ -527,6 +561,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Live validation while typing
+  startTime.addEventListener('input', () => {
+    updateButtons();
+  });
+  finishInputs.forEach(inp => inp.addEventListener('input', () => {
+    computeFinishers();
+    updateButtons();
+  }));
+
   clearTimeBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
       const group = e.currentTarget.closest('.input-group');
@@ -544,10 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  finishInputs.forEach(inp => inp.addEventListener('input', () => {
-    computeFinishers();
-    updateButtons();
-  }));
+  
   hcpInputs.forEach(inp => {
     inp.addEventListener('focus', () => {
       inp.placeholder = '';
@@ -688,6 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     finisherDiv.textContent = `Number of Finishers: ${payload?.finisher_count ?? 0}`;
     setFleetAdj(payload?.fleet_adjustment ?? '');
+    validateTimesAndUpdateUI();
   }
 
   async function previewChanges() {
