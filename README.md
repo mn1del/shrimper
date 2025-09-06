@@ -162,6 +162,12 @@ If upgrading from a schema without `race_results.handicap_override`, either reru
 
 Note: If you change or upgrade the Bootstrap CDN version/URL, update the SRI hashes in `app/templates/base.html`.
 
+## Performance
+
+- Forward-only handicap recalculation runs from the edited race forward rather than over the full history. It bulk-loads the affected races and applies updates in batches for speed.
+- Recommended indexes can be inspected at `/health/indexes` and applied via `POST /admin/indexes/apply` (uses `CREATE INDEX CONCURRENTLY`).
+- To skip the full recalculation during app startup (useful on large datasets), set `RECALC_ON_STARTUP=0` in the environment.
+
 ## Optional To‑Do (Future Cleanup)
 
 The app now uses integer competitor IDs end‑to‑end (DB FK to `competitors.id`) with no sail‑number fallbacks. These items can further simplify and harden the codebase:

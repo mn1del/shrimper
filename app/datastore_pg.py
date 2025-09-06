@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
 from psycopg2 import pool as pg_pool
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 from psycopg2 import errors as pg_errors
 from contextlib import contextmanager
 
@@ -621,6 +621,37 @@ def get_races() -> List[str]:
                 ids.append(rid)
     return ids
 
+def list_season_race_ids(season_year: int) -> List[str]:
+    """Return race_ids for a given season ordered chronologically.
+
+    Orders by date ASC NULLS LAST, start_time ASC NULLS LAST, then race_id ASC.
+    """
+    ids: List[str] = []
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute(
+                """
+                SELECT r.race_id
+                FROM races r
+                JOIN series se ON se.series_id = r.series_id
+                JOIN seasons s ON s.id = se.season_id
+                WHERE s.year = %s
+                ORDER BY r.date ASC NULLS LAST,
+                         r.start_time ASC NULLS LAST,
+                         r.race_id ASC
+                """,
+                (int(season_year),),
+            )
+        except Exception as e:
+            if isinstance(e, getattr(pg_errors, "UndefinedTable", tuple())):
+                return []
+            raise
+        for r in cur.fetchall() or []:
+            rid = r.get("race_id")
+            if rid:
+                ids.append(rid)
+    return ids
+
 def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return a single season object with its series and races (with entrants).
 
@@ -940,35 +971,118 @@ def apply_recalculated_handicaps(
     if not pre_by_race:
         return stats
     with _get_conn() as conn, conn.cursor() as cur:
-        # Update race_results seeds
+        # Update race_results seeds in bulk using a VALUES table
+        # Build (race_id, competitor_ref, seed) tuples
+        rows: List[Tuple[str, int, int]] = []
         for rid, cmap in pre_by_race.items():
             if not rid or not isinstance(cmap, dict):
                 continue
             for cid, seed in cmap.items():
-                cur.execute(
+                try:
+                    rows.append((str(rid), int(cid), int(seed)))
+                except Exception:
+                    continue
+
+        if rows:
+            # Chunk large updates to keep statements reasonable in size
+            chunk_size = 2000
+            for i in range(0, len(rows), chunk_size):
+                chunk = rows[i : i + chunk_size]
+                sql = (
                     """
-                    UPDATE race_results
-                    SET initial_handicap = %s
-                    WHERE race_id = %s
-                      AND competitor_ref = %s
-                      AND (handicap_override IS NULL)
-                      AND (initial_handicap IS DISTINCT FROM %s)
-                    """,
-                    (int(seed), rid, int(cid), int(seed)),
+                    UPDATE race_results AS rr
+                    SET initial_handicap = v.seed
+                    FROM (VALUES %s) AS v(race_id, competitor_ref, seed)
+                    WHERE rr.race_id = v.race_id
+                      AND rr.competitor_ref = v.competitor_ref
+                      AND (rr.handicap_override IS NULL)
+                      AND (rr.initial_handicap IS DISTINCT FROM v.seed)
+                    """
                 )
+                # execute_values will expand the VALUES %s placeholder
+                execute_values(cur, sql, chunk)
+                # psycopg2 rowcount reflects rows affected by the UPDATE
                 stats["race_rows_updated"] += cur.rowcount or 0
 
         # Update fleet currents if provided
         if fleet_current:
+            rows2: List[Tuple[int, int]] = []
             for cid, cur_h in fleet_current.items():
-                cur.execute(
-                    """
-                    UPDATE competitors
-                    SET current_handicap_s_per_hr = %s
-                    WHERE id = %s
-                    """,
-                    (int(cur_h), int(cid)),
-                )
-                stats["competitors_updated"] += cur.rowcount or 0
+                try:
+                    rows2.append((int(cid), int(cur_h)))
+                except Exception:
+                    continue
+            if rows2:
+                chunk_size2 = 2000
+                for j in range(0, len(rows2), chunk_size2):
+                    chunk2 = rows2[j : j + chunk_size2]
+                    sql2 = (
+                        """
+                        UPDATE competitors AS c
+                        SET current_handicap_s_per_hr = v.cur_h
+                        FROM (VALUES %s) AS v(id, cur_h)
+                        WHERE c.id = v.id
+                          AND (c.current_handicap_s_per_hr IS DISTINCT FROM v.cur_h)
+                        """
+                    )
+                    execute_values(cur, sql2, chunk2)
+                    stats["competitors_updated"] += cur.rowcount or 0
         conn.commit()
     return stats
+
+
+def get_races_with_entries(race_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Return mapping of race_id -> {race_id, date, start_time, competitors[]}.
+
+    The competitors list contains dicts with competitor_id (int),
+    initial_handicap, finish_time (HH:MM:SS or None), and handicap_override.
+    Uses two queries filtered by the provided race_ids.
+    """
+    if not race_ids:
+        return {}
+    meta: Dict[str, Dict[str, Any]] = {}
+    # Ensure uniqueness and stable order of input ids where possible
+    ids = [str(rid) for rid in race_ids if rid]
+    with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT race_id, date, start_time
+            FROM races
+            WHERE race_id = ANY(%s)
+            """,
+            (ids,),
+        )
+        for r in cur.fetchall() or []:
+            rid = r.get("race_id")
+            if not rid:
+                continue
+            meta[str(rid)] = {
+                "race_id": str(rid),
+                "date": r.get("date").isoformat() if r.get("date") else None,
+                "start_time": _time_to_str(r.get("start_time")),
+                "competitors": [],
+            }
+        if not meta:
+            return {}
+        cur.execute(
+            """
+            SELECT race_id, competitor_ref AS competitor_id, initial_handicap, finish_time, handicap_override
+            FROM race_results
+            WHERE race_id = ANY(%s)
+            ORDER BY race_id, competitor_ref
+            """,
+            (list(meta.keys()),),
+        )
+        for ent in cur.fetchall() or []:
+            rid = ent.get("race_id")
+            if not rid or str(rid) not in meta:
+                continue
+            meta[str(rid)]["competitors"].append(
+                {
+                    "competitor_id": ent.get("competitor_id"),
+                    "initial_handicap": ent.get("initial_handicap"),
+                    "finish_time": _time_to_str(ent.get("finish_time")),
+                    "handicap_override": ent.get("handicap_override"),
+                }
+            )
+    return meta

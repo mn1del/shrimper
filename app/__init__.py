@@ -31,11 +31,13 @@ def create_app():
     from . import routes  # type: ignore
     app.register_blueprint(routes.bp)
 
-    app.logger.info("Starting handicap recalculation")
-    try:
-        routes.recalculate_handicaps()
-    except Exception:  # pylint: disable=broad-except
-        app.logger.exception("Error recalculating handicaps")
+    # Optionally skip full recalculation on startup for faster boot
+    if os.environ.get("RECALC_ON_STARTUP", "1") not in ("0", "false", "False"):
+        app.logger.info("Starting handicap recalculation")
+        try:
+            routes.recalculate_handicaps()
+        except Exception:  # pylint: disable=broad-except
+            app.logger.exception("Error recalculating handicaps")
 
     return app
 

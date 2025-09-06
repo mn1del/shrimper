@@ -25,6 +25,7 @@ from .datastore import (
     set_settings as ds_set_settings,
 )
 from .datastore import get_races as ds_get_races
+from .datastore import list_season_race_ids as ds_list_season_race_ids
 
 
 bp = Blueprint('main', __name__)
@@ -788,23 +789,33 @@ def recalculate_handicaps_from(start_race_id: str) -> None:
     - Writes updated pre-race seeds for affected races and updates fleet
       current handicaps for competitors impacted in the forward pass
     """
+    # Determine the season for the starting race and constrain recalculation
+    # to that season's races only.
     try:
-        order_map = _race_order_map() or {}
-        all_ids = ds_get_races() or []
+        season_obj, _series_obj, _race_obj = ds_find_race(start_race_id)
+        season_year = int((season_obj or {}).get('year')) if season_obj and season_obj.get('year') is not None else None
     except Exception:
-        order_map = {}
+        season_year = None
+
+    try:
+        if season_year is not None:
+            season_ids = ds_list_season_race_ids(season_year) or []
+            all_ids = season_ids
+        else:
+            all_ids = ds_get_races() or []
+    except Exception:
         all_ids = []
     if not all_ids:
         # Fallback: materialize via list_all_races if ordering unavailable
         all_races = _load_all_races() or []
+        if season_year is not None:
+            all_races = [r for r in all_races if int(r.get('season') or 0) == int(season_year)]
         order_map = {r.get('race_id'): idx for idx, r in enumerate(all_races)}
         all_ids = [r.get('race_id') for r in all_races if r.get('race_id')]
     try:
         start_idx = all_ids.index(start_race_id)
     except ValueError:
-        # If race id not found, fall back to full recalculation
-        # Only recalc forward from the newly created race
-        recalculate_handicaps_from(new_race_id)
+        # If race id not found, do nothing (no valid forward set)
         return
 
     forward_ids = all_ids[start_idx:]
@@ -814,11 +825,23 @@ def recalculate_handicaps_from(start_race_id: str) -> None:
     pre_by_race: dict[str, dict[int, int]] = {}
     revised_latest: dict[int, int] = {}
 
+    # Try to bulk-load race metadata + entrants for all forward races (PostgreSQL path)
+    race_map: dict[str, dict] | None = None
+    try:
+        from . import datastore_pg as _pg  # type: ignore
+        if hasattr(_pg, 'get_races_with_entries'):
+            race_map = _pg.get_races_with_entries(forward_ids)  # type: ignore[attr-defined]
+    except Exception:
+        race_map = None
+
     for rid in forward_ids:
-        # Fetch entrants for this race directly from datastore/DB
-        _season, _series, race = ds_find_race(rid)
-        if not race:
-            continue
+        # Prefer bulk-fetched data when available; else fall back to single fetch
+        if race_map is not None and str(rid) in race_map:
+            race = race_map.get(str(rid)) or {}
+        else:
+            _season, _series, race = ds_find_race(rid)
+            if not race:
+                continue
         start_seconds = _parse_hms(race.get('start_time')) or 0
         entrants = race.get('competitors', []) or []
         calc_entries: list[dict] = []

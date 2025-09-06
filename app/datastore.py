@@ -112,6 +112,33 @@ def get_races() -> List[str]:
     races_sorted = sorted(races, key=_key)
     return [str(r.get("race_id")) for r in races_sorted if r.get("race_id")]
 
+def list_season_race_ids(season_year: int) -> List[str]:
+    """Return race IDs for a given season in chronological order.
+
+    Tries PostgreSQL helper; falls back to deriving from
+    list_season_races_with_results when unavailable (e.g., in tests).
+    """
+    try:
+        fn = getattr(_pg, "list_season_race_ids", None)
+        if callable(fn):
+            return fn(int(season_year))  # type: ignore[misc]
+    except Exception:
+        pass
+    try:
+        season = _pg.list_season_races_with_results(int(season_year)) or {"series": []}
+    except Exception:
+        return []
+    races: List[Dict[str, Any]] = []
+    for series in season.get("series", []) or []:
+        for race in series.get("races", []) or []:
+            races.append(race)
+    def _key(r: Dict[str, Any]):
+        d = r.get("date") or ""
+        t = r.get("start_time") or ""
+        return (d, t, r.get("race_id") or "")
+    races.sort(key=_key)
+    return [str(r.get("race_id")) for r in races if r.get("race_id")]
+
 def list_season_races_with_results(season_year: int, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return _pg.list_season_races_with_results(season_year, data=data)
 
