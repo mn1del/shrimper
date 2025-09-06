@@ -104,6 +104,7 @@
         const overlay = document.getElementById('recalcOverlay');
         const RECALC_FLAG = 'recalc_active';
         const RECALC_STARTED_AT = 'recalc_started_at';
+        const RECALC_OBSERVED_ACTIVE = 'recalc_observed_active';
         const MAX_MS = 5 * 60 * 1000; // safety timeout 5 minutes
 
         function showOverlay() {
@@ -137,16 +138,25 @@
           const { active } = await fetchStatusAny();
           const started = Number(localStorage.getItem(RECALC_STARTED_AT) || '0');
           const expired = started && (Date.now() - started > MAX_MS);
-          if (!active || expired) {
+          if (active) {
+            try { localStorage.setItem(RECALC_OBSERVED_ACTIVE, '1'); } catch (_) {}
+            showOverlay();
+            return;
+          }
+          // Not currently active: only conclude if we've observed it active at least once,
+          // or we've hit the safety timeout.
+          const observed = localStorage.getItem(RECALC_OBSERVED_ACTIVE) === '1';
+          if (observed || expired) {
             clearInterval(pollTimer);
             pollTimer = null;
             localStorage.removeItem(RECALC_FLAG);
             localStorage.removeItem(RECALC_STARTED_AT);
+            localStorage.removeItem(RECALC_OBSERVED_ACTIVE);
             hideOverlay();
-            // Reload to pick up recalculated standings/race data
             try { window.location.reload(); } catch (_) {}
             return;
           }
+          // Neither active nor observed yet: keep overlay and keep polling
           showOverlay();
         }
         function startPolling() {
@@ -161,6 +171,7 @@
           try {
             localStorage.setItem(RECALC_FLAG, '1');
             localStorage.setItem(RECALC_STARTED_AT, String(Date.now()));
+            localStorage.removeItem(RECALC_OBSERVED_ACTIVE);
           } catch (_) {}
           startPolling();
         }
