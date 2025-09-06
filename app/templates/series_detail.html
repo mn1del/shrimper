@@ -661,18 +661,20 @@ document.addEventListener('DOMContentLoaded', () => {
       updateButtons();
     });
     inp.addEventListener('blur', () => {
-      // On blur, if left empty, keep it empty and mark as cleared.
+      // On blur, if left empty, keep it visually empty and mark as cleared.
       if (inp.value === '') {
         inp.dataset.cleared = '1';
         inp.classList.remove('text-danger');
         inp.style.color = '';
+        // Keep placeholder blank while pending save so the field appears empty
+        inp.placeholder = '';
       } else {
         inp.dataset.cleared = '';
         inp.classList.add('text-danger');
         inp.style.color = 'red';
+        // Show base as placeholder when value is present (for consistency)
+        inp.placeholder = inp.dataset.base;
       }
-      // Always restore the base handicap as placeholder for clarity
-      inp.placeholder = inp.dataset.base;
       updateButtons();
     });
   });
