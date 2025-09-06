@@ -429,6 +429,11 @@ document.addEventListener('DOMContentLoaded', () => {
     saveBtn.classList.toggle('d-none', !dirty);
     cancelBtn.classList.toggle('d-none', !dirty);
     saveBtn.disabled = invalid || !dirty;
+    if (dirty && invalid) {
+      saveBtn.setAttribute('title', 'Finish times must be after the race start time');
+    } else {
+      saveBtn.removeAttribute('title');
+    }
   }
 
   function toggleSeries() {
