@@ -2009,44 +2009,7 @@ def save_settings():
 #</getdata>
 
 
-#<getdata>
-@bp.route('/competitor')
-def competitor():
-    """Competitor page with searchable selectors and an empty results table.
-
-    - Top: three searchable inputs (Sailor, Boat, Sail No) populated from fleet
-    - Under: empty table scaffold for per-race results; races are provided in
-      chronological order so row order can adapt to future changes without
-      hard-coding
-    """
-    breadcrumbs = [('Competitor', None)]
-    fleet = ds_get_fleet().get('competitors', [])
-    sailors = sorted({(c.get('sailor_name') or '').strip() for c in fleet if (c.get('sailor_name') or '').strip()})
-    boats = sorted({(c.get('boat_name') or '').strip() for c in fleet if (c.get('boat_name') or '').strip()})
-    sail_nos = sorted({str((c.get('sail_no') or '')).strip() for c in fleet if str((c.get('sail_no') or '')).strip()})
-
-    # Load all races and sort via get_races() chronological order
-    races = _load_all_races() or []
-    order = _race_order_map()
-    if order:
-        races_sorted = sorted(races, key=lambda r: order.get(r.get('race_id'), 10**9))
-    else:
-        def _key(r):
-            d = r.get('date') or ''
-            t = r.get('start_time') or ''
-            return (d, t)
-        races_sorted = sorted(races, key=_key)
-
-    return render_template(
-        'competitor.html',
-        title='Competitor',
-        breadcrumbs=breadcrumbs,
-        sailors=sailors,
-        boats=boats,
-        sail_nos=sail_nos,
-        races=races_sorted,
-    )
-#</getdata>
+ 
 
 
 #<getdata>
