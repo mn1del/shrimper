@@ -2340,6 +2340,8 @@ def preview_race(race_id):
     fleet = ds_get_fleet().get('competitors', [])
     valid_ids = {int(c.get('competitor_id')) for c in (fleet or []) if c.get('competitor_id') is not None}
     fleet_map = {int(c.get('competitor_id')): c for c in (fleet or []) if c.get('competitor_id') is not None}
+    # Build a chronologically correct snapshot for seeds prior to this race
+    pre_snapshot: dict[int, int] = build_pre_race_snapshot(race_id)
 
     def _parse_cid(val) -> int:
         try:
@@ -2396,21 +2398,33 @@ def preview_race(race_id):
 
     # Build calc entries with pre-race seeds honoring overrides
     def _initial_for_cid(cid: int, ent: dict) -> int | None:
+        # 1) In-request override takes precedence
         ov = ent.get('handicap_override')
         if ov is not None:
             try:
                 return int(ov)
             except Exception:
                 return None
+        # 2) Snapshot seed prior to this race (preferred)
+        try:
+            if cid in pre_snapshot:
+                return int(pre_snapshot[cid])
+        except Exception:
+            pass
+        # 3) Entrant's stored initial (if present in DB)
         ih = ent.get('initial_handicap')
         if ih is not None:
             try:
                 return int(ih)
             except Exception:
                 pass
+        # 4) Last resort for unknown competitor: fleet starting (if in fleet)
         comp = fleet_map.get(int(cid))
         if comp is not None:
-            return comp.get('starting_handicap_s_per_hr')
+            try:
+                return int(comp.get('starting_handicap_s_per_hr') or 0)
+            except Exception:
+                return 0
         return None
 
     calc_entries: list[dict] = []
