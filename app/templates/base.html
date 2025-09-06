@@ -10,6 +10,32 @@
         max-height: 70vh;
         overflow-y: auto;
       }
+      /* Global recalculation overlay: visible across pages without blocking clicks */
+      .recalc-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        pointer-events: none; /* allow navigation underneath */
+      }
+      .recalc-overlay .content {
+        pointer-events: auto; /* allow focus for accessibility, though we don't capture clicks */
+        background: rgba(33, 37, 41, 0.95);
+        color: #fff;
+        padding: 1rem 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 0 20px rgba(0,0,0,0.4);
+        text-align: center;
+        min-width: 280px;
+      }
+      .recalc-overlay .msg {
+        margin-top: 0.5rem;
+        font-size: 0.95rem;
+      }
+      .d-none { display: none !important; }
     </style>
   </head>
   <body>
@@ -65,5 +91,92 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    <!-- Global Recalculation Overlay -->
+    <div id="recalcOverlay" class="recalc-overlay d-none" aria-live="polite" aria-atomic="true">
+      <div class="content">
+        <div class="spinner-border text-light" role="status" aria-hidden="true"></div>
+        <div class="msg">Scores are being recalculated. The page will reload when done.</div>
+      </div>
+    </div>
+    <script>
+      (function() {
+        let pollTimer = null;
+        const overlay = document.getElementById('recalcOverlay');
+        const RECALC_FLAG = 'recalc_active';
+        const RECALC_STARTED_AT = 'recalc_started_at';
+        const MAX_MS = 5 * 60 * 1000; // safety timeout 5 minutes
+
+        function showOverlay() {
+          overlay?.classList.remove('d-none');
+          // Disable unlock toggles site-wide while visible
+          const toggle = document.getElementById('editToggle');
+          if (toggle) {
+            toggle.setAttribute('disabled', 'disabled');
+            toggle.setAttribute('title', 'Disabled during recalculation');
+          }
+        }
+        function hideOverlay() {
+          overlay?.classList.add('d-none');
+          // Re-enable unlock toggles (page-specific scripts may still keep locked state)
+          const toggle = document.getElementById('editToggle');
+          if (toggle) {
+            toggle.removeAttribute('disabled');
+            toggle.removeAttribute('title');
+          }
+        }
+        async function fetchStatusAny() {
+          try {
+            const res = await fetch('/api/recalc/status', { cache: 'no-store' });
+            const j = await res.json();
+            return { active: !!j?.in_progress, count: j?.active_count || 0 };
+          } catch (e) {
+            return { active: false, count: 0 };
+          }
+        }
+        async function pollLoop() {
+          const { active } = await fetchStatusAny();
+          const started = Number(localStorage.getItem(RECALC_STARTED_AT) || '0');
+          const expired = started && (Date.now() - started > MAX_MS);
+          if (!active || expired) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            localStorage.removeItem(RECALC_FLAG);
+            localStorage.removeItem(RECALC_STARTED_AT);
+            hideOverlay();
+            // Reload to pick up recalculated standings/race data
+            try { window.location.reload(); } catch (_) {}
+            return;
+          }
+          showOverlay();
+        }
+        function startPolling() {
+          if (pollTimer) return;
+          showOverlay();
+          pollTimer = setInterval(pollLoop, 1500);
+          // Immediate first check
+          pollLoop();
+        }
+        // Public entry point for pages that trigger recalculation
+        window.SignalRecalcStart = function() {
+          try {
+            localStorage.setItem(RECALC_FLAG, '1');
+            localStorage.setItem(RECALC_STARTED_AT, String(Date.now()));
+          } catch (_) {}
+          startPolling();
+        }
+        // On load: if the flag is set, resume polling and show overlay
+        try {
+          if (localStorage.getItem(RECALC_FLAG) === '1') {
+            startPolling();
+          }
+        } catch (_) {}
+        // React to recalc flag set in another tab
+        window.addEventListener('storage', (ev) => {
+          if (ev.key === RECALC_FLAG && ev.newValue === '1') {
+            startPolling();
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

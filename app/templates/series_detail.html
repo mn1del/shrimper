@@ -731,6 +731,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (toggle) toggle.disabled = true;
       // Show recalculation feedback right away
       if (recalcToast) recalcToast.show();
+      // Signal global overlay and polling across pages
+      if (window.SignalRecalcStart) {
+        try { window.SignalRecalcStart(); } catch (_) {}
+      }
       startRecalcPolling();
       // Proceed with save
       saveChanges();
