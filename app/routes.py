@@ -662,7 +662,7 @@ def _fleet_lookup() -> dict:
 
 
 #<getdata>
-def build_pre_race_snapshot(race_id: str) -> dict[int, int]:
+def build_pre_race_snapshot(race_id: str, data: dict | None = None) -> dict[int, int]:
     """Return map of competitor_id -> current handicap prior to ``race_id``.
 
     Iterates the races in the same season chronologically up to but excluding
@@ -670,17 +670,29 @@ def build_pre_race_snapshot(race_id: str) -> dict[int, int]:
     are honored. Seeds are taken from fleet starting handicaps.
     """
     # Resolve season and ordered race ids
-    season_obj, _series_obj, _race_obj = ds_find_race(race_id)
+    season_obj, _series_obj, _race_obj = ds_find_race(race_id, data=data)
     if not _race_obj:
         return {}
     try:
         season_year = int((season_obj or {}).get('year')) if season_obj and season_obj.get('year') is not None else None
     except Exception:
         season_year = None
+    # Prefer datastore helper; if we have an in-memory data tree, derive order from it
     try:
         ids = ds_list_season_race_ids(int(season_year)) if season_year is not None else ds_get_races()
     except Exception:
         ids = []
+    if (not ids) and data:
+        # Derive from provided data tree
+        race_list: list[dict] = []
+        for season in data.get('seasons', []) or []:
+            if season_year is not None and int(season.get('year') or 0) != int(season_year):
+                continue
+            for series in season.get('series', []) or []:
+                for r in series.get('races', []) or []:
+                    race_list.append(r)
+        race_list.sort(key=lambda r: ((r.get('date') or ''), (r.get('start_time') or ''), (r.get('race_id') or '')))
+        ids = [r.get('race_id') for r in race_list if r.get('race_id')]
     try:
         idx = ids.index(race_id) if ids else -1
     except ValueError:
@@ -688,7 +700,7 @@ def build_pre_race_snapshot(race_id: str) -> dict[int, int]:
     prior_ids = ids[:idx] if idx > 0 else []
 
     # Seed map from fleet starting handicaps
-    fleet = ds_get_fleet().get('competitors', [])
+    fleet = (data.get('fleet') if isinstance(data, dict) else ds_get_fleet()).get('competitors', [])
     fleet_map = {int(c.get('competitor_id')): c for c in (fleet or []) if c.get('competitor_id') is not None}
     handicap_map: dict[int, int] = {
         int(cid): int(c.get('starting_handicap_s_per_hr') or 0)
@@ -717,11 +729,11 @@ def build_pre_race_snapshot(race_id: str) -> dict[int, int]:
         else:
             # Fallback: load from data tree
             try:
-                data = load_data()
+                tree = data if isinstance(data, dict) else load_data()
             except Exception:
-                data = {"seasons": []}
+                tree = {"seasons": []}
             race_list: list[dict] = []
-            for season in data.get('seasons', []) or []:
+            for season in tree.get('seasons', []) or []:
                 for series in season.get('series', []) or []:
                     for race in series.get('races', []) or []:
                         if race.get('race_id') in prior_ids:
@@ -2209,12 +2221,27 @@ def update_race(race_id):
         entrants_list = race_obj.setdefault('competitors', [])
         existing = {int(e.get('competitor_id')): e for e in entrants_list if e.get('competitor_id') is not None}
 
+        # Build a pre-race snapshot based on current (unsaved) edits to date/start_time
+        try:
+            snapshot = build_pre_race_snapshot(race_id, data=store)
+        except Exception:
+            snapshot = {}
+
         # Helper: lookup baseline handicap directly from fleet by integer id
         fleet_map = {int(c.get('competitor_id')): c for c in fleet if c.get('competitor_id') is not None}
         def _baseline_for_cid(cid: int) -> int | None:
+            # Prefer snapshot seed; fallback to fleet starting
+            if int(cid) in snapshot:
+                try:
+                    return int(snapshot[int(cid)])
+                except Exception:
+                    pass
             comp = fleet_map.get(int(cid))
             if comp:
-                return comp.get('starting_handicap_s_per_hr')
+                try:
+                    return int(comp.get('starting_handicap_s_per_hr') or 0)
+                except Exception:
+                    return 0
             return None
 
         # Update existing entrants with new finish times
@@ -2252,6 +2279,17 @@ def update_race(race_id):
 
         # Apply overrides across the (possibly expanded) entrant list
         _apply_overrides(entrants_list)
+
+        # If an override was explicitly cleared in this request, reset initial_handicap
+        # for those entrants to the snapshot seed so the start race is correct.
+        for cid, handicap in ov_map.items():
+            if handicap in (None, '') and cid in existing:
+                seed = _baseline_for_cid(cid)
+                if seed is not None:
+                    try:
+                        existing[cid]['initial_handicap'] = int(seed)
+                    except Exception:
+                        pass
 
         # Ensure competitor ids are integers in entrants_list
         normalized_existing: list[dict] = []
