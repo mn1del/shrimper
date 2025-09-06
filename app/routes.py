@@ -661,6 +661,155 @@ def _fleet_lookup() -> dict:
 #</getdata>
 
 
+#<getdata>
+def build_pre_race_snapshot(race_id: str) -> dict[int, int]:
+    """Return map of competitor_id -> current handicap prior to ``race_id``.
+
+    Iterates the races in the same season chronologically up to but excluding
+    the target race and feeds revised handicaps forward. Prior-race overrides
+    are honored. Seeds are taken from fleet starting handicaps.
+    """
+    # Resolve season and ordered race ids
+    season_obj, _series_obj, _race_obj = ds_find_race(race_id)
+    if not _race_obj:
+        return {}
+    try:
+        season_year = int((season_obj or {}).get('year')) if season_obj and season_obj.get('year') is not None else None
+    except Exception:
+        season_year = None
+    try:
+        ids = ds_list_season_race_ids(int(season_year)) if season_year is not None else ds_get_races()
+    except Exception:
+        ids = []
+    try:
+        idx = ids.index(race_id) if ids else -1
+    except ValueError:
+        idx = -1
+    prior_ids = ids[:idx] if idx > 0 else []
+
+    # Seed map from fleet starting handicaps
+    fleet = ds_get_fleet().get('competitors', [])
+    fleet_map = {int(c.get('competitor_id')): c for c in (fleet or []) if c.get('competitor_id') is not None}
+    handicap_map: dict[int, int] = {
+        int(cid): int(c.get('starting_handicap_s_per_hr') or 0)
+        for cid, c in fleet_map.items()
+    }
+
+    if not prior_ids:
+        return handicap_map
+
+    # Try bulk fetch of prior races with entries (PostgreSQL path)
+    races_data: dict[str, dict] | None = None
+    try:
+        from . import datastore_pg as _pg  # type: ignore
+        if hasattr(_pg, 'get_races_with_entries'):
+            races_data = _pg.get_races_with_entries(prior_ids)  # type: ignore[attr-defined]
+    except Exception:
+        races_data = None
+
+    def _iter_prior():
+        if races_data is not None:
+            # Yield in the same order as prior_ids
+            for rid in prior_ids:
+                r = races_data.get(str(rid)) or {}
+                if r:
+                    yield r
+        else:
+            # Fallback: load from data tree
+            try:
+                data = load_data()
+            except Exception:
+                data = {"seasons": []}
+            race_list: list[dict] = []
+            for season in data.get('seasons', []) or []:
+                for series in season.get('series', []) or []:
+                    for race in series.get('races', []) or []:
+                        if race.get('race_id') in prior_ids:
+                            race_list.append(race)
+            # Order by position in prior_ids
+            pos = {rid: i for i, rid in enumerate(prior_ids)}
+            race_list.sort(key=lambda r: pos.get(r.get('race_id'), 10**9))
+            for r in race_list:
+                yield {
+                    'race_id': r.get('race_id'),
+                    'start_time': r.get('start_time'),
+                    'competitors': [
+                        {
+                            'competitor_id': e.get('competitor_id'),
+                            'initial_handicap': e.get('initial_handicap'),
+                            'finish_time': e.get('finish_time'),
+                            'handicap_override': e.get('handicap_override'),
+                            'status': e.get('status'),
+                        }
+                        for e in (r.get('competitors') or [])
+                        if e.get('competitor_id') is not None
+                    ],
+                }
+
+    # Walk prior races and feed forward revised handicaps
+    for r in _iter_prior():
+        start_seconds = _parse_hms(r.get('start_time')) or 0
+        entries: list[dict] = []
+        entrants = r.get('competitors', []) or []
+        for ent in entrants:
+            try:
+                cid = int(ent.get('competitor_id'))
+            except Exception:
+                continue
+            initial = None
+            ov = ent.get('handicap_override')
+            if ov is not None:
+                try:
+                    initial = int(ov)
+                except Exception:
+                    initial = None
+            if initial is None and cid in handicap_map:
+                initial = int(handicap_map[cid])
+            if initial is None:
+                ih = ent.get('initial_handicap')
+                try:
+                    initial = int(ih) if ih is not None else None
+                except Exception:
+                    initial = None
+            if initial is None:
+                comp = fleet_map.get(cid)
+                if comp is not None:
+                    try:
+                        initial = int(comp.get('starting_handicap_s_per_hr') or 0)
+                    except Exception:
+                        initial = 0
+            entry = {'competitor_id': cid, 'start': start_seconds, 'initial_handicap': int(initial or 0)}
+            ft = ent.get('finish_time')
+            ft_sec = None
+            try:
+                # Accept HH:MM:SS string; if already a time, it will be handled upstream in PG path
+                if isinstance(ft, str) and ft.strip():
+                    ft_sec = _parse_hms(ft)
+            except Exception:
+                ft_sec = None
+            if ft_sec is not None:
+                entry['finish'] = ft_sec
+            status = ent.get('status')
+            if status:
+                entry['status'] = status
+            entries.append(entry)
+        if not entries:
+            continue
+        try:
+            results = calculate_race_results(entries)
+        except Exception:
+            results = []
+        for res in results:
+            cid2 = res.get('competitor_id')
+            rev = res.get('revised_handicap')
+            if cid2 is not None and rev is not None:
+                try:
+                    handicap_map[int(cid2)] = int(rev)
+                except Exception:
+                    pass
+
+    return handicap_map
+#</getdata>
 # Deprecated in integer-ID model; ids are DB-assigned
 
 
