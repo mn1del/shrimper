@@ -1422,7 +1422,7 @@ def series_detail(series_id):
         }
         errors: list[str] = []
 
-        # Fast path: compute only the selected race without scanning all races
+        # Selected race: compute using a chronologically correct snapshot
         skip_heavy = False
         race = _find_race(race_id)
         if race is not None:
@@ -1450,145 +1450,114 @@ def series_detail(series_id):
                 if cid not in ordered_ids:
                     ordered_ids.append(cid)
 
-            # Precompute pre-race handicaps (used for display and as calc inputs)
-            pre_race_handicaps: dict[int, int] = {}
-            fleet_map: dict[int, dict] = {int(c.get('competitor_id')): c for c in fleet if c.get('competitor_id') is not None}
+            # Build per-race snapshot for correct pre-race seeds
+            pre_race_handicaps: dict[int, int] = build_pre_race_snapshot(race_id)
+
+            # Compute results for selected race using the snapshot
+            if errors:
+                # Surface basic results with errors
+                results = {}
+                basic: dict[str, dict] = {}
+                for ent in entrants:
+                    cid = ent.get('competitor_id')
+                    if not cid:
+                        continue
+                    basic[cid] = {
+                        'finish_time': ent.get('finish_time')
+                    }
+                selected_race = race
+                selected_race['results'] = basic
+                return render_template(
+                    'series_detail.html',
+                    title=series.get('name') or 'Series',
+                    breadcrumbs=[('Races', url_for('main.races')), (series.get('name'), None)],
+                    series=series,
+                    races=races,
+                    selected_race=selected_race,
+                    finisher_display=f"Number of Finishers: {sum(1 for v in basic.values() if v.get('finish_time'))}",
+                    fleet=fleet,
+                    series_list=[entry['series'] for entry in _load_series_entries()],
+                    unlocked=False,
+                    fleet_adjustment=0,
+                    errors=errors,
+                )
+
+            calc_entries: list[dict] = []
             for cid in ordered_ids:
                 ent = entrants_map.get(cid, {})
-                comp = fleet_map.get(cid)
-                initial = None
+                # For this race, honor an override if present; else use snapshot seed
+                seed = None
                 if ent.get('handicap_override') is not None:
                     try:
-                        initial = int(ent['handicap_override'])
-                    except (ValueError, TypeError):
-                        initial = None
-                if initial is None:
-                    ih = ent.get('initial_handicap')
-                    if ih is not None:
-                        try:
-                            initial = int(ih)
-                        except (ValueError, TypeError):
-                            initial = None
-                if initial is None and comp is not None:
-                    # Default baseline should be starting handicap; use current only if starting is missing
-                    initial = comp.get('starting_handicap_s_per_hr')
-                if initial is None:
-                    # Missing a usable starting handicap and no override/initial on entrant
-                    name = (comp.get('sailor_name') if comp else '') or str(cid)
-                    errors.append(f"No starting handicap available from the Fleet for competitor {name}.")
-                    # Do not select a fallback value here; leave pre_race_handicaps without an entry
-                    continue
-                pre_race_handicaps[cid] = int(initial)
-
-            cached = _cache_get_race(race_id)
-            if cached is not None and not errors:
-                results, fleet_adjustment = cached
-                # Ensure finisher count reflects cached results for display
-                try:
-                    finisher_count = sum(
-                        1 for r in (results or {}).values() if r.get('finish_time')
-                    )
-                except Exception:
-                    finisher_count = 0
-            else:
-                if errors:
-                    # Skip heavy calculation; surface basic results with errors
-                    results = {}
-                    basic: dict[str, dict] = {}
-                    for ent in entrants:
-                        cid = ent.get('competitor_id')
-                        if not cid:
-                            continue
-                        basic[cid] = {
-                            'finish_time': ent.get('finish_time')
-                        }
-                    selected_race = race
-                    selected_race['results'] = basic
-                    return render_template(
-                        'series_detail.html',
-                        title=series.get('name') or 'Series',
-                        breadcrumbs=[('Races', url_for('main.races')), (series.get('name'), None)],
-                        series=series,
-                        races=races,
-                        selected_race=selected_race,
-                        finisher_display=f"Number of Finishers: {sum(1 for v in basic.values() if v.get('finish_time'))}",
-                        fleet=fleet,
-                        series_list=[entry['series'] for entry in _load_series_entries()],
-                        unlocked=False,
-                        fleet_adjustment=0,
-                        errors=errors,
-                    )
-                calc_entries: list[dict] = []
-                for cid in ordered_ids:
-                    ent = entrants_map.get(cid, {})
-                    entry = {
-                        'competitor_id': cid,
-                        'start': start_seconds,
-                        'initial_handicap': pre_race_handicaps.get(cid),
-                    }
-                    try:
-                        ft = _parse_hms(ent.get('finish_time')) if ent else None
+                        seed = int(ent['handicap_override'])
                     except Exception:
-                        ft = None
-                        if (ent.get('finish_time') or '').strip():
-                            errors.append(f"Invalid finish time '{ent.get('finish_time')}' for competitor {cid}. Expected HH:MM:SS.")
-                    if ft is not None:
-                        entry['finish'] = ft
-                    status = ent.get('status') if ent else None
-                    if status:
-                        entry['status'] = status
-                    # Only include entries with a valid initial handicap
-                    if entry['initial_handicap'] is not None:
-                        calc_entries.append(entry)
+                        seed = None
+                if seed is None:
+                    seed = pre_race_handicaps.get(cid)
+                entry = {
+                    'competitor_id': cid,
+                    'start': start_seconds,
+                    'initial_handicap': seed,
+                }
+                try:
+                    ft = _parse_hms(ent.get('finish_time')) if ent else None
+                except Exception:
+                    ft = None
+                    if (ent.get('finish_time') or '').strip():
+                        errors.append(f"Invalid finish time '{ent.get('finish_time')}' for competitor {cid}. Expected HH:MM:SS.")
+                if ft is not None:
+                    entry['finish'] = ft
+                status = ent.get('status') if ent else None
+                if status:
+                    entry['status'] = status
+                # Only include entries with a valid initial handicap
+                if entry['initial_handicap'] is not None:
+                    calc_entries.append(entry)
 
-                if errors:
-                    # Surface errors without calculating potentially incorrect results
-                    results_list = []
-                else:
-                    results_list = calculate_race_results(calc_entries)
-                finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
-                fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100)) if finisher_count else 0
+            results_list = [] if errors else calculate_race_results(calc_entries)
+            finisher_count = sum(1 for r in results_list if r.get('finish') is not None)
+            fleet_adjustment = int(round(_scaling_factor(finisher_count) * 100)) if finisher_count else 0
 
-                results: dict[int, dict] = {}
-                for res in results_list:
-                    cid = res.get('competitor_id')
-                    entrant = entrants_map.get(cid, {})
-                    finish_str = entrant.get('finish_time')
-                    is_non_finisher = res.get('finish') is None
-                    results[cid] = {
-                        'finish_time': finish_str,
-                        'on_course_secs': res.get('elapsed_seconds'),
-                        'abs_pos': res.get('absolute_position'),
-                        'allowance': res.get('allowance_seconds'),
-                        'adj_time_secs': res.get('adjusted_time_seconds'),
-                        'adj_time': _format_hms(res.get('adjusted_time_seconds')),
-                        'hcp_pos': res.get('handicap_position'),
-                        'race_pts': res.get('traditional_points')
-                        if res.get('traditional_points') is not None
-                        else (finisher_count + 1 if is_non_finisher else None),
-                        'league_pts': res.get('points')
-                        if res.get('points') is not None
-                        else (0.0 if is_non_finisher else None),
-                        'full_delta': res.get('full_delta')
-                        if res.get('full_delta') is not None
-                        else (0 if is_non_finisher else None),
-                        'scaled_delta': res.get('scaled_delta')
-                        if res.get('scaled_delta') is not None
-                        else (0 if is_non_finisher else None),
-                        'actual_delta': res.get('actual_delta')
-                        if res.get('actual_delta') is not None
-                        else (0 if is_non_finisher else None),
-                        'revised_hcp': res.get('revised_handicap')
-                        if res.get('revised_handicap') is not None
-                        else (
-                            res.get('initial_handicap') if is_non_finisher else None
-                        ),
-                        'place': res.get('status'),
-                        'handicap_override': entrant.get('handicap_override'),
-                    }
-                # Keys are canonical integer ids; no normalization required
+            results: dict[int, dict] = {}
+            for res in results_list:
+                cid = res.get('competitor_id')
+                entrant = entrants_map.get(cid, {})
+                finish_str = entrant.get('finish_time')
+                is_non_finisher = res.get('finish') is None
+                results[cid] = {
+                    'finish_time': finish_str,
+                    'on_course_secs': res.get('elapsed_seconds'),
+                    'abs_pos': res.get('absolute_position'),
+                    'allowance': res.get('allowance_seconds'),
+                    'adj_time_secs': res.get('adjusted_time_seconds'),
+                    'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                    'hcp_pos': res.get('handicap_position'),
+                    'race_pts': res.get('traditional_points')
+                    if res.get('traditional_points') is not None
+                    else (finisher_count + 1 if is_non_finisher else None),
+                    'league_pts': res.get('points')
+                    if res.get('points') is not None
+                    else (0.0 if is_non_finisher else None),
+                    'full_delta': res.get('full_delta')
+                    if res.get('full_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'scaled_delta': res.get('scaled_delta')
+                    if res.get('scaled_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'actual_delta': res.get('actual_delta')
+                    if res.get('actual_delta') is not None
+                    else (0 if is_non_finisher else None),
+                    'revised_hcp': res.get('revised_handicap')
+                    if res.get('revised_handicap') is not None
+                    else (
+                        res.get('initial_handicap') if is_non_finisher else None
+                    ),
+                    'place': res.get('status'),
+                    'handicap_override': entrant.get('handicap_override'),
+                }
+            # Keys are canonical integer ids; no normalization required
 
-                _cache_set_race(race_id, results, fleet_adjustment)
+            _cache_set_race(race_id, results, fleet_adjustment)
 
             selected_race = race
             skip_heavy = True
