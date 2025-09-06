@@ -948,25 +948,17 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
                     group["races"].sort(key=lambda r: (r["date"] or "", r["start_time"] or ""))
                 race_groups.append(group)
 
-    # Custom display order for series on the Standings page
-    preferred_order = [
-        "MCandR",
-        "CastF",
-        "PenD",
-        "Cups",
-        "MCandRS",
-        "MYHF",
-        "CastS",
-    ]
-    order_map = {name.lower(): idx for idx, name in enumerate(preferred_order)}
-    def _series_order_key(g: dict):
-        name = (g.get("series_name") or "").strip()
-        key = order_map.get(name.lower())
-        if key is not None:
-            return (0, key)
-        # Unknown series: sort after preferred ones alphabetically
-        return (1, name)
-    race_groups.sort(key=_series_order_key)
+    # Order series by the date/time of the first race in each series
+    def _first_race_key(g: dict):
+        if not g.get("races"):
+            return ("9999-12-31", "23:59:59")
+        first = g["races"][0]
+        # Races within each series have already been sorted by date/time
+        return (
+            first.get("date") or "9999-12-31",
+            first.get("start_time") or "23:59:59",
+        )
+    race_groups.sort(key=_first_race_key)
 
     aggregates: dict[str, dict] = {}
     for idx, group in enumerate(race_groups):
