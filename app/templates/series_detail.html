@@ -742,6 +742,18 @@ document.addEventListener('DOMContentLoaded', () => {
       selectSegment(buf.length);
     });
     el.addEventListener('blur', () => {
+      // If user entered no digits while focused, leave the cell blank
+      if (isFinish) {
+        const buf = el.dataset.buf || '';
+        if (buf.length === 0) {
+          el.value = '';
+          const td = el.closest('td.finish-time-cell');
+          if (td) td.setAttribute('sorttable_customkey', '');
+          computeFinishers();
+          updateButtons();
+          return;
+        }
+      }
       // Ensure value is normalized on blur; keep blank if cleared programmatically
       if (!el.value) return;
       const normalized = normalizeToHMS(el.value);
@@ -826,6 +838,16 @@ document.addEventListener('DOMContentLoaded', () => {
   finishInputs.forEach(inp => {
     inp.addEventListener('blur', () => {
       if (inp.disabled) return;
+      // If no digits were entered while focused, leave blank
+      const buf = inp.dataset.buf || '';
+      if (buf.length === 0) {
+        inp.value = '';
+        const td = inp.closest('td.finish-time-cell');
+        if (td) td.setAttribute('sorttable_customkey', '');
+        computeFinishers();
+        updateButtons();
+        return;
+      }
       const before = inp.value;
       const normalized = normalizeToHMS(before);
       if (normalized !== before) {
@@ -866,7 +888,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // When focusing the input, do not inject the base value.
     // Keep it truly blank if cleared, so users see an empty field until save.
     inp.addEventListener('focus', () => {
-      inp.placeholder = '';
+      // Do not clear placeholder on focus; keep base visible if empty
       if (inp.dataset.cleared === '1') {
         inp.value = '';
       }
@@ -898,13 +920,13 @@ document.addEventListener('DOMContentLoaded', () => {
         inp.dataset.cleared = '1';
         inp.classList.remove('text-danger');
         inp.style.color = '';
-        // Keep placeholder blank while pending save so the field appears empty
-        inp.placeholder = '';
+        // Keep base visible as placeholder
+        inp.placeholder = inp.dataset.base;
       } else {
         inp.dataset.cleared = '';
         inp.classList.add('text-danger');
         inp.style.color = 'red';
-        // Show base as placeholder when value is present (for consistency)
+        // Show base as placeholder for consistency
         inp.placeholder = inp.dataset.base;
       }
       updateButtons();
