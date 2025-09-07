@@ -56,7 +56,7 @@
       <label for="start_time" class="col-md-3 col-form-label">Start Time</label>
       <div class="col-md-9">
         <div class="input-group">
-          <input type="text" id="start_time" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control" placeholder="hh:mm[:ss]" value="{{ selected_race.start_time or '' }}" disabled>
+          <input type="text" id="start_time" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control" value="{{ selected_race.start_time or '' }}" disabled>
           <button type="button" class="btn btn-outline-secondary clear-time" aria-label="Clear start time" title="Clear" >&times;</button>
         </div>
       </div>
@@ -184,7 +184,7 @@
         </td>
         <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
           <div class="input-group input-group-sm">
-            <input type="text" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" placeholder="hh:mm[:ss]" value="{{ result.finish_time or '' }}" disabled>
+            <input type="text" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" value="{{ result.finish_time or '' }}" disabled>
             <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
           </div>
         </td>
@@ -666,34 +666,90 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Live validation while typing
   function liveFormatTimeInput(el, isFinish=false) {
-    el.addEventListener('input', () => {
-      if (el.dataset._fmt_lock === '1') return;
-      const raw = (el.value || '').toString();
-      const digits = raw.replace(/\D/g, '').slice(0, 6);
-      let out = '';
-      if (digits.length <= 2) {
-        // Show hours as typed; wait for minutes before inserting colons
-        out = digits;
-      } else if (digits.length === 3 || digits.length === 4) {
-        const hh = digits.slice(0, digits.length - 2);
-        const mm = digits.slice(-2);
-        out = `${hh.padStart(2, '0')}:${mm}`;
+    function fmtFromBuf(buf) {
+      const b = buf.slice(0, 6);
+      let h = '00', m = '00', s = '00';
+      if (b.length === 0) return '00:00:00';
+      if (b.length <= 2) {
+        h = b.padStart(2, '0');
+      } else if (b.length <= 4) {
+        h = b.slice(0, 2);
+        m = b.slice(2).padStart(2, '0');
       } else {
-        // 5-6 digits => HHMMSS
-        const hh = digits.slice(0, digits.length - 4);
-        const mm = digits.slice(-4, -2);
-        const ss = digits.slice(-2);
-        out = `${hh.padStart(2, '0')}:${mm}:${ss}`;
+        h = b.slice(0, 2);
+        m = b.slice(2, 4);
+        s = b.slice(4).padStart(2, '0');
       }
-      el.dataset._fmt_lock = '1';
+      return `${h}:${m}:${s}`;
+    }
+    function selectSegment(bufLen) {
+      try {
+        if (bufLen <= 1) {
+          el.setSelectionRange(0, 2);
+        } else if (bufLen <= 4) {
+          el.setSelectionRange(3, 5);
+        } else {
+          el.setSelectionRange(6, 8);
+        }
+      } catch (_) {}
+    }
+    function updateFromBuf() {
+      const buf = el.dataset.buf || '';
+      const out = fmtFromBuf(buf);
       el.value = out;
-      // Keep sort key in sync for finish cells when we have at least minutes
       if (isFinish) {
         const td = el.closest('td.finish-time-cell');
-        const normal = normalizeToHMS(out);
-        if (td) td.setAttribute('sorttable_customkey', (digits.length >= 3 ? normal : '') || '');
+        if (td) td.setAttribute('sorttable_customkey', (buf.length >= 4 ? out : ''));
       }
-      el.dataset._fmt_lock = '';
+      computeFinishers();
+      updateButtons();
+    }
+    el.addEventListener('focus', () => {
+      if (!el.value) {
+        el.dataset.buf = '';
+        el.value = '00:00:00';
+        try { el.setSelectionRange(0, 2); } catch (_) {}
+      } else {
+        // Initialize buffer from current value
+        const m = String(el.value).match(/^(\d{2}):(\d{2}):(\d{2})$/);
+        if (m) {
+          el.dataset.buf = `${m[1]}${m[2]}${m[3]}`.replace(/^0{2}/, m[1]);
+        } else {
+          el.dataset.buf = (el.value || '').replace(/\D/g, '').slice(0, 6);
+        }
+        selectSegment((el.dataset.buf || '').length || 1);
+      }
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') return; // allow navigation
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); return; }
+      let buf = el.dataset.buf || '';
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        if (buf.length > 0) buf = buf.slice(0, -1);
+        el.dataset.buf = buf;
+        updateFromBuf();
+        selectSegment(buf.length || 1);
+        return;
+      }
+      if (!/^[0-9]$/.test(e.key)) { e.preventDefault(); return; }
+      e.preventDefault();
+      if (buf.length >= 6) return; // ignore extra
+      buf += e.key;
+      el.dataset.buf = buf;
+      updateFromBuf();
+      selectSegment(buf.length);
+    });
+    el.addEventListener('blur', () => {
+      // Ensure value is normalized on blur; keep blank if cleared programmatically
+      if (!el.value) return;
+      const normalized = normalizeToHMS(el.value);
+      el.value = normalized;
+      if (isFinish) {
+        const td = el.closest('td.finish-time-cell');
+        if (td) td.setAttribute('sorttable_customkey', normalized || '');
+      }
       computeFinishers();
       updateButtons();
     });
