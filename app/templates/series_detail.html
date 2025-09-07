@@ -756,6 +756,51 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   liveFormatTimeInput(startTime, false);
   finishInputs.forEach(inp => liveFormatTimeInput(inp, true));
+  // Custom tab navigation: keep focus in same column, move by row
+  function focusByRow(currentEl, selector, dir = 1) {
+    if (!currentEl) return;
+    const curRow = currentEl.closest('tr');
+    if (!curRow) return;
+    let targetRow = curRow;
+    // dir: 1 = next row, -1 = previous row
+    do {
+      targetRow = (dir > 0) ? targetRow.nextElementSibling : targetRow.previousElementSibling;
+    } while (targetRow && (!targetRow.matches('tr[data-cid]')));
+    // Wrap around if we hit the end
+    if (!targetRow) {
+      const tbody = curRow.parentElement;
+      if (!tbody) return;
+      targetRow = (dir > 0) ? tbody.querySelector('tr[data-cid]') : Array.from(tbody.querySelectorAll('tr[data-cid]')).pop();
+    }
+    if (!targetRow) return;
+    const targetInput = targetRow.querySelector(selector);
+    if (targetInput && !targetInput.disabled) {
+      targetInput.focus();
+      try { if (typeof targetInput.select === 'function') targetInput.select(); } catch (_) {}
+    }
+  }
+  // Handle Tab/Shift+Tab on finish time inputs
+  finishInputs.forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (inp.disabled) return;
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const dir = e.shiftKey ? -1 : 1;
+        focusByRow(inp, '.finish-time', dir);
+      }
+    });
+  });
+  // Handle Tab/Shift+Tab on handicap override inputs
+  hcpInputs.forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (inp.disabled) return;
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const dir = e.shiftKey ? -1 : 1;
+        focusByRow(inp, '.handicap-override', dir);
+      }
+    });
+  });
   startTime.addEventListener('input', () => {
     updateButtons();
   });
