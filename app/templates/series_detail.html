@@ -693,6 +693,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (_) {}
     }
+    function selectSegmentByIndex(idx, pos = 0) {
+      try {
+        if (idx <= 0) { el.setSelectionRange(pos === 0 ? 0 : 1, pos === 0 ? 2 : 2); }
+        else if (idx === 1) { el.setSelectionRange(pos === 0 ? 3 : 4, pos === 0 ? 5 : 5); }
+        else { el.setSelectionRange(pos === 0 ? 6 : 7, pos === 0 ? 8 : 8); }
+      } catch (_) {}
+    }
+    function currentDigits() {
+      const m = String(el.value || '').match(/^(\d{2}):(\d{2}):(\d{2})$/);
+      if (m) return `${m[1]}${m[2]}${m[3]}`;
+      const buf = el.dataset.buf || '';
+      return (buf + '000000').slice(0, 6);
+    }
+    function setDigits(d) {
+      const out = `${d.slice(0,2)}:${d.slice(2,4)}:${d.slice(4,6)}`;
+      el.value = out;
+      if (isFinish) {
+        const td = el.closest('td.finish-time-cell');
+        if (td) td.setAttribute('sorttable_customkey', out || '');
+      }
+      computeFinishers();
+      updateButtons();
+    }
     function updateFromBuf() {
       const buf = el.dataset.buf || '';
       const out = fmtFromBuf(buf);
@@ -709,6 +732,8 @@ document.addEventListener('DOMContentLoaded', () => {
         el.dataset.buf = '';
         el.value = '00:00:00';
         try { el.setSelectionRange(0, 2); } catch (_) {}
+        el.dataset.seg = '0';
+        el.dataset.segpos = '0';
       } else {
         // Initialize buffer from current value
         const m = String(el.value).match(/^(\d{2}):(\d{2}):(\d{2})$/);
@@ -718,28 +743,85 @@ document.addEventListener('DOMContentLoaded', () => {
           el.dataset.buf = (el.value || '').replace(/\D/g, '').slice(0, 6);
         }
         selectSegment((el.dataset.buf || '').length || 1);
+        el.dataset.seg = '0';
+        el.dataset.segpos = '0';
       }
     });
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Tab') return; // allow navigation
       if (e.key === 'Enter') { e.preventDefault(); el.blur(); return; }
       if (e.key === 'Escape') { e.preventDefault(); return; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        let seg = parseInt(el.dataset.seg || '0', 10);
+        let pos = parseInt(el.dataset.segpos || '0', 10);
+        if (e.key === 'ArrowLeft') {
+          if (pos === 1) { pos = 0; }
+          else { seg = Math.max(0, seg - 1); pos = 0; }
+        } else {
+          if (pos === 0) { pos = 1; }
+          else { seg = Math.max(0, Math.min(2, seg + 1)); pos = 0; }
+        }
+        el.dataset.seg = String(seg);
+        el.dataset.segpos = String(pos);
+        selectSegmentByIndex(seg, pos);
+        return;
+      }
       let buf = el.dataset.buf || '';
       if (e.key === 'Backspace') {
         e.preventDefault();
-        if (buf.length > 0) buf = buf.slice(0, -1);
-        el.dataset.buf = buf;
-        updateFromBuf();
-        selectSegment(buf.length || 1);
+        if (buf.length >= 6) {
+          // Clear current digit within selected segment
+          let seg = parseInt(el.dataset.seg || '0', 10);
+          let pos = parseInt(el.dataset.segpos || '0', 10);
+          const d = currentDigits().split('');
+          const idx = seg * 2 + pos;
+          d[idx] = '0';
+          const nd = d.join('');
+          el.dataset.buf = nd; // keep at 6 to allow overwriting
+          setDigits(nd);
+          // Move caret left within segment or to previous segment end
+          if (pos === 1) { pos = 0; }
+          else { seg = Math.max(0, seg - 1); pos = 1; }
+          el.dataset.seg = String(seg);
+          el.dataset.segpos = String(pos);
+          selectSegmentByIndex(seg, pos);
+        } else {
+          if (buf.length > 0) buf = buf.slice(0, -1);
+          el.dataset.buf = buf;
+          updateFromBuf();
+          selectSegment(buf.length || 1);
+        }
         return;
       }
       if (!/^[0-9]$/.test(e.key)) { e.preventDefault(); return; }
       e.preventDefault();
-      if (buf.length >= 6) return; // ignore extra
-      buf += e.key;
-      el.dataset.buf = buf;
-      updateFromBuf();
-      selectSegment(buf.length);
+      if (buf.length >= 6) {
+        // Overwrite current segment digit
+        let seg = parseInt(el.dataset.seg || '0', 10);
+        let pos = parseInt(el.dataset.segpos || '0', 10);
+        const d = currentDigits().split('');
+        const idx = seg * 2 + pos;
+        d[idx] = e.key;
+        const nd = d.join('');
+        el.dataset.buf = nd;
+        setDigits(nd);
+        // Advance within segment, then to next segment
+        if (pos === 0) { pos = 1; }
+        else { pos = 0; seg = Math.min(2, seg + 1); }
+        el.dataset.seg = String(seg);
+        el.dataset.segpos = String(pos);
+        selectSegmentByIndex(seg, pos);
+      } else {
+        buf += e.key;
+        el.dataset.buf = buf;
+        updateFromBuf();
+        selectSegment(buf.length);
+        // Keep segment tracking aligned to progressive typing
+        if (buf.length <= 2) { el.dataset.seg = '0'; el.dataset.segpos = String((buf.length % 2)); }
+        else if (buf.length <= 4) { el.dataset.seg = '1'; el.dataset.segpos = String((buf.length - 2) % 2); }
+        else { el.dataset.seg = '2'; el.dataset.segpos = String((buf.length - 4) % 2); }
+      }
     });
     el.addEventListener('blur', () => {
       // If user entered no digits while focused, leave the cell blank
