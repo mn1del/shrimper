@@ -56,7 +56,7 @@
       <label for="start_time" class="col-md-3 col-form-label">Start Time</label>
       <div class="col-md-9">
         <div class="input-group">
-          <input type="time" id="start_time" step="1" class="form-control" value="{{ selected_race.start_time or '' }}" disabled>
+          <input type="text" id="start_time" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control" placeholder="hh:mm[:ss]" value="{{ selected_race.start_time or '' }}" disabled>
           <button type="button" class="btn btn-outline-secondary clear-time" aria-label="Clear start time" title="Clear" >&times;</button>
         </div>
       </div>
@@ -184,7 +184,7 @@
         </td>
         <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
           <div class="input-group input-group-sm">
-            <input type="time" step="1" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" value="{{ result.finish_time or '' }}" disabled>
+            <input type="text" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" placeholder="hh:mm[:ss]" value="{{ result.finish_time or '' }}" disabled>
             <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
           </div>
         </td>
@@ -665,6 +665,41 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Live validation while typing
+  function liveFormatTimeInput(el, isFinish=false) {
+    el.addEventListener('input', () => {
+      if (el.dataset._fmt_lock === '1') return;
+      const raw = (el.value || '').toString();
+      const digits = raw.replace(/\D/g, '').slice(0, 6);
+      let out = '';
+      if (digits.length <= 2) {
+        // Show hours as typed; wait for minutes before inserting colons
+        out = digits;
+      } else if (digits.length === 3 || digits.length === 4) {
+        const hh = digits.slice(0, digits.length - 2);
+        const mm = digits.slice(-2);
+        out = `${hh.padStart(2, '0')}:${mm}`;
+      } else {
+        // 5-6 digits => HHMMSS
+        const hh = digits.slice(0, digits.length - 4);
+        const mm = digits.slice(-4, -2);
+        const ss = digits.slice(-2);
+        out = `${hh.padStart(2, '0')}:${mm}:${ss}`;
+      }
+      el.dataset._fmt_lock = '1';
+      el.value = out;
+      // Keep sort key in sync for finish cells when we have at least minutes
+      if (isFinish) {
+        const td = el.closest('td.finish-time-cell');
+        const normal = normalizeToHMS(out);
+        if (td) td.setAttribute('sorttable_customkey', (digits.length >= 3 ? normal : '') || '');
+      }
+      el.dataset._fmt_lock = '';
+      computeFinishers();
+      updateButtons();
+    });
+  }
+  liveFormatTimeInput(startTime, false);
+  finishInputs.forEach(inp => liveFormatTimeInput(inp, true));
   startTime.addEventListener('input', () => {
     updateButtons();
   });
@@ -712,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', (e) => {
       const group = e.currentTarget.closest('.input-group');
       if (!group) return;
-      const input = group.querySelector('input[type="time"]');
+      const input = group.querySelector('input.finish-time, #start_time');
       if (!input || input.disabled) return;
       input.value = '';
       // Update sort key for finish rows if applicable
