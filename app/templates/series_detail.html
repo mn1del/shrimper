@@ -284,6 +284,54 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingAction = null;
   let recalcPoll = null;
 
+  // Normalize user-entered times so that:
+  // - "1030"   -> 10:30:00
+  // - "103045" -> 10:30:45
+  // - "H:MM" or "HH:MM" -> pad and add :00 seconds
+  // Returns normalized HH:MM:SS or the original trimmed string if not recognized
+  function normalizeToHMS(raw) {
+    if (raw == null) return '';
+    let v = String(raw).trim();
+    if (v === '') return '';
+    // If already has colons, ensure padding and seconds
+    if (v.includes(':')) {
+      const parts = v.split(':').map(p => p.trim());
+      if (parts.length === 2 || parts.length === 3) {
+        let h = parts[0] || '0';
+        let m = parts[1] || '0';
+        let s = (parts.length === 3 ? (parts[2] || '0') : '0');
+        // Coerce to integers and pad
+        const hi = parseInt(h, 10);
+        const mi = parseInt(m, 10);
+        const si = parseInt(s, 10);
+        if ([hi, mi, si].some(x => Number.isNaN(x))) return v; // give up, return as typed
+        return `${String(hi).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(si).padStart(2, '0')}`;
+      }
+      return v; // unusual format; leave as-is
+    }
+    // Digits-only shorthands
+    if (!/^\d+$/.test(v)) return v;
+    // HHMM (3-4 digits) -> seconds 00
+    if (v.length === 3 || v.length === 4) {
+      const mm = v.slice(-2);
+      const hh = v.slice(0, -2);
+      const hi = parseInt(hh, 10), mi = parseInt(mm, 10);
+      if (Number.isNaN(hi) || Number.isNaN(mi)) return v;
+      return `${String(hi).padStart(2, '0')}:${String(mi).padStart(2, '0')}:00`;
+    }
+    // HHMMSS (5-6 digits)
+    if (v.length === 5 || v.length === 6) {
+      const ss = v.slice(-2);
+      const mm = v.slice(-4, -2);
+      const hh = v.slice(0, -4);
+      const hi = parseInt(hh, 10), mi = parseInt(mm, 10), si = parseInt(ss, 10);
+      if ([hi, mi, si].some(x => Number.isNaN(x))) return v;
+      return `${String(hi).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(si).padStart(2, '0')}`;
+    }
+    // Leave other lengths untouched
+    return v;
+  }
+
   function parseTimeToSeconds(v) {
     if (!v) return null;
     const parts = String(v).split(':');
@@ -597,6 +645,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   [seriesSelect, newSeriesName, raceDate, startTime, ...finishInputs, ...hcpInputs].forEach(inp => {
     inp.addEventListener('change', () => {
+      // On change, normalize any time inputs so server receives HH:MM:SS
+      if (inp === startTime || inp.classList.contains('finish-time')) {
+        const before = inp.value;
+        const normalized = normalizeToHMS(before);
+        if (normalized !== before) {
+          inp.value = normalized;
+          // Update sort key for a finish time cell when present
+          if (inp.classList.contains('finish-time')) {
+            const td = inp.closest('td.finish-time-cell');
+            if (td) td.setAttribute('sorttable_customkey', normalized || '');
+          }
+        }
+      }
       computeFinishers();
       toggleSeries();
       updateButtons();
@@ -607,10 +668,45 @@ document.addEventListener('DOMContentLoaded', () => {
   startTime.addEventListener('input', () => {
     updateButtons();
   });
+  // Normalize start time on blur and Enter
+  startTime.addEventListener('blur', () => {
+    if (startTime.disabled) return;
+    const before = startTime.value;
+    const normalized = normalizeToHMS(before);
+    if (normalized !== before) startTime.value = normalized;
+    updateButtons();
+  });
+  startTime.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      startTime.blur();
+    }
+  });
   finishInputs.forEach(inp => inp.addEventListener('input', () => {
     computeFinishers();
     updateButtons();
   }));
+  // Normalize finish times on blur and Enter; keep sort key in sync
+  finishInputs.forEach(inp => {
+    inp.addEventListener('blur', () => {
+      if (inp.disabled) return;
+      const before = inp.value;
+      const normalized = normalizeToHMS(before);
+      if (normalized !== before) {
+        inp.value = normalized;
+        const td = inp.closest('td.finish-time-cell');
+        if (td) td.setAttribute('sorttable_customkey', normalized || '');
+      }
+      computeFinishers();
+      updateButtons();
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        inp.blur();
+      }
+    });
+  });
 
   clearTimeBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
