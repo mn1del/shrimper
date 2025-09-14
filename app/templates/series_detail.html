@@ -92,7 +92,7 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background-color: #212529; /* match navbar bg-dark */
+    background-color: #343a40; /* slightly lighter than navbar bg-dark */
     color: #fff;               /* match navbar-dark text */
     font-family: var(--bs-body-font-family);
     white-space: normal;
@@ -199,7 +199,7 @@
       <tr data-cid="{{ comp.competitor_id }}">
         <td class="abs-pos">{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
         <td class="hcp-pos">{{ result.hcp_pos|int if result.hcp_pos is defined and result.hcp_pos is not none else '' }}</td>
-        <td class="elapsed-time">{{ result.elapsed_time or '' }}</td>
+        <td class="elapsed-time">{% if result.on_course_secs is defined and (result.on_course_secs|int) > 0 %}{{ result.elapsed_time or '' }}{% else %}{% endif %}</td>
         <td class="adj-time">{{ result.adj_time or '' }}</td>
         <td>{{ comp.sailor_name }}</td>
         <td>{{ comp.boat_name }}</td>
@@ -1219,7 +1219,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const ftc = tr.querySelector('.finish-time-cell'); if (ftc) ftc.setAttribute('sorttable_customkey', r.finish_time || '');
       // Numeric fields rounded as per initial render
       setText('.on-course', toRounded(r.on_course_secs));
-      setText('.elapsed-time', r.elapsed_time || '');
+      setText('.elapsed-time', (r && Number(r.on_course_secs) > 0) ? (r.elapsed_time || '') : '');
       setText('.allowance', toRounded(r.allowance));
       setText('.adj-time', r.adj_time || '');
       setText('.full-delta', toRounded(r.full_delta));
