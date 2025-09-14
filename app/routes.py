@@ -4,6 +4,7 @@ import importlib
 from datetime import datetime
 import os
 import time
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 from .scoring import calculate_race_results, _scaling_factor
@@ -1391,6 +1392,16 @@ def race_new():
         int(c.get('competitor_id')): int(c.get('starting_handicap_s_per_hr') or 0)
         for c in (fleet or []) if c.get('competitor_id') is not None
     }
+    try:
+        settings_for_hash = ds_get_settings() or {}
+        sver = int(settings_for_hash.get('version') or 0)
+    except Exception:
+        sver = 0
+    try:
+        _snap_data = json.dumps({'seeds': pre_race_seeds, 'settings_version': sver}, sort_keys=True)
+        pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
+    except Exception:
+        pre_snapshot_version = ''
     return render_template(
         'series_detail.html',
         title='Create New Race',
@@ -1406,6 +1417,7 @@ def race_new():
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
         pre_race_seeds=pre_race_seeds,
+        pre_snapshot_version=pre_snapshot_version,
     )
 #</getdata>
 
@@ -1873,6 +1885,12 @@ def series_detail(series_id):
         pre_race_seeds = build_pre_race_snapshot(selected_race.get('race_id')) if selected_race else {}
     except Exception:
         pre_race_seeds = {}
+    # Compute a snapshot version hash from seeds + settings version
+    try:
+        _snap_data = json.dumps({'seeds': pre_race_seeds, 'settings_version': scoring_version}, sort_keys=True)
+        pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
+    except Exception:
+        pre_snapshot_version = ''
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
@@ -1889,6 +1907,7 @@ def series_detail(series_id):
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
         pre_race_seeds=pre_race_seeds,
+        pre_snapshot_version=pre_snapshot_version,
     )
 
 
@@ -2072,6 +2091,25 @@ def get_scoring_settings():
         return {'version': payload['version']}
     return payload
 #</getdata>
+
+## Snapshot guard: version of pre-race seeds + settings
+@bp.route('/api/races/<race_id>/snapshot_version')
+def race_snapshot_version(race_id: str):
+    try:
+        seeds = build_pre_race_snapshot(race_id) or {}
+    except Exception:
+        seeds = {}
+    try:
+        settings = ds_get_settings() or {}
+        sver = int(settings.get('version') or 0)
+    except Exception:
+        sver = 0
+    try:
+        data = json.dumps({'seeds': seeds, 'settings_version': sver}, sort_keys=True)
+        ver = hashlib.sha1(data.encode('utf-8')).hexdigest()
+    except Exception:
+        ver = ''
+    return {'version': ver}
 
 
  

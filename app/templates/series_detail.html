@@ -90,6 +90,8 @@
   // Embedded pre-race seeds (seconds per hour) for this race
   // Map: { competitor_id: initial_handicap_s_per_hr }
   window.PRE_RACE_SEEDS = {{ (pre_race_seeds or {}) | tojson }};
+  // Snapshot version guard (hash of seeds + scoring version)
+  window.PRE_SNAPSHOT_VERSION = {{ (pre_snapshot_version or '') | tojson }};
   // Example shape:
   // SCORING_SETTINGS = { version, handicap_delta_by_rank: [{rank, delta_s_per_hr}], league_points_by_rank: [{rank, points}], fleet_size_factor: [{finishers, factor}] }
   // SCORING_VERSION is an integer counter incremented on settings save.
@@ -1160,6 +1162,21 @@ document.addEventListener('DOMContentLoaded', () => {
       invalidModal.show();
       return;
     }
+    // Guardrail: detect baseline snapshot changes prior to confirm
+    try {
+      const url = new URL('{{ url_for('main.series_detail', series_id=series.series_id if series else '') }}', window.location.origin);
+      // Build explicit API path (avoid BuildError if names differ)
+      const api = new URL('/api/races/{{ selected_race.race_id if selected_race else '' }}/snapshot_version', window.location.origin);
+      api.searchParams.set('t', String(Date.now()));
+      const snapRes = await fetch(api.toString());
+      const snap = await snapRes.json();
+      const current = String(window.PRE_SNAPSHOT_VERSION || '');
+      const latest = String((snap && snap.version) || '');
+      if (current && latest && current !== latest) {
+        const refresh = window.confirm('The race baseline changed since you opened this page (earlier races or settings were updated). Refresh now to recompute preview?');
+        if (refresh) { window.location.reload(); return; }
+      }
+    } catch (__) { /* ignore */ }
     const changes = listChanges();
     changeList.innerHTML = '';
     changes.forEach(ch => {
