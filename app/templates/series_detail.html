@@ -149,6 +149,25 @@
   .race-table-wrapper tbody td.revised-hcp {
     background-color: #ffffff;
   }
+  /* Adjusted Hcp Change visual formatting */
+  .race-table-wrapper tbody td.actual-delta { white-space: nowrap; }
+  .race-table-wrapper tbody td.actual-delta.delta-pos {
+    background-color: #f8d7da; /* light red */
+    color: #b02a37; /* bootstrap danger text */
+    font-weight: 600;
+  }
+  .race-table-wrapper tbody td.actual-delta.delta-neg {
+    background-color: #d1e7dd; /* light green */
+    color: #0f5132; /* bootstrap success text */
+    font-weight: 600;
+  }
+  .race-table-wrapper tbody td.actual-delta.delta-zero {
+    background-color: #ffffff; /* white */
+    color: inherit;
+    font-weight: 600;
+  }
+  .delta { display: inline-flex; align-items: center; gap: 0.25rem; }
+  .delta .icon { font-size: 0.85em; line-height: 1; }
 </style>
 
 <div class="table-responsive race-table-wrapper">
@@ -195,7 +214,21 @@
         <td>
           <input type="number" class="form-control form-control-sm handicap-override{% if result.handicap_override is defined and result.handicap_override is not none %} text-danger{% endif %}" {% if result.handicap_override is defined and result.handicap_override is not none %}style="color: red;"{% endif %} data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" placeholder="{{ comp.current_handicap_s_per_hr|round|int if comp.current_handicap_s_per_hr is not none else '' }}" value="{{ result.handicap_override if (result.handicap_override is defined and result.handicap_override is not none) else '' }}" disabled>
         </td>
-        <td class="actual-delta">{{ result.actual_delta|round|int if result.actual_delta is defined and result.actual_delta is not none else '' }}</td>
+        {% set d = (result.actual_delta if result.actual_delta is defined else None) %}
+        {% set delta_class = 'delta-zero' if (d is not none and d|int == 0) else ('delta-pos' if (d is not none and d|int > 0) else ('delta-neg' if (d is not none and d|int < 0) else 'delta-zero')) %}
+        <td class="actual-delta {{ delta_class }}" data-delta="{{ d if d is not none else '' }}">
+          {% if d is not none %}
+            {% if d|int > 0 %}
+              <span class="delta"><span class="icon">▲</span> {{ d|round|int }}</span>
+            {% elif d|int < 0 %}
+              <span class="delta"><span class="icon">▼</span> {{ d|round|int }}</span>
+            {% else %}
+              <span class="delta">0</span>
+            {% endif %}
+          {% else %}
+            
+          {% endif %}
+        </td>
         <td class="revised-hcp">{{ result.revised_hcp|round|int if result.revised_hcp is defined and result.revised_hcp is not none else '' }}</td>
         <!-- Remaining columns in their previous relative order -->
         <td class="race-pts">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
@@ -448,7 +481,44 @@ document.addEventListener('DOMContentLoaded', () => {
         setText('.elapsed-time', o.elapsed_time);
         setText('.adj-time', o.adj_time);
         setText('.full-delta', o.full_delta);
-        setText('.actual-delta', o.actual_delta);
+        (function(){
+          const td = tr.querySelector('.actual-delta');
+          if (!td) return;
+          // Extract numeric from stored text (may contain icon), or use data attribute
+          let raw = o.actual_delta;
+          if (td && (!raw || raw === '')) raw = td.dataset.delta || '';
+          const n = raw === '' ? null : Number(String(raw).replace(/[^\d\-]/g, ''));
+          if (n === null || Number.isNaN(n)) {
+            td.classList.remove('delta-pos','delta-neg','delta-zero');
+            td.classList.add('delta-zero');
+            td.innerHTML = '';
+            td.dataset.delta = '';
+          } else {
+            // Re-use preview formatter to render
+            const setActualDelta = (cell, val) => {
+              cell.classList.remove('delta-pos', 'delta-neg', 'delta-zero');
+              cell.innerHTML = '';
+              if (val === null || val === undefined || Number.isNaN(Number(val))) {
+                cell.classList.add('delta-zero');
+                cell.dataset.delta = '';
+                return;
+              }
+              const num = Number(val);
+              cell.dataset.delta = String(num);
+              if (num > 0) {
+                cell.classList.add('delta-pos');
+                cell.innerHTML = `<span class="delta"><span class="icon">▲</span> ${Math.round(num)}</span>`;
+              } else if (num < 0) {
+                cell.classList.add('delta-neg');
+                cell.innerHTML = `<span class="delta"><span class="icon">▼</span> ${Math.round(num)}</span>`;
+              } else {
+                cell.classList.add('delta-zero');
+                cell.innerHTML = `<span class="delta">0</span>`;
+              }
+            };
+            setActualDelta(td, n);
+          }
+        })();
         setText('.revised-hcp', o.revised_hcp);
         setText('.race-pts', o.race_pts);
         setText('.league-pts', o.league_pts);
@@ -1121,6 +1191,28 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!tr) return;
       const r = res[k] || {};
       const setText = (sel, val) => { const el = tr.querySelector(sel); if (el) el.textContent = (val ?? '') === '' ? '' : String(val); };
+      const setActualDelta = (td, val) => {
+        if (!td) return;
+        const n = (val === '' || val === null || val === undefined) ? null : Number(val);
+        td.classList.remove('delta-pos', 'delta-neg', 'delta-zero');
+        td.innerHTML = '';
+        if (n === null || Number.isNaN(n)) {
+          td.classList.add('delta-zero');
+          td.dataset.delta = '';
+          return;
+        }
+        td.dataset.delta = String(n);
+        if (n > 0) {
+          td.classList.add('delta-pos');
+          td.innerHTML = `<span class="delta"><span class="icon">▲</span> ${Math.round(n)}</span>`;
+        } else if (n < 0) {
+          td.classList.add('delta-neg');
+          td.innerHTML = `<span class="delta"><span class="icon">▼</span> ${Math.round(n)}</span>`;
+        } else {
+          td.classList.add('delta-zero');
+          td.innerHTML = `<span class="delta">0</span>`;
+        }
+      };
       // Positions as integers
       setText('.abs-pos', toRounded(r.abs_pos));
       setText('.hcp-pos', toRounded(r.hcp_pos));
@@ -1132,7 +1224,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setText('.allowance', toRounded(r.allowance));
       setText('.adj-time', r.adj_time || '');
       setText('.full-delta', toRounded(r.full_delta));
-      setText('.actual-delta', toRounded(r.actual_delta));
+      setActualDelta(tr.querySelector('.actual-delta'), r.actual_delta);
       setText('.revised-hcp', toRounded(r.revised_hcp));
       setText('.race-pts', toRounded(r.race_pts));
       setText('.league-pts', toRounded(r.league_pts));
