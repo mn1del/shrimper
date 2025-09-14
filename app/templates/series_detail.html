@@ -92,7 +92,9 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background-color: #f8f9fa;
+    background-color: #212529; /* match navbar bg-dark */
+    color: #fff;               /* match navbar-dark text */
+    font-family: var(--bs-body-font-family);
     white-space: normal;
   }
   .race-table-wrapper tbody td {
@@ -138,14 +140,11 @@
   input[type="time"]::-ms-clear { display: none; }
   input[type="time"] { appearance: textfield; -moz-appearance: textfield; }
   /* Tasteful highlight for key scoring columns */
-  .race-table-wrapper thead th.col-race-pts,
   .race-table-wrapper tbody td.race-pts,
-  .race-table-wrapper thead th.col-league-pts,
   .race-table-wrapper tbody td.league-pts {
     background-color: #eef7ff; /* soft blue highlight */
   }
-  /* Revised handicap specifically: white background */
-  .race-table-wrapper thead th.col-revised-hcp,
+  /* Revised handicap specifically: white background for body cells */
   .race-table-wrapper tbody td.revised-hcp {
     background-color: #ffffff;
   }
@@ -174,7 +173,6 @@
   <table class="table table-bordered table-sm align-middle sortable">
     <thead class="table-light">
       <tr>
-        <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
         <th style="width: 60px;">Abs Pos</th>
         <th style="width: 60px;">Hcp Pos</th>
         <th style="width: 150px;">Elapsed Time (hh:mm:ss)</th>
@@ -185,6 +183,7 @@
         <th style="width: 110px;">Hcp (s/hr)</th>
         <th style="width: 140px;">Adjusted Hcp Change (s/hr)</th>
         <th class="col-revised-hcp" style="width: 140px;">Revised Handicap</th>
+        <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
         <!-- Remaining columns in their previous relative order -->
         <th class="col-race-pts" style="width: 70px;">Race Pts (Trad)</th>
         <th class="col-league-pts" style="width: 70px;">League Pts (Adj)</th>
@@ -198,12 +197,6 @@
     {% for comp in fleet %}
       {% set result = (selected_race.results or {}).get(comp.competitor_id, {}) %}
       <tr data-cid="{{ comp.competitor_id }}">
-        <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
-          <div class="input-group input-group-sm">
-            <input type="text" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" value="{{ result.finish_time or '' }}" disabled>
-            <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
-          </div>
-        </td>
         <td class="abs-pos">{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
         <td class="hcp-pos">{{ result.hcp_pos|int if result.hcp_pos is defined and result.hcp_pos is not none else '' }}</td>
         <td class="elapsed-time">{{ result.elapsed_time or '' }}</td>
@@ -230,6 +223,12 @@
           {% endif %}
         </td>
         <td class="revised-hcp">{{ result.revised_hcp|round|int if result.revised_hcp is defined and result.revised_hcp is not none else '' }}</td>
+        <td class="finish-time-cell" sorttable_customkey="{{ result.finish_time or '' }}">
+          <div class="input-group input-group-sm">
+            <input type="text" inputmode="numeric" pattern="^\\d{1,2}(:?\\d{2})?(:?\\d{2})?$" class="form-control form-control-sm finish-time" data-cid="{{ comp.competitor_id }}" data-name="{{ comp.boat_name }}" value="{{ result.finish_time or '' }}" disabled>
+            <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
+          </div>
+        </td>
         <!-- Remaining columns in their previous relative order -->
         <td class="race-pts">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
         <td class="league-pts">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
