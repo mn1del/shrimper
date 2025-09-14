@@ -1221,7 +1221,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setText('.on-course', toRounded(r.on_course_secs));
       setText('.elapsed-time', (r && Number(r.on_course_secs) > 0) ? (r.elapsed_time || '') : '');
       setText('.allowance', toRounded(r.allowance));
-      setText('.adj-time', r.adj_time || '');
+      setText('.adj-time', (r && Number(r.on_course_secs) > 0) ? (r.adj_time || '') : '');
       setText('.full-delta', toRounded(r.full_delta));
       setActualDelta(tr.querySelector('.actual-delta'), r.actual_delta);
       setText('.revised-hcp', toRounded(r.revised_hcp));

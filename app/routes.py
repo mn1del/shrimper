@@ -1536,14 +1536,15 @@ def series_detail(series_id):
                 entrant = entrants_map.get(cid, {})
                 finish_str = entrant.get('finish_time')
                 is_non_finisher = res.get('finish') is None
+                elapsed_secs = res.get('elapsed_seconds')
                 results[cid] = {
                     'finish_time': finish_str,
-                    'on_course_secs': res.get('elapsed_seconds'),
-                    'elapsed_time': _format_hms(res.get('elapsed_seconds')),
+                    'on_course_secs': elapsed_secs,
+                    'elapsed_time': (_format_hms(elapsed_secs) if (elapsed_secs and elapsed_secs > 0) else None),
                     'abs_pos': res.get('absolute_position'),
                     'allowance': res.get('allowance_seconds'),
                     'adj_time_secs': res.get('adjusted_time_seconds'),
-                    'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                    'adj_time': (_format_hms(res.get('adjusted_time_seconds')) if not is_non_finisher else None),
                     'hcp_pos': res.get('handicap_position'),
                     'race_pts': res.get('traditional_points')
                     if res.get('traditional_points') is not None
@@ -1672,14 +1673,15 @@ def series_detail(series_id):
                         entrant = entrants_map.get(cid, {})
                         finish_str = entrant.get('finish_time')
                         is_non_finisher = res.get('finish') is None
+                        elapsed_secs = res.get('elapsed_seconds')
                         results[cid] = {
                             'finish_time': finish_str,
-                            'on_course_secs': res.get('elapsed_seconds'),
-                            'elapsed_time': _format_hms(res.get('elapsed_seconds')),
+                            'on_course_secs': elapsed_secs,
+                            'elapsed_time': (_format_hms(elapsed_secs) if (elapsed_secs and elapsed_secs > 0) else None),
                             'abs_pos': res.get('absolute_position'),
                             'allowance': res.get('allowance_seconds'),
                             'adj_time_secs': res.get('adjusted_time_seconds'),
-                            'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+                            'adj_time': (_format_hms(res.get('adjusted_time_seconds')) if not is_non_finisher else None),
                             'hcp_pos': res.get('handicap_position'),
                             'race_pts': res.get('traditional_points')
                             if res.get('traditional_points') is not None
@@ -2475,14 +2477,15 @@ def preview_race(race_id):
         cid = res.get('competitor_id')
         ent = entrants_map.get(int(cid), {})
         is_non_finisher = res.get('finish') is None
+        elapsed_secs = res.get('elapsed_seconds')
         results[int(cid)] = {
             'finish_time': ent.get('finish_time') if ent is not None else None,
-            'on_course_secs': res.get('elapsed_seconds'),
-            'elapsed_time': _format_hms(res.get('elapsed_seconds')),
+            'on_course_secs': elapsed_secs,
+            'elapsed_time': (_format_hms(elapsed_secs) if (elapsed_secs and elapsed_secs > 0) else None),
             'abs_pos': res.get('absolute_position'),
             'allowance': res.get('allowance_seconds'),
             'adj_time_secs': res.get('adjusted_time_seconds'),
-            'adj_time': _format_hms(res.get('adjusted_time_seconds')),
+            'adj_time': (_format_hms(res.get('adjusted_time_seconds')) if not is_non_finisher else None),
             'hcp_pos': res.get('handicap_position'),
             'race_pts': res.get('traditional_points')
             if res.get('traditional_points') is not None
