@@ -1368,6 +1368,15 @@ def _load_series_meta(series_id: str):
 def race_new():
     series_list = [entry['series'] for entry in _load_series_entries()]
     fleet = ds_get_fleet().get('competitors', [])
+    # Embed compact scoring settings for client-side parity
+    scoring_settings = ds_get_settings() or {}
+    scoring_version = int(scoring_settings.get('version') or 0)
+    scoring_settings_compact = {
+        'version': scoring_version,
+        'handicap_delta_by_rank': scoring_settings.get('handicap_delta_by_rank', []) or [],
+        'league_points_by_rank': scoring_settings.get('league_points_by_rank', []) or [],
+        'fleet_size_factor': scoring_settings.get('fleet_size_factor', []) or [],
+    }
     blank_race = {
         'race_id': '__new__',
         'series_id': '',
@@ -1389,6 +1398,8 @@ def race_new():
         series_list=series_list,
         unlocked=True,
         fleet_adjustment=0,
+        scoring_settings=scoring_settings_compact,
+        scoring_version=scoring_version,
     )
 #</getdata>
 
@@ -1842,6 +1853,15 @@ def series_detail(series_id):
         errors
     except NameError:
         errors = []
+    # Embed compact scoring settings for client-side parity
+    scoring_settings = ds_get_settings() or {}
+    scoring_version = int(scoring_settings.get('version') or 0)
+    scoring_settings_compact = {
+        'version': scoring_version,
+        'handicap_delta_by_rank': scoring_settings.get('handicap_delta_by_rank', []) or [],
+        'league_points_by_rank': scoring_settings.get('league_points_by_rank', []) or [],
+        'fleet_size_factor': scoring_settings.get('fleet_size_factor', []) or [],
+    }
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
@@ -1855,6 +1875,8 @@ def series_detail(series_id):
         fleet_adjustment=fleet_adjustment,
         all_races=all_races,
         errors=errors,
+        scoring_settings=scoring_settings_compact,
+        scoring_version=scoring_version,
     )
 
 
