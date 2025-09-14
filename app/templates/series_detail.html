@@ -916,6 +916,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const nd = d.join('');
         el.dataset.buf = nd;
         setDigits(nd);
+        // Fire input so downstream listeners update UI and preview
+        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
         // Advance within segment, then to next segment
         if (pos === 0) { pos = 1; }
         else { pos = 0; seg = Math.min(2, seg + 1); }
@@ -931,6 +933,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (buf.length <= 2) { el.dataset.seg = '0'; el.dataset.segpos = String((buf.length % 2)); }
         else if (buf.length <= 4) { el.dataset.seg = '1'; el.dataset.segpos = String((buf.length - 2) % 2); }
         else { el.dataset.seg = '2'; el.dataset.segpos = String((buf.length - 4) % 2); }
+        // Fire input so downstream listeners update UI and preview
+        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
       }
     });
     el.addEventListener('blur', () => {
