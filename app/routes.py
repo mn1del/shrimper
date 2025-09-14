@@ -2023,11 +2023,14 @@ def update_race(race_id):
     series_choice = data.get('series_id')
     new_series_name = data.get('new_series_name')
     race_date = data.get('date')
+    # Detect explicit presence of start_time so we can distinguish between
+    # omitted field vs. explicit clear request (null/empty string)
+    has_start_time_field = 'start_time' in data
     start_time = data.get('start_time')
     finish_times = data.get('finish_times', [])
     handicap_overrides = data.get('handicap_overrides', [])
 
-    # Validate start_time format if provided
+    # Validate start_time format if provided as a non-empty string
     if isinstance(start_time, str) and start_time.strip():
         try:
             _ = _parse_hms(start_time)
@@ -2179,8 +2182,15 @@ def update_race(race_id):
     # Apply field edits
     if race_date is not None:
         race_obj['date'] = race_date
-    if start_time is not None:
-        race_obj['start_time'] = start_time
+    # Persist start_time updates:
+    # - If the field is present in the payload but empty/null, treat this as a
+    #   request to clear the start time and set it to 00:00:00.
+    # - If a non-empty string is provided, use it as-is (validated above).
+    if has_start_time_field:
+        if isinstance(start_time, str) and start_time.strip():
+            race_obj['start_time'] = start_time
+        else:
+            race_obj['start_time'] = '00:00:00'
     if finish_times or handicap_overrides:
         ft_map = {ft['competitor_id']: ft.get('finish_time') for ft in (finish_times or [])}
         ov_map = {o['competitor_id']: o.get('handicap') for o in (handicap_overrides or [])}
@@ -2317,11 +2327,13 @@ def preview_race(race_id):
       - fleet_adjustment (percentage integer)
     """
     data = request.get_json() or {}
+    # Distinguish between omitted vs. explicit clear for start_time
+    has_start_time_field = 'start_time' in data
     start_time_override = data.get('start_time')
     finish_times = data.get('finish_times', [])
     handicap_overrides = data.get('handicap_overrides', [])
 
-    # Validate start_time format if provided
+    # Validate start_time format if provided as a non-empty string
     if isinstance(start_time_override, str) and start_time_override.strip():
         try:
             _ = _parse_hms(start_time_override)
@@ -2393,7 +2405,15 @@ def preview_race(race_id):
             ent['handicap_override'] = None
 
     # Determine start time for preview
-    start_raw = (start_time_override if (isinstance(start_time_override, str) and start_time_override.strip()) else race_obj.get('start_time'))
+    # - If the field is present but empty/null, treat as clear → 00:00:00
+    # - If a non-empty string is provided, use it; otherwise use stored value
+    if has_start_time_field:
+        if isinstance(start_time_override, str) and start_time_override.strip():
+            start_raw = start_time_override
+        else:
+            start_raw = '00:00:00'
+    else:
+        start_raw = race_obj.get('start_time')
     try:
         start_seconds = _parse_hms(start_raw)
     except Exception:

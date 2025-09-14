@@ -632,7 +632,8 @@ document.addEventListener('DOMContentLoaded', () => {
       changes.push(`Race Date: "${orig.race_date}" → "${raceDate.value}"`);
     }
     if (startTime.value !== orig.start_time) {
-      changes.push(`Start Time: "${orig.start_time}" → "${startTime.value}"`);
+      const newStartDisp = (startTime.value || '').trim() === '' ? '00:00:00' : startTime.value;
+      changes.push(`Start Time: "${orig.start_time}" → "${newStartDisp}"`);
     }
     orig.finish_times.forEach(o => {
       const cur = finishInputs.find(i => i.dataset.cid === o.cid);
