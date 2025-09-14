@@ -2043,7 +2043,7 @@ def save_settings():
     # Bust caches after settings change
     _cache_clear_all()
 
-    return {"status": "ok"}
+    return {"status": "ok", "version": int(payload.get("version") or 0)}
 #</getdata>
 
 

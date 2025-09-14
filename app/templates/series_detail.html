@@ -300,6 +300,12 @@
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
     </div>
   </div>
+  <div id="settingsToast" class="toast align-items-center text-bg-info border-0 mt-2" role="status" aria-live="polite" aria-atomic="true" data-bs-delay="2000">
+    <div class="d-flex">
+      <div class="toast-body">Scoring settings updated; preview recalculated.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
   </div>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -338,10 +344,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const deleteBtn = document.getElementById('deleteRace');
   const recalcToastEl = document.getElementById('recalcToast');
   const recalcToast = recalcToastEl ? new bootstrap.Toast(recalcToastEl) : null;
+  const settingsToastEl = document.getElementById('settingsToast');
+  const settingsToast = settingsToastEl ? new bootstrap.Toast(settingsToastEl) : null;
 
   let orig = {};
   let pendingAction = null;
   let recalcPoll = null;
+  let fetchingScoring = null;
 
   // Normalize user-entered times so that:
   // - "1030"   -> 10:30:00
@@ -1451,3 +1460,49 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 {% endif %}
 {% endblock %}
+  async function fetchScoringSettings(full = true) {
+    if (fetchingScoring) { try { await fetchingScoring; } catch (_) {} }
+    const url = full ? '/api/settings/scoring' : '/api/settings/scoring?only=version';
+    fetchingScoring = fetch(url).then(r => r.json()).catch(() => null);
+    const data = await fetchingScoring; fetchingScoring = null;
+    return data;
+  }
+
+  async function applyNewScoringSettingsIfChanged(newVersion) {
+    const curVersion = Number(window.CLIENT_SCORING_VERSION || 0);
+    const incoming = Number(newVersion);
+    if (!Number.isFinite(incoming)) return false;
+    if (incoming === curVersion) return false;
+    const full = await fetchScoringSettings(true);
+    if (!full || typeof full.version === 'undefined') return false;
+    // Re-init scorer
+    window.SCORING_SETTINGS = full;
+    window.SCORING_VERSION = Number(full.version) || 0;
+    window.CLIENT_SCORER = new (window.Scorer && window.Scorer.Scorer ? window.Scorer.Scorer : function(){}) (full);
+    window.CLIENT_SCORING_VERSION = window.SCORING_VERSION;
+    // Trigger a recompute using whatever mechanism is present
+    if (typeof runLivePreviewNow === 'function') {
+      try { await runLivePreviewNow(); } catch (_) {}
+    } else if (typeof previewChanges === 'function') {
+      try { await previewChanges(); } catch (_) {}
+    }
+    if (settingsToast) settingsToast.show();
+    return true;
+  }
+
+  // React to settings changes across tabs via localStorage
+  window.addEventListener('storage', (e) => {
+    if (e && e.key === 'scoringSettingsVersion' && e.newValue) {
+      const v = Number(e.newValue);
+      applyNewScoringSettingsIfChanged(v);
+    }
+  });
+
+  // Check on visibility gain for long-lived tabs
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    const data = await fetchScoringSettings(false);
+    if (data && typeof data.version !== 'undefined') {
+      await applyNewScoringSettingsIfChanged(Number(data.version));
+    }
+  });

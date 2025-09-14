@@ -142,6 +142,17 @@ document.addEventListener('DOMContentLoaded', () => {
       body: JSON.stringify(payload)
     });
     if (res.ok) {
+      try {
+        const data = await res.json();
+        if (data && typeof data.version !== 'undefined') {
+          localStorage.setItem('scoringSettingsVersion', String(data.version));
+        } else {
+          // Fallback bump to trigger storage events in other tabs
+          localStorage.setItem('scoringSettingsVersion', String(Date.now()));
+        }
+      } catch (_) {
+        // Best-effort; still reload
+      }
       location.reload();
     }
   });
