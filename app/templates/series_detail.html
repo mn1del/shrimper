@@ -303,6 +303,15 @@
   </div>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize client-side scorer using embedded settings and seeds
+  const SCORING_SETTINGS = (window.SCORING_SETTINGS || {});
+  const SCORING_VERSION = (window.SCORING_VERSION || 0);
+  const PRE_RACE_SEEDS = (window.PRE_RACE_SEEDS || {});
+  const scorer = new (window.Scorer && window.Scorer.Scorer ? window.Scorer.Scorer : function(){}) (SCORING_SETTINGS);
+  // Expose for later steps and dev inspection
+  window.CLIENT_SCORER = scorer;
+  window.CLIENT_SCORING_VERSION = SCORING_VERSION;
+  window.CLIENT_PRE_RACE_SEEDS = PRE_RACE_SEEDS;
   let locked = {{ 'false' if unlocked else 'true' }};
   const toggle = document.getElementById('editToggle');
   const saveBtn = document.getElementById('saveChanges');
