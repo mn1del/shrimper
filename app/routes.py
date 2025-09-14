@@ -1386,6 +1386,11 @@ def race_new():
         'results': {},
     }
     breadcrumbs = [('Races', url_for('main.races')), ('Create New Race', None)]
+    # For a new race, seed map comes from fleet starting handicaps
+    pre_race_seeds = {
+        int(c.get('competitor_id')): int(c.get('starting_handicap_s_per_hr') or 0)
+        for c in (fleet or []) if c.get('competitor_id') is not None
+    }
     return render_template(
         'series_detail.html',
         title='Create New Race',
@@ -1400,6 +1405,7 @@ def race_new():
         fleet_adjustment=0,
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
+        pre_race_seeds=pre_race_seeds,
     )
 #</getdata>
 
@@ -1862,6 +1868,11 @@ def series_detail(series_id):
         'league_points_by_rank': scoring_settings.get('league_points_by_rank', []) or [],
         'fleet_size_factor': scoring_settings.get('fleet_size_factor', []) or [],
     }
+    # Embed pre-race snapshot seeds for the selected race, if any
+    try:
+        pre_race_seeds = build_pre_race_snapshot(selected_race.get('race_id')) if selected_race else {}
+    except Exception:
+        pre_race_seeds = {}
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
@@ -1877,6 +1888,7 @@ def series_detail(series_id):
         errors=errors,
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
+        pre_race_seeds=pre_race_seeds,
     )
 
 
