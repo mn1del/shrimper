@@ -2013,6 +2013,33 @@ def save_settings():
 #</getdata>
 
 
+#<getdata>
+@bp.route('/api/settings/scoring')
+def get_scoring_settings():
+    """Return compact scoring settings for client-side computation.
+
+    Response fields:
+      - version: integer version counter
+      - handicap_delta_by_rank: list[{rank:int, delta_s_per_hr:float}]
+      - league_points_by_rank: list[{rank:int, points:float}]
+      - fleet_size_factor: list[{finishers:int, factor:float}]
+
+    Optional query param:
+      - only=version → returns just {"version": <int>} for lightweight checks.
+    """
+    settings = ds_get_settings() or {}
+    payload = {
+        'version': int(settings.get('version') or 0),
+        'handicap_delta_by_rank': settings.get('handicap_delta_by_rank', []) or [],
+        'league_points_by_rank': settings.get('league_points_by_rank', []) or [],
+        'fleet_size_factor': settings.get('fleet_size_factor', []) or [],
+    }
+    if (request.args.get('only') or '').strip().lower() == 'version':
+        return {'version': payload['version']}
+    return payload
+#</getdata>
+
+
  
 
 
