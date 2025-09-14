@@ -1328,9 +1328,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Preview applied; preview badge removed per UI tweak
   }
 
-  // --- Live preview: immediate, debounced, abortable ---
+  // --- Live preview: immediate, debounced (client-side compute only) ---
   let livePreviewTimer = null;
-  let livePreviewAbort = null;
 
   function buildLivePreviewPayload() {
     // Compare current inputs against original snapshot to minimize payload
@@ -1374,30 +1373,86 @@ document.addEventListener('DOMContentLoaded', () => {
     if (locked) return;
     const invalid = validateTimesAndUpdateUI();
     if (invalid) return;
-    const payload = buildLivePreviewPayload();
-    // If nothing changed versus original, skip
-    if ((!payload.finish_times || payload.finish_times.length === 0)
-        && (!payload.handicap_overrides || payload.handicap_overrides.length === 0)
-        && !('start_time' in payload)) {
-      return;
-    }
-    try {
-      if (livePreviewAbort) {
-        try { livePreviewAbort.abort(); } catch (_) {}
+    // Build entries from current DOM state
+    const scorer = window.CLIENT_SCORER;
+    if (!scorer || typeof scorer.calculateRaceResults !== 'function') return;
+    const startRaw = (startTime.value || '').trim();
+    const startNorm = startRaw ? normalizeToHMS(startRaw) : '';
+    let startSecs = 0;
+    try { startSecs = startNorm ? parseHMS(startNorm) : 0; } catch (_) { startSecs = 0; }
+
+    const seeds = window.CLIENT_PRE_RACE_SEEDS || {};
+    const rows = Array.from(document.querySelectorAll('tbody tr[data-cid]'));
+    const entries = [];
+    let finisherCount = 0;
+    const currentFinishStr = {};
+    const currentOverride = {};
+    for (const tr of rows) {
+      const cid = parseInt(tr.dataset.cid, 10);
+      if (!Number.isFinite(cid)) continue;
+      const hcpInput = tr.querySelector('.handicap-override');
+      let override = null;
+      if (hcpInput) {
+        const raw = (hcpInput.value || '').trim();
+        if (raw !== '' && hcpInput.dataset.cleared !== '1') {
+          const num = Number(raw);
+          if (!Number.isNaN(num)) override = num;
+        }
       }
-      livePreviewAbort = new AbortController();
-      const res = await fetch('{{ url_for('main.preview_race', race_id=selected_race.race_id) }}', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload),
-        signal: livePreviewAbort.signal,
-      });
-      if (!res.ok) return; // ignore transient errors during typing
-      const data = await res.json();
-      applyPreviewResults(data);
-    } catch (_) {
-      // Ignore aborted/failed requests during rapid input
+      currentOverride[cid] = override;
+      let initial = (override !== null && override !== undefined) ? Number(override) : undefined;
+      if (initial === undefined) {
+        const seed = seeds && Object.prototype.hasOwnProperty.call(seeds, cid) ? Number(seeds[cid]) : undefined;
+        if (seed !== undefined && !Number.isNaN(seed)) initial = seed;
+      }
+      if (initial === undefined) {
+        // Fallback to placeholder/base if available
+        const baseStr = hcpInput ? (hcpInput.placeholder || '') : '';
+        const base = baseStr === '' ? undefined : Number(baseStr);
+        if (base !== undefined && !Number.isNaN(base)) initial = base;
+      }
+      if (initial === undefined) continue; // skip rows we cannot seed
+
+      const finInput = tr.querySelector('.finish-time');
+      const finRaw = finInput ? (finInput.value || '').trim() : '';
+      currentFinishStr[cid] = finRaw;
+      let finSecs = null;
+      if (finRaw !== '') {
+        try { finSecs = parseHMS(normalizeToHMS(finRaw)); } catch (_) { finSecs = null; }
+      }
+      const entry = { competitor_id: cid, start: startSecs, initial_handicap: Number(initial) };
+      if (finSecs != null && finSecs > startSecs) { entry.finish = finSecs; finisherCount += 1; }
+      entries.push(entry);
     }
+
+    const resultsList = scorer.calculateRaceResults(entries) || [];
+    // Build response-like payload to reuse DOM updater
+    const results = {};
+    for (const r of resultsList) {
+      const cid = Number(r.competitor_id);
+      const isNonFinisher = !(Object.prototype.hasOwnProperty.call(r, 'finish') && r.finish != null);
+      const elapsed = r.elapsed_seconds;
+      results[cid] = {
+        finish_time: currentFinishStr[cid] || '',
+        on_course_secs: elapsed,
+        elapsed_time: (elapsed && elapsed > 0) ? secondsToHMS(elapsed) : '',
+        abs_pos: r.absolute_position,
+        allowance: r.allowance_seconds,
+        adj_time_secs: r.adjusted_time_seconds,
+        adj_time: (!isNonFinisher ? secondsToHMS(r.adjusted_time_seconds) : null),
+        hcp_pos: r.handicap_position,
+        race_pts: r.traditional_points,
+        league_pts: r.points,
+        full_delta: r.full_delta,
+        scaled_delta: r.scaled_delta,
+        actual_delta: r.actual_delta,
+        revised_hcp: r.revised_handicap != null ? r.revised_handicap : (r.initial_handicap != null ? r.initial_handicap : null),
+        place: r.status,
+        handicap_override: currentOverride[cid],
+      };
+    }
+    const fleetAdj = finisherCount ? Math.round((scorer.scalingFactor(finisherCount) || 0) * 100) : 0;
+    applyPreviewResults({ results, finisher_count: finisherCount, fleet_adjustment: fleetAdj });
   }
 
   function scheduleLivePreview() {
@@ -1406,7 +1461,7 @@ document.addEventListener('DOMContentLoaded', () => {
       livePreviewTimer = null;
     }
     // Small debounce to coalesce keystrokes while keeping UI snappy
-    livePreviewTimer = setTimeout(runLivePreviewNow, 140);
+    livePreviewTimer = setTimeout(runLivePreviewNow, 80);
   }
 
   // Immediate local row updates for feel (on-course, elapsed, allowance, adj time)
