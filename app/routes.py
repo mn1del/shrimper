@@ -1539,6 +1539,7 @@ def series_detail(series_id):
                 results[cid] = {
                     'finish_time': finish_str,
                     'on_course_secs': res.get('elapsed_seconds'),
+                    'elapsed_time': _format_hms(res.get('elapsed_seconds')),
                     'abs_pos': res.get('absolute_position'),
                     'allowance': res.get('allowance_seconds'),
                     'adj_time_secs': res.get('adjusted_time_seconds'),
@@ -1674,6 +1675,7 @@ def series_detail(series_id):
                         results[cid] = {
                             'finish_time': finish_str,
                             'on_course_secs': res.get('elapsed_seconds'),
+                            'elapsed_time': _format_hms(res.get('elapsed_seconds')),
                             'abs_pos': res.get('absolute_position'),
                             'allowance': res.get('allowance_seconds'),
                             'adj_time_secs': res.get('adjusted_time_seconds'),
@@ -2476,6 +2478,7 @@ def preview_race(race_id):
         results[int(cid)] = {
             'finish_time': ent.get('finish_time') if ent is not None else None,
             'on_course_secs': res.get('elapsed_seconds'),
+            'elapsed_time': _format_hms(res.get('elapsed_seconds')),
             'abs_pos': res.get('absolute_position'),
             'allowance': res.get('allowance_seconds'),
             'adj_time_secs': res.get('adjusted_time_seconds'),

@@ -163,6 +163,7 @@
         <th class="col-league-pts" style="width: 70px;">League Pts (Adj)</th>
         <th class="col-revised-hcp" style="width: 110px;">Revised Hcp (s/hr)</th>
         <th style="width: 110px;">On Course Time (s)</th>
+        <th style="width: 150px;">Elapsed Time (hh:mm:ss)</th>
         <th style="width: 110px;">Hcp Allowance (s)</th>
         <th style="width: 120px;">Adj Time (hh:mm:ss)</th>
         <th style="width: 120px;">Full Hcp Change (s/hr)</th>
@@ -192,6 +193,7 @@
         <td class="league-pts">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
         <td class="revised-hcp">{{ result.revised_hcp|round|int if result.revised_hcp is defined and result.revised_hcp is not none else '' }}</td>
         <td class="on-course">{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
+        <td class="elapsed-time">{{ result.elapsed_time or '' }}</td>
         <td class="allowance">{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
         <td class="adj-time">{{ result.adj_time or '' }}</td>
         <td class="full-delta">{{ result.full_delta|round|int if result.full_delta is defined and result.full_delta is not none else '' }}</td>
@@ -383,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hcp_pos: tr.querySelector('.hcp-pos')?.textContent || '',
             finish_time: tr.querySelector('.finish-time')?.value || '',
             on_course: tr.querySelector('.on-course')?.textContent || '',
+            elapsed_time: tr.querySelector('.elapsed-time')?.textContent || '',
             allowance: tr.querySelector('.allowance')?.textContent || '',
             adj_time: tr.querySelector('.adj-time')?.textContent || '',
             full_delta: tr.querySelector('.full-delta')?.textContent || '',
@@ -438,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ftc = tr.querySelector('.finish-time-cell'); if (ftc) ftc.setAttribute('sorttable_customkey', o.sortkey || '');
         setText('.on-course', o.on_course);
         setText('.allowance', o.allowance);
+        setText('.elapsed-time', o.elapsed_time);
         setText('.adj-time', o.adj_time);
         setText('.full-delta', o.full_delta);
         setText('.actual-delta', o.actual_delta);
@@ -1120,6 +1124,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const ftc = tr.querySelector('.finish-time-cell'); if (ftc) ftc.setAttribute('sorttable_customkey', r.finish_time || '');
       // Numeric fields rounded as per initial render
       setText('.on-course', toRounded(r.on_course_secs));
+      setText('.elapsed-time', r.elapsed_time || '');
       setText('.allowance', toRounded(r.allowance));
       setText('.adj-time', r.adj_time || '');
       setText('.full-delta', toRounded(r.full_delta));
