@@ -41,6 +41,43 @@ _RACE_TTL = int(os.environ.get('CACHE_TTL_RACE', '120'))  # seconds
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get('WORKER_THREADS', '1')))
 _RECALC_ACTIVE: set[str] = set()
 
+def _sorted_compact_scoring(settings: dict) -> dict:
+    """Return a compact, normalized scoring dict with stable ordering.
+
+    Keeps only the keys relevant to scoring; sorts lists by their key fields
+    (rank or finishers) and coerces numeric fields to numbers where possible.
+    """
+    def _sort_list(lst, key_name):
+        out: list[dict] = []
+        for item in (lst or []):
+            if not isinstance(item, dict):
+                continue
+            out.append(dict(item))
+        def kfun(x):
+            v = x.get(key_name)
+            if isinstance(v, int):
+                return (0, v)
+            try:
+                iv = int(v)
+                return (0, iv)
+            except Exception:
+                return (1, 10**9)  # place 'default_or_higher' last
+        out.sort(key=kfun)
+        return out
+
+    compact = {
+        'handicap_delta_by_rank': _sort_list(settings.get('handicap_delta_by_rank', []), 'rank'),
+        'league_points_by_rank': _sort_list(settings.get('league_points_by_rank', []), 'rank'),
+        'fleet_size_factor': _sort_list(settings.get('fleet_size_factor', []), 'finishers'),
+    }
+    return compact
+
+
+def _scoring_content_hash(settings: dict) -> str:
+    compact = _sorted_compact_scoring(settings or {})
+    data = json.dumps(compact, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha1(data.encode('utf-8')).hexdigest()
+
 
 def _cache_get_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]] | None:
     key = (int(season), scoring)
@@ -1391,8 +1428,8 @@ def race_new():
     pre_race_seeds = {}
     try:
         settings_for_hash = ds_get_settings() or {}
-        sver = int(settings_for_hash.get('version') or 0)
-        _snap_data = json.dumps({'seeds': pre_race_seeds, 'settings_version': sver}, sort_keys=True)
+        scoring_hash = _scoring_content_hash(settings_for_hash)
+        _snap_data = json.dumps({'seeds': pre_race_seeds, 'scoring_hash': scoring_hash}, sort_keys=True)
         pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
     except Exception:
         pre_snapshot_version = ''
@@ -1888,9 +1925,10 @@ def series_detail(series_id):
     except Exception:
         pass
     pre_race_seeds = {int(k): int(v) for k, v in (pre_race_seeds_full or {}).items() if (not entrant_ids) or (int(k) in entrant_ids)}
-    # Compute a snapshot version hash from entrant-only seeds + settings version
+    # Compute a snapshot version hash from entrant-only seeds + scoring content hash
     try:
-        _snap_data = json.dumps({'seeds': pre_race_seeds, 'settings_version': scoring_version}, sort_keys=True)
+        scoring_hash = _scoring_content_hash(scoring_settings)
+        _snap_data = json.dumps({'seeds': pre_race_seeds, 'scoring_hash': scoring_hash}, sort_keys=True)
         pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
     except Exception:
         pre_snapshot_version = ''
@@ -2090,6 +2128,11 @@ def get_scoring_settings():
         'league_points_by_rank': settings.get('league_points_by_rank', []) or [],
         'fleet_size_factor': settings.get('fleet_size_factor', []) or [],
     }
+    # Include a stable content hash for callers that want to ignore version churn
+    try:
+        payload['content_hash'] = _scoring_content_hash(settings)
+    except Exception:
+        pass
     if (request.args.get('only') or '').strip().lower() == 'version':
         return {'version': payload['version']}
     return payload
@@ -2142,11 +2185,11 @@ def race_snapshot_version(race_id: str):
 
     try:
         settings = ds_get_settings() or {}
-        sver = int(settings.get('version') or 0)
+        scoring_hash = _scoring_content_hash(settings)
     except Exception:
-        sver = 0
+        scoring_hash = ''
     try:
-        data = json.dumps({'seeds': seeds, 'settings_version': sver}, sort_keys=True)
+        data = json.dumps({'seeds': seeds, 'scoring_hash': scoring_hash}, sort_keys=True)
         ver = hashlib.sha1(data.encode('utf-8')).hexdigest()
     except Exception:
         ver = ''
