@@ -187,7 +187,6 @@
   <table class="table table-bordered table-sm align-middle sortable">
     <thead class="table-light">
       <tr>
-        <th style="width: 60px;">Abs Pos</th>
         <th style="width: 60px;">Hcp Pos</th>
         <th style="width: 150px;">Elapsed Time (hh:mm:ss)</th>
         <th style="width: 120px;">Adj Time (hh:mm:ss)</th>
@@ -198,6 +197,7 @@
         <th style="width: 140px;">Adjusted Hcp Change (s/hr)</th>
         <th class="col-revised-hcp" style="width: 140px;">Revised Handicap</th>
         <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
+        <th style="width: 60px;">Abs Pos</th>
         <!-- Remaining columns in their previous relative order -->
         <th class="col-race-pts" style="width: 70px;">Race Pts (Trad)</th>
         <th class="col-league-pts" style="width: 70px;">League Pts (Adj)</th>
@@ -211,7 +211,6 @@
     {% for comp in fleet %}
       {% set result = (selected_race.results or {}).get(comp.competitor_id, {}) %}
       <tr data-cid="{{ comp.competitor_id }}">
-        <td class="abs-pos">{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
         <td class="hcp-pos">{{ result.hcp_pos|int if result.hcp_pos is defined and result.hcp_pos is not none else '' }}</td>
         <td class="elapsed-time">{% if result.on_course_secs is defined and (result.on_course_secs|int) > 0 %}{{ result.elapsed_time or '' }}{% else %}{% endif %}</td>
         <td class="adj-time">{{ result.adj_time or '' }}</td>
@@ -243,6 +242,7 @@
             <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
           </div>
         </td>
+        <td class="abs-pos">{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
         <!-- Remaining columns in their previous relative order -->
         <td class="race-pts">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
         <td class="league-pts">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
