@@ -1196,19 +1196,115 @@ document.addEventListener('DOMContentLoaded', () => {
       invalidModal.show();
       return;
     }
-    // Guardrail: detect baseline snapshot changes prior to confirm
+    // Guardrail: detect baseline snapshot changes; only warn if it changes results
     try {
-      const url = new URL('{{ url_for('main.series_detail', series_id=series.series_id if series else '') }}', window.location.origin);
-      // Build explicit API path (avoid BuildError if names differ)
+      // Build cids= list to include rows edited but not originally entrants
+      const editedCids = [];
+      document.querySelectorAll('tbody tr[data-cid]').forEach(tr => {
+        const cid = parseInt(tr.getAttribute('data-cid') || '', 10);
+        if (!Number.isFinite(cid)) return;
+        const fin = tr.querySelector('.finish-time');
+        const hcp = tr.querySelector('.handicap-override');
+        const hasFin = !!(fin && (fin.value || '').trim());
+        const hasOv = !!(hcp && (hcp.value || '').trim() && hcp.dataset.cleared !== '1');
+        if (hasFin || hasOv) editedCids.push(String(cid));
+      });
       const api = new URL('/api/races/{{ selected_race.race_id if selected_race else '' }}/snapshot_version', window.location.origin);
       api.searchParams.set('t', String(Date.now()));
+      if (editedCids.length) api.searchParams.set('cids', editedCids.join(','));
       const snapRes = await fetch(api.toString());
       const snap = await snapRes.json();
       const current = String(window.PRE_SNAPSHOT_VERSION || '');
       const latest = String((snap && snap.version) || '');
       if (current && latest && current !== latest) {
-        const refresh = window.confirm('The race baseline changed since you opened this page (earlier races or settings were updated). Refresh now to recompute preview?');
-        if (refresh) { window.location.reload(); return; }
+        // Snapshot changed. Compare server preview to current table; warn only if different.
+        const buildClientSnapshot = () => {
+          const map = {};
+          document.querySelectorAll('tbody tr[data-cid]').forEach(tr => {
+            const cid = parseInt(tr.getAttribute('data-cid') || '', 10);
+            if (!Number.isFinite(cid)) return;
+            const getInt = (sel) => {
+              const el = tr.querySelector(sel);
+              if (!el) return null;
+              const n = Number((el.textContent || '').trim());
+              return Number.isNaN(n) ? null : n;
+            };
+            const getDelta = () => {
+              const td = tr.querySelector('.actual-delta');
+              if (!td) return null;
+              const raw = td.dataset.delta || td.textContent || '';
+              const n = Number(String(raw).replace(/[^\d\-]/g, ''));
+              return Number.isNaN(n) ? null : n;
+            };
+            map[cid] = {
+              abs_pos: getInt('.abs-pos'),
+              hcp_pos: getInt('.hcp-pos'),
+              actual_delta: getDelta(),
+              race_pts: getInt('.race-pts'),
+              league_pts: (function(){ const el=tr.querySelector('.league-pts'); if(!el) return null; const n=Number((el.textContent||'').trim()); return Number.isNaN(n)?null:n; })(),
+              revised_hcp: getInt('.revised-hcp'),
+            };
+          });
+          return map;
+        };
+        const clientSnapshot = buildClientSnapshot();
+        const payload = (function(){
+          // Build a payload mirroring previewChanges without applying DOM changes
+          const changedFinishTimes = [];
+          for (const o of orig.finish_times) {
+            const cur = finishInputs.find(i => i.dataset.cid === o.cid);
+            if (!cur) continue;
+            const curVal = (cur.value || '').trim();
+            const origVal = (o.value || '').trim();
+            if (curVal !== origVal) {
+              const cidNum = parseInt(cur.dataset.cid, 10);
+              changedFinishTimes.push({ competitor_id: isNaN(cidNum) ? cur.dataset.cid : cidNum, finish_time: curVal });
+            }
+          }
+          const changedOverrides = [];
+          for (const o of orig.handicap_overrides) {
+            const cur = hcpInputs.find(i => i.dataset.cid === o.cid);
+            if (!cur) continue;
+            const curVal = cur.dataset.cleared === '1' ? '' : (cur.value || '');
+            if ((curVal || '') !== (o.value || '')) {
+              const cidNum = parseInt(cur.dataset.cid, 10);
+              changedOverrides.push({ competitor_id: isNaN(cidNum) ? cur.dataset.cid : cidNum, handicap: curVal });
+            }
+          }
+          return {
+            start_time: (startTime.value || '').trim() === '' ? null : startTime.value,
+            finish_times: changedFinishTimes,
+            handicap_overrides: changedOverrides,
+          };
+        })();
+        const res = await fetch('{{ url_for('main.preview_race', race_id=selected_race.race_id) }}', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        let warn = true;
+        if (res.ok) {
+          const data = await res.json();
+          const srv = data && data.results ? data.results : {};
+          warn = false; // assume no warn unless a difference is found
+          const keys = ['abs_pos','hcp_pos','actual_delta','race_pts','league_pts','revised_hcp'];
+          Object.keys(clientSnapshot).forEach(cidStr => {
+            const cid = Number(cidStr);
+            const a = clientSnapshot[cid];
+            const b = srv[cidStr] || srv[cid];
+            if (!b) return; // skip rows server didn't compute
+            for (const k of keys) {
+              const aval = a[k];
+              let bval = b[k];
+              if (bval !== null && bval !== undefined) bval = Number(bval);
+              if (aval === null && (bval === null || bval === undefined)) continue;
+              if (Number(aval) !== Number(bval)) { warn = true; break; }
+            }
+            if (warn) return;
+          });
+        }
+        if (warn) {
+          const refresh = window.confirm('The race baseline changed and affects results. Refresh now to recompute preview?');
+          if (refresh) { window.location.reload(); return; }
+        }
       }
     } catch (__) { /* ignore */ }
     const changes = listChanges();
