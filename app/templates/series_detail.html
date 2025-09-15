@@ -181,6 +181,36 @@
   }
   .delta { display: inline-flex; align-items: center; gap: 0.25rem; }
   .delta .icon { font-size: 0.85em; line-height: 1; }
+
+  /* Invert colors from Finish Time column (10th) onwards */
+  .race-table-wrapper thead th:nth-child(n+10) {
+    background-color: #f8f9fa; /* light header */
+    color: #212529;            /* dark text */
+  }
+  .race-table-wrapper tbody td:nth-child(n+10) {
+    background-color: #343a40; /* dark body */
+    color: #ffffff;            /* light text */
+  }
+  /* Ensure links remain visible */
+  .race-table-wrapper tbody td:nth-child(n+10) a { color: #ffffff; }
+  /* Improve controls contrast inside inverted cells */
+  .race-table-wrapper tbody td:nth-child(n+10) input.form-control {
+    background-color: #495057;
+    color: #ffffff;
+    border-color: #6c757d;
+  }
+  .race-table-wrapper tbody td:nth-child(n+10) .btn {
+    color: #ffffff;
+    border-color: #adb5bd;
+  }
+  .race-table-wrapper tbody td:nth-child(n+10) .btn:hover {
+    background-color: rgba(255,255,255,0.08);
+  }
+  /* Keep invalid finish time clearly visible on dark background */
+  .race-table-wrapper tbody td.finish-time-cell.time-invalid {
+    background-color: #6b1a1a !important; /* dark red */
+    color: #ffffff;
+  }
 </style>
 
 <div class="table-responsive race-table-wrapper">
