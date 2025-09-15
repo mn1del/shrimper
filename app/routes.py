@@ -1387,17 +1387,11 @@ def race_new():
         'results': {},
     }
     breadcrumbs = [('Races', url_for('main.races')), ('Create New Race', None)]
-    # For a new race, seed map comes from fleet starting handicaps
-    pre_race_seeds = {
-        int(c.get('competitor_id')): int(c.get('starting_handicap_s_per_hr') or 0)
-        for c in (fleet or []) if c.get('competitor_id') is not None
-    }
+    # For a new race, entrant-only: no seeds yet (no entrants visible)
+    pre_race_seeds = {}
     try:
         settings_for_hash = ds_get_settings() or {}
         sver = int(settings_for_hash.get('version') or 0)
-    except Exception:
-        sver = 0
-    try:
         _snap_data = json.dumps({'seeds': pre_race_seeds, 'settings_version': sver}, sort_keys=True)
         pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
     except Exception:
@@ -1882,10 +1876,19 @@ def series_detail(series_id):
     }
     # Embed pre-race snapshot seeds for the selected race, if any
     try:
-        pre_race_seeds = build_pre_race_snapshot(selected_race.get('race_id')) if selected_race else {}
+        pre_race_seeds_full = build_pre_race_snapshot(selected_race.get('race_id')) if selected_race else {}
     except Exception:
-        pre_race_seeds = {}
-    # Compute a snapshot version hash from seeds + settings version
+        pre_race_seeds_full = {}
+    # Filter seeds to race entrants only (exclude entire fleet)
+    entrant_ids = set()
+    try:
+        for e in (selected_race.get('competitors', []) if selected_race else []) or []:
+            if e.get('competitor_id') is not None:
+                entrant_ids.add(int(e.get('competitor_id')))
+    except Exception:
+        pass
+    pre_race_seeds = {int(k): int(v) for k, v in (pre_race_seeds_full or {}).items() if (not entrant_ids) or (int(k) in entrant_ids)}
+    # Compute a snapshot version hash from entrant-only seeds + settings version
     try:
         _snap_data = json.dumps({'seeds': pre_race_seeds, 'settings_version': scoring_version}, sort_keys=True)
         pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
@@ -2095,10 +2098,48 @@ def get_scoring_settings():
 ## Snapshot guard: version of pre-race seeds + settings
 @bp.route('/api/races/<race_id>/snapshot_version')
 def race_snapshot_version(race_id: str):
+    """Return a hash of entrant-only seeds and settings version.
+
+    Seeds are filtered to competitor_ids that are part of the race entrants
+    for ``race_id``. Optionally, callers can provide a comma-separated list of
+    competitor ids via ``cids`` to expand/override the entrant filter
+    (useful for unsaved edits with new finish/override rows).
+    """
     try:
         seeds = build_pre_race_snapshot(race_id) or {}
     except Exception:
         seeds = {}
+
+    # Derive entrant ids from the race object
+    try:
+        _season, _series, race_obj = ds_find_race(race_id)
+        entrant_ids = [
+            int(e.get('competitor_id'))
+            for e in (race_obj.get('competitors', []) if race_obj else [])
+            if e.get('competitor_id') is not None
+        ]
+    except Exception:
+        entrant_ids = []
+
+    # Optional override via query param for unsaved new rows
+    raw_cids = (request.args.get('cids') or '').strip()
+    if raw_cids:
+        for tok in raw_cids.split(','):
+            tok = tok.strip()
+            if tok:
+                try:
+                    entrant_ids.append(int(tok))
+                except Exception:
+                    pass
+    entrant_set = {int(cid) for cid in entrant_ids if cid is not None}
+
+    # Filter seeds down to entrants only
+    if entrant_set:
+        seeds = {int(k): int(v) for k, v in seeds.items() if int(k) in entrant_set}
+    else:
+        # If no entrants resolved, keep seeds empty to avoid over-broad hashing
+        seeds = {}
+
     try:
         settings = ds_get_settings() or {}
         sver = int(settings.get('version') or 0)
