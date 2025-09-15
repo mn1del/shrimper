@@ -62,7 +62,8 @@ def client(memory_store):
 
 
 def test_snapshot_version_changes_with_settings(client):
-    rid = "RACE_2025-01-08_Test_2"
+    # Use a race with 2 finishers so filtered scoring includes rank 1 and factor for 2
+    rid = "RACE_2025-01-01_Test_1"
     res1 = client.get(f"/api/races/{rid}/snapshot_version")
     assert res1.status_code == 200
     v1 = res1.get_json().get('version')
@@ -74,7 +75,7 @@ def test_snapshot_version_changes_with_settings(client):
         json={
             "handicap_delta_by_rank": [{"rank": 1, "delta_s_per_hr": -5}],
             "league_points_by_rank": [{"rank": 1, "points": 9}],
-            "fleet_size_factor": [{"finishers": 1, "factor": 0.9}],
+            "fleet_size_factor": [{"finishers": 2, "factor": 0.9}],
         },
     )
     assert res_set.status_code == 200
@@ -95,4 +96,3 @@ def test_series_detail_embeds_scoring_and_seeds(client):
     assert "window.SCORING_VERSION" in html
     assert "window.PRE_RACE_SEEDS" in html
     assert "window.PRE_SNAPSHOT_VERSION" in html
-

@@ -79,6 +79,61 @@ def _scoring_content_hash(settings: dict) -> str:
     return hashlib.sha1(data.encode('utf-8')).hexdigest()
 
 
+def _scoring_content_hash_filtered(settings: dict, finishers: int | None) -> str:
+    """Return a hash of only the parts of scoring that matter for a given race.
+
+    - handicap_delta_by_rank: include ranks <= finishers (numeric ranks only)
+    - league_points_by_rank: include ranks <= finishers (numeric ranks only)
+    - fleet_size_factor: include only the effective factor for ``finishers``
+      (if an exact entry not found, include default_or_higher factor value)
+    """
+    compact = _sorted_compact_scoring(settings or {})
+    n = int(finishers or 0)
+
+    def _filter_by_rank(items: list[dict]) -> list[dict]:
+        out: list[dict] = []
+        for it in (items or []):
+            rk = it.get('rank')
+            try:
+                rk_i = int(rk)
+            except Exception:
+                continue
+            if rk_i <= n:
+                out.append({'rank': rk_i, **{k: v for k, v in it.items() if k != 'rank'}})
+        return out
+
+    def _effective_factor(items: list[dict]) -> dict:
+        exact = None
+        default = None
+        for it in (items or []):
+            fk = it.get('finishers')
+            if fk == 'default_or_higher':
+                default = it
+                continue
+            try:
+                fk_i = int(fk)
+            except Exception:
+                continue
+            if fk_i == n:
+                exact = it
+                break
+        item = exact or default or {'finishers': n, 'factor': 0.0}
+        # Normalize output to stable shape
+        try:
+            factor = float(item.get('factor'))
+        except Exception:
+            factor = 0.0
+        return {'finishers': n, 'factor': factor}
+
+    narrowed = {
+        'handicap_delta_by_rank': _filter_by_rank(compact.get('handicap_delta_by_rank', [])),
+        'league_points_by_rank': _filter_by_rank(compact.get('league_points_by_rank', [])),
+        'fleet_size_factor': [_effective_factor(compact.get('fleet_size_factor', []))],
+    }
+    data = json.dumps(narrowed, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha1(data.encode('utf-8')).hexdigest()
+
+
 def _cache_get_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]] | None:
     key = (int(season), scoring)
     entry = _STANDINGS_CACHE.get(key)
@@ -1927,7 +1982,8 @@ def series_detail(series_id):
     pre_race_seeds = {int(k): int(v) for k, v in (pre_race_seeds_full or {}).items() if (not entrant_ids) or (int(k) in entrant_ids)}
     # Compute a snapshot version hash from entrant-only seeds + scoring content hash
     try:
-        scoring_hash = _scoring_content_hash(scoring_settings)
+        # Use finisher_count computed earlier when results_list was built
+        scoring_hash = _scoring_content_hash_filtered(scoring_settings, finisher_count)
         _snap_data = json.dumps({'seeds': pre_race_seeds, 'scoring_hash': scoring_hash}, sort_keys=True)
         pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
     except Exception:
@@ -2183,9 +2239,28 @@ def race_snapshot_version(race_id: str):
         # If no entrants resolved, keep seeds empty to avoid over-broad hashing
         seeds = {}
 
+    # Determine finisher count context
+    raw_finishers = request.args.get('finishers')
+    fcount: int | None = None
+    if raw_finishers is not None and raw_finishers != '':
+        try:
+            fcount = int(raw_finishers)
+        except Exception:
+            fcount = None
+    if fcount is None:
+        try:
+            # fallback to stored race finishers
+            fin = 0
+            for e in (race_obj.get('competitors', []) if race_obj else []) or []:
+                if (e.get('finish_time') or '').strip():
+                    fin += 1
+            fcount = fin
+        except Exception:
+            fcount = 0
+
     try:
         settings = ds_get_settings() or {}
-        scoring_hash = _scoring_content_hash(settings)
+        scoring_hash = _scoring_content_hash_filtered(settings, fcount)
     except Exception:
         scoring_hash = ''
     try:

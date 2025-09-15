@@ -1211,6 +1211,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const api = new URL('/api/races/{{ selected_race.race_id if selected_race else '' }}/snapshot_version', window.location.origin);
       api.searchParams.set('t', String(Date.now()));
+      // Pass finisher count so scoring hash is narrowed appropriately
+      try {
+        const finCount = finishInputs.filter(inp => (inp.value || '').trim() !== '').length;
+        api.searchParams.set('finishers', String(finCount));
+      } catch (_) {}
       if (editedCids.length) api.searchParams.set('cids', editedCids.join(','));
       const snapRes = await fetch(api.toString());
       const snap = await snapRes.json();
