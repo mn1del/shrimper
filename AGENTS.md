@@ -15,6 +15,7 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 
 ### Front-end notes
 - Standings table: click a series header to toggle its race columns. Race columns are hidden by default and header dates rotate 90° when visible for a compact layout.
+- Race edit time inputs: on first focus/click the hours segment is selected for both Start Time and each Finish Time; typing is numeric-only with segment-aware caret movement; values normalize to `HH:MM:SS` on change/blur.
 
 ## App Workflow
 - Data lives in PostgreSQL (configured via `DATABASE_URL`) containing seasons/series/races, the fleet, and settings.
