@@ -884,6 +884,19 @@ document.addEventListener('DOMContentLoaded', () => {
         el.dataset.seg = '0';
         el.dataset.segpos = '0';
       }
+      // For Start Time, ensure hours are selected on first focus/click,
+      // even when a full HH:MM:SS value is pre-filled.
+      if (el.id === 'start_time' && !el.dataset.initHourSelectDone) {
+        try {
+          // Defer to run after any native click caret placement
+          setTimeout(() => {
+            try { el.setSelectionRange(0, 2); } catch (_) {}
+            el.dataset.seg = '0';
+            el.dataset.segpos = '0';
+          }, 0);
+        } catch (_) {}
+        el.dataset.initHourSelectDone = '1';
+      }
     });
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Tab') return; // allow navigation
