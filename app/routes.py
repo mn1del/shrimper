@@ -25,6 +25,8 @@ from .datastore import (
     get_settings as ds_get_settings,
     set_settings as ds_set_settings,
 )
+from .datastore import update_race_row as ds_update_race_row
+from .datastore import replace_race_results as ds_replace_race_results
 from .datastore import get_races as ds_get_races
 from .datastore import list_season_race_ids as ds_list_season_race_ids
 
@@ -2608,6 +2610,37 @@ def update_race(race_id):
 
     # Determine final race id after any renumber (before scheduling)
     final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
+
+    # Targeted path: when no renumber occurred and series did not change,
+    # optionally use direct updates to avoid full tree persistence.
+    use_targeted = os.environ.get('USE_TARGETED_SAVE', '0').lower() in ('1', 'true') or bool(
+        (current_app and getattr(current_app, 'config', {}).get('USE_TARGETED_SAVE'))
+    )
+    if use_targeted and (not mapping_target) and (target_series is series_obj):
+        try:
+            # Update race row basics (date/start_time may have changed)
+            ds_update_race_row(str(final_race_id), {
+                'date': race_obj.get('date'),
+                'start_time': race_obj.get('start_time'),
+            })
+        except Exception:
+            pass
+        try:
+            # Replace entrants for this race only
+            ds_replace_race_results(str(final_race_id), list(race_obj.get('competitors', []) or []))
+        except Exception:
+            pass
+        redirect_series_id = target_series.get('series_id')
+        try:
+            season_current, _series_current, _race_current = ds_find_race(final_race_id)
+            _cache_delete_race(final_race_id)
+            _cache_delete_standings_for_season((season_current or {}).get('year') if season_current else None)
+        except Exception:
+            pass
+        _schedule_forward_recalc(final_race_id)
+        redirect_url = url_for('main.series_detail', series_id=redirect_series_id, race_id=final_race_id)
+        finisher_count = sum(1 for e in race_obj.get('competitors', []) if e.get('finish_time'))
+        return {'finisher_count': finisher_count, 'redirect': redirect_url}
 
     # Persist fast with minimal entrants writes: include 'competitors' only for edited race
     def _prune_seasons_for_save(seasons: list[dict], keep_ids: set[str]) -> list[dict]:

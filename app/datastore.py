@@ -161,3 +161,12 @@ def get_settings(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 
 def set_settings(settings: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return _pg.set_settings(settings, data=data)
+
+
+# Targeted PostgreSQL helpers (no-op in JSON path; tests should monkeypatch)
+def update_race_row(race_id: str, fields: Dict[str, Any]) -> None:
+    return _pg.update_race_row(race_id, fields)
+
+
+def replace_race_results(race_id: str, entrants: List[Dict[str, Any]]) -> None:
+    return _pg.replace_race_results(race_id, entrants)

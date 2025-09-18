@@ -1087,3 +1087,63 @@ def get_races_with_entries(race_ids: List[str]) -> Dict[str, Dict[str, Any]]:
                 }
             )
     return meta
+
+
+def update_race_row(race_id: str, fields: Dict[str, Any]) -> None:
+    """Update selected columns of a race row.
+
+    Accepted keys: series_id, date, start_time, race_no, name
+    """
+    allowed = {
+        'series_id': 'series_id',
+        'date': 'date',
+        'start_time': 'start_time',
+        'race_no': 'race_no',
+        'name': 'name',
+    }
+    sets: List[str] = []
+    params: List[Any] = []
+    for k, col in allowed.items():
+        if k in fields:
+            sets.append(f"{col} = %s")
+            params.append(fields.get(k))
+    if not sets:
+        return
+    sql = f"UPDATE races SET {', '.join(sets)} WHERE race_id = %s"
+    params.append(race_id)
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        conn.commit()
+
+
+def replace_race_results(race_id: str, entrants: List[Dict[str, Any]]) -> None:
+    """Replace entrants (race_results) for a single race ID.
+
+    Entrants fields: competitor_id, initial_handicap, finish_time (HH:MM:SS or None), handicap_override
+    """
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM race_results WHERE race_id = %s", (race_id,))
+        rows: List[Tuple[str, Optional[int], Optional[str], Optional[int]]] = []
+        for ent in (entrants or []):
+            cid = ent.get('competitor_id')
+            cid_int = int(cid) if cid is not None else None
+            # Normalize finish_time: empty/whitespace -> NULL
+            _ft = ent.get('finish_time')
+            finish_val = None
+            if _ft is not None:
+                s = str(_ft).strip()
+                finish_val = None if s == '' else s
+            rows.append((str(race_id), cid_int, finish_val, ent.get('handicap_override')))
+        if rows:
+            execute_values(
+                cur,
+                """
+                INSERT INTO race_results (race_id, competitor_ref, finish_time, handicap_override)
+                VALUES %s
+                ON CONFLICT (race_id, competitor_ref) DO UPDATE SET
+                    finish_time = EXCLUDED.finish_time,
+                    handicap_override = EXCLUDED.handicap_override
+                """,
+                rows,
+            )
+        conn.commit()
