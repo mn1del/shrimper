@@ -200,6 +200,20 @@
   .race-table-wrapper tbody td:nth-child(n+10) .btn:hover {
     background-color: rgba(255,255,255,0.08);
   }
+  /* Finish Time column: light blue background and normal control contrast */
+  .race-table-wrapper tbody td.finish-time-cell {
+    background-color: #e6f7ff; /* light blue */
+    color: #212529;            /* dark text for readability */
+  }
+  .race-table-wrapper tbody td.finish-time-cell input.form-control {
+    background-color: #ffffff; /* default input bg */
+    color: #212529;
+    border-color: #ced4da;     /* default border */
+  }
+  .race-table-wrapper tbody td.finish-time-cell .btn {
+    color: #212529;            /* inherit dark text for outline btn */
+    border-color: #6c757d;     /* secondary outline */
+  }
   /* Keep invalid finish time clearly visible on dark background */
   .race-table-wrapper tbody td.finish-time-cell.time-invalid {
     background-color: #6b1a1a !important; /* dark red */
