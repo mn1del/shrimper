@@ -90,6 +90,15 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    <!-- Global Recalculation Toast (non-blocking, site-wide) -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index:2100;">
+      <div id="globalRecalcToast" class="toast align-items-center text-bg-secondary border-0" role="status" aria-live="polite" aria-atomic="true" data-bs-autohide="false">
+        <div class="d-flex">
+          <div class="toast-body">Background recalculation in progress…</div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+      </div>
+    </div>
     <!-- Global Recalculation Overlay -->
     <div id="recalcOverlay" class="recalc-overlay d-none" aria-live="polite" aria-atomic="true">
       <div class="content">
@@ -101,6 +110,8 @@
       (function() {
         let pollTimer = null;
         const overlay = document.getElementById('recalcOverlay');
+        const toastEl = document.getElementById('globalRecalcToast');
+        const toastObj = (toastEl && window.bootstrap) ? new window.bootstrap.Toast(toastEl) : null;
         const RECALC_FLAG = 'recalc_active';
         const RECALC_STARTED_AT = 'recalc_started_at';
         const RECALC_OBSERVED_ACTIVE = 'recalc_observed_active';
@@ -124,6 +135,8 @@
             toggle.removeAttribute('title');
           }
         }
+        function showToast() { try { toastObj && toastObj.show(); } catch (_) {} }
+        function hideToast() { try { toastObj && toastObj.hide(); } catch (_) {} }
         async function fetchStatusAny() {
           try {
             const res = await fetch('/api/recalc/status', { cache: 'no-store' });
@@ -140,6 +153,7 @@
           if (active) {
             try { localStorage.setItem(RECALC_OBSERVED_ACTIVE, '1'); } catch (_) {}
             showOverlay();
+            showToast();
             return;
           }
           // Not currently active: only conclude if we've observed it active at least once,
@@ -154,14 +168,17 @@
             // Trigger reload first so the overlay remains visible until navigation
             try { window.location.reload(); } catch (_) {}
             // Do not call hideOverlay here; allow the overlay to persist until unload
+            // Likewise, keep toast visible through navigation; browser will clear on reload
             return;
           }
           // Neither active nor observed yet: keep overlay and keep polling
           showOverlay();
+          showToast();
         }
         function startPolling() {
           if (pollTimer) return;
           showOverlay();
+          showToast();
           pollTimer = setInterval(pollLoop, 1500);
           // Immediate first check
           pollLoop();
@@ -173,11 +190,13 @@
             localStorage.setItem(RECALC_STARTED_AT, String(Date.now()));
             localStorage.removeItem(RECALC_OBSERVED_ACTIVE);
           } catch (_) {}
+          showToast();
           startPolling();
         }
         // On load: if the flag is set, resume polling and show overlay
         try {
           if (localStorage.getItem(RECALC_FLAG) === '1') {
+            showToast();
             startPolling();
           }
         } catch (_) {}
