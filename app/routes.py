@@ -2411,7 +2411,10 @@ def update_race(race_id):
                 out.append(s_copy)
             return out
 
-        pruned = _prune_seasons_for_save(store.get('seasons', []), {str(new_race_id)})
+        # Include entrants for all races whose ids changed due to renumber
+        changed_new_ids = {str(v) for (k, v) in (mapping or {}).items() if v and v != k}
+        keep_ids = changed_new_ids or {str(new_race_id)}
+        pruned = _prune_seasons_for_save(store.get('seasons', []), keep_ids)
         # Persist only races/series/seasons to avoid touching settings unnecessarily
         save_data({'seasons': pruned})
         # Invalidate just this race cache and its season standings, then schedule forward-only recalculation
@@ -2562,8 +2565,9 @@ def update_race(race_id):
 
     # Renumber races in affected series (and original if moved)
     mapping_target = ds_renumber_races(target_series)
+    mapping_source: dict[str, str] = {}
     if target_series is not series_obj:
-        ds_renumber_races(series_obj)
+        mapping_source = ds_renumber_races(series_obj)
 
     # Determine final race id after any renumber (before scheduling)
     final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
@@ -2589,7 +2593,11 @@ def update_race(race_id):
             out.append(s_copy)
         return out
 
-    pruned = _prune_seasons_for_save(store.get('seasons', []), {str(final_race_id)})
+    # Include entrants for all races whose ids changed due to renumber (target and source series)
+    changed_new_ids_t = {str(v) for (k, v) in (mapping_target or {}).items() if v and v != k}
+    changed_new_ids_s = {str(v) for (k, v) in (mapping_source or {}).items() if v and v != k}
+    keep_ids = changed_new_ids_t | changed_new_ids_s | {str(final_race_id)}
+    pruned = _prune_seasons_for_save(store.get('seasons', []), keep_ids)
     # Persist only races/series/seasons to avoid unintended settings writes
     save_data({'seasons': pruned})
     redirect_series_id = target_series.get('series_id')
