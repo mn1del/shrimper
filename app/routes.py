@@ -272,7 +272,8 @@ def health_db():
         }
     try:
         import psycopg2  # type: ignore
-        with psycopg2.connect(url, connect_timeout=5) as conn:
+        from . import datastore_pg as _pg
+        with psycopg2.connect(url, **_pg._connect_kwargs()) as conn:
             # CREATE INDEX CONCURRENTLY requires autocommit
             try:
                 conn.autocommit = True
@@ -317,7 +318,8 @@ def health_indexes():
         }
     try:
         import psycopg2  # type: ignore
-        with psycopg2.connect(url, connect_timeout=5) as conn:
+        from . import datastore_pg as _pg
+        with psycopg2.connect(url, **_pg._connect_kwargs()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -412,7 +414,8 @@ def health_schema():
         }
     try:
         import psycopg2  # type: ignore
-        with psycopg2.connect(url, connect_timeout=5) as conn:
+        from . import datastore_pg as _pg
+        with psycopg2.connect(url, **_pg._connect_kwargs()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -557,7 +560,8 @@ def schema_upgrade():
         return {'ok': False, 'status': 'no_database_url'}
     try:
         import psycopg2  # type: ignore
-        with psycopg2.connect(url, connect_timeout=5) as conn:
+        from . import datastore_pg as _pg
+        with psycopg2.connect(url, **_pg._connect_kwargs()) as conn:
             with conn.cursor() as cur:
                 # Add column if missing
                 cur.execute(
