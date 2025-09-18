@@ -2479,6 +2479,7 @@ def update_race(race_id):
 
         entrants_list = race_obj.setdefault('competitors', [])
         existing = {int(e.get('competitor_id')): e for e in entrants_list if e.get('competitor_id') is not None}
+        pre_existing_ids = set(existing.keys())
 
         # Build a pre-race snapshot based on current (unsaved) edits to date/start_time
         try:
@@ -2559,7 +2560,23 @@ def update_race(race_id):
             except Exception:
                 # Skip invalid entries
                 continue
-        race_obj['competitors'] = normalized_existing
+        # Prune entrants that have no finish, no override, and no explicit status
+        pruned: list[dict] = []
+        for ent in normalized_existing:
+            ft = ent.get('finish_time')
+            has_finish = isinstance(ft, str) and ft.strip() != ''
+            has_override = ent.get('handicap_override') not in (None, '')
+            has_status = bool(ent.get('status'))
+            # Keep if this save explicitly clears an override for a previously present entrant
+            override_cleared = False
+            try:
+                cid_int = int(ent.get('competitor_id'))
+                override_cleared = (cid_int in ov_map and ov_map.get(cid_int) in (None, ''))
+            except Exception:
+                override_cleared = False
+            if has_finish or has_override or has_status or override_cleared:
+                pruned.append(ent)
+        race_obj['competitors'] = pruned
 
     race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
 
