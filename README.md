@@ -214,7 +214,7 @@ The app now uses integer competitor IDs end‑to‑end (DB FK to `competitors.id
 - Health/index endpoints: once the column rename is complete, remove compatibility logic that recognizes both `competitor_ref` and legacy `competitor_id` in the index checks. Files: `app/routes.py` (`/health/indexes`, `/admin/indexes/apply`).
 - Documentation refresh: update this README (and AGENTS.md if present) to describe competitor IDs as integers (`competitors.id`) throughout; remove any references to `C_<sail>`/`C_UNK_*` placeholder IDs. Ensure schema examples and index recommendations match the final column names.
 
-## Dev Notes: Recalculation Notifications (Diagnosis)
+## Dev Notes: Recalculation Notifications (Diagnosis + Fix)
 
 Context: When saving race edits, users sometimes see two separate progress indicators and, in some cases, the center-screen overlay appears to “hang”. The relevant code paths are:
 
@@ -227,8 +227,13 @@ Root cause of the perceived “hang”:
 - If a recalculation starts and finishes between polling intervals (very fast), the global overlay’s poller may never observe `in_progress = true`. In that case `recalc_observed_active` is never set and the overlay keeps showing until the long safety timeout triggers. Meanwhile the series page toast may hide quickly, leading to inconsistent behavior and the impression that the center overlay is stuck.
 - The duplication (global overlay + per‑page toast) creates two lifecycles that are not coordinated; they can disagree about visibility depending on which poll observed which state.
 
-Planned remediation (next steps in this branch):
+Implemented remediation:
 
-- Replace the center overlay and per‑page toast with a single, non‑blocking, bottom‑right toast defined once in `base.html` and used site‑wide.
-- Keep showing the toast immediately when a save triggers recalculation via `SignalRecalcStart()`.
-- Harden the lifecycle: if status is never observed active, auto‑hide after a short grace period (≤10s) instead of waiting for a 5‑minute safety timeout; if it is observed active, hide and perform exactly one reload when it becomes inactive.
+- Removed the center-screen overlay and the series page’s duplicate toast/poller. Added a single global bottom‑right toast in `app/templates/base.html` used site‑wide.
+- `SignalRecalcStart()` now immediately shows the global toast and locks the edit toggle while polling `/api/recalc/status`.
+- Lifecycle hardening:
+  - If status is observed active at least once, the page reloads exactly once when it becomes inactive; the toast remains visible through navigation.
+  - If status is never observed active (fast jobs), a 10s grace timer clears the toast and unlocks the UI without reloading.
+  - A 5‑minute absolute safety timeout remains as a backstop.
+
+Result: Users see exactly one unobtrusive progress indicator. It stays only as long as useful and no longer becomes a roadblock.
