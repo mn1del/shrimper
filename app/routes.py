@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, render_template, url_for, abort, request
+from flask import Blueprint, redirect, render_template, url_for, abort, request, current_app
 import json
 import importlib
 from datetime import datetime
@@ -2414,7 +2414,27 @@ def update_race(race_id):
         # Include entrants for all races whose ids changed due to renumber
         changed_new_ids = {str(v) for (k, v) in (mapping or {}).items() if v and v != k}
         keep_ids = changed_new_ids or {str(new_race_id)}
-        pruned = _prune_seasons_for_save(store.get('seasons', []), keep_ids)
+        # Safety net: ensure we aren't unintentionally dropping races
+        seasons_cur = store.get('seasons', [])
+        def _count_races(tree: list[dict]) -> int:
+            c = 0
+            for s in (tree or []):
+                for se in (s.get('series') or []):
+                    c += len(se.get('races') or [])
+            return c
+        pre_count = _count_races(seasons_cur)
+        pruned = _prune_seasons_for_save(seasons_cur, keep_ids)
+        post_count = _count_races(pruned)
+        try:
+            if current_app:
+                current_app.logger.debug(
+                    'save_payload_counts new_race pre=%d post=%d keep_ids=%d',
+                    pre_count, post_count, len(keep_ids)
+                )
+                if current_app.config.get('TESTING') and post_count < pre_count:
+                    raise AssertionError('Pruned payload has fewer races than pre-save tree')
+        except Exception:
+            pass
         # Persist only races/series/seasons to avoid touching settings unnecessarily
         save_data({'seasons': pruned})
         # Invalidate just this race cache and its season standings, then schedule forward-only recalculation
@@ -2614,7 +2634,27 @@ def update_race(race_id):
     changed_new_ids_t = {str(v) for (k, v) in (mapping_target or {}).items() if v and v != k}
     changed_new_ids_s = {str(v) for (k, v) in (mapping_source or {}).items() if v and v != k}
     keep_ids = changed_new_ids_t | changed_new_ids_s | {str(final_race_id)}
-    pruned = _prune_seasons_for_save(store.get('seasons', []), keep_ids)
+    # Safety net: ensure we aren't unintentionally dropping races
+    seasons_cur = store.get('seasons', [])
+    def _count_races(tree: list[dict]) -> int:
+        c = 0
+        for s in (tree or []):
+            for se in (s.get('series') or []):
+                c += len(se.get('races') or [])
+        return c
+    pre_count = _count_races(seasons_cur)
+    pruned = _prune_seasons_for_save(seasons_cur, keep_ids)
+    post_count = _count_races(pruned)
+    try:
+        if current_app:
+            current_app.logger.debug(
+                'save_payload_counts edit_race pre=%d post=%d keep_ids=%d renum_target=%d renum_source=%d',
+                pre_count, post_count, len(keep_ids), len(changed_new_ids_t), len(changed_new_ids_s)
+            )
+            if current_app.config.get('TESTING') and post_count < pre_count:
+                raise AssertionError('Pruned payload has fewer races than pre-save tree')
+    except Exception:
+        pass
     # Persist only races/series/seasons to avoid unintended settings writes
     save_data({'seasons': pruned})
     redirect_series_id = target_series.get('series_id')
