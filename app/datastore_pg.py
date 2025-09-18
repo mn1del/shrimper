@@ -398,34 +398,35 @@ def save_data(data: Dict[str, Any]) -> None:
                                     race.get("race_no"),
                                 ),
                             )
-                            # Replace entrants for this race for determinism
-                            cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
-                            for ent in race.get("competitors", []) or []:
-                                # Normalize finish_time: empty/whitespace -> NULL for TIME columns
-                                _ft = ent.get("finish_time")
-                                finish_val = None
-                                if _ft is not None:
-                                    s = str(_ft).strip()
-                                    finish_val = None if s == "" else s
-                                cid = ent.get("competitor_id")
-                                cid_int = int(cid) if cid is not None else None
-                                cur.execute(
-                                    """
-                                    INSERT INTO race_results (race_id, competitor_ref, initial_handicap, finish_time, handicap_override)
-                                    VALUES (%s, %s, %s, %s, %s)
-                                    ON CONFLICT (race_id, competitor_ref) DO UPDATE SET
-                                        initial_handicap = EXCLUDED.initial_handicap,
-                                        finish_time = EXCLUDED.finish_time,
-                                        handicap_override = EXCLUDED.handicap_override
-                                    """,
-                                    (
-                                        rid,
-                                        cid_int,
-                                        ent.get("initial_handicap"),
-                                        finish_val,
-                                        ent.get("handicap_override"),
-                                    ),
-                                )
+                            # Replace entrants for this race only when explicitly provided
+                            if "competitors" in race:
+                                cur.execute("DELETE FROM race_results WHERE race_id = %s", (rid,))
+                                for ent in (race.get("competitors") or []):
+                                    # Normalize finish_time: empty/whitespace -> NULL for TIME columns
+                                    _ft = ent.get("finish_time")
+                                    finish_val = None
+                                    if _ft is not None:
+                                        s = str(_ft).strip()
+                                        finish_val = None if s == "" else s
+                                    cid = ent.get("competitor_id")
+                                    cid_int = int(cid) if cid is not None else None
+                                    cur.execute(
+                                        """
+                                        INSERT INTO race_results (race_id, competitor_ref, initial_handicap, finish_time, handicap_override)
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (race_id, competitor_ref) DO UPDATE SET
+                                            initial_handicap = EXCLUDED.initial_handicap,
+                                            finish_time = EXCLUDED.finish_time,
+                                            handicap_override = EXCLUDED.handicap_override
+                                        """,
+                                        (
+                                            rid,
+                                            cid_int,
+                                            ent.get("initial_handicap"),
+                                            finish_val,
+                                            ent.get("handicap_override"),
+                                        ),
+                                    )
 
                 # Delete races no longer present (handles race deletions/renames)
                 try:
