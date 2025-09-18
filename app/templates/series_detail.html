@@ -180,6 +180,11 @@
   .delta { display: inline-flex; align-items: center; gap: 0.25rem; }
   .delta .icon { font-size: 0.85em; line-height: 1; }
 
+  /* Visual white separator for selected header cells */
+  .race-table-wrapper thead th.sep-right {
+    box-shadow: inset -1px 0 0 #ffffff; /* crisp 1px white divider on right edge */
+  }
+
   /* Post-Finish columns: light grey background */
   .race-table-wrapper tbody td.post-finish-col {
     background-color: #f5f5f5; /* light grey */
@@ -210,19 +215,19 @@
         <th style="width: 60px;">Hcp Pos</th>
         <th style="width: 150px;">Elapsed Time (hh:mm:ss)</th>
         <th style="width: 120px;">Adj Time (hh:mm:ss)</th>
-        <th style="width: 150px;">Sailor</th>
+        <th class="sep-right" style="width: 150px;">Sailor</th>
         <th style="width: 150px;">Boat</th>
         <th style="width: 80px;">Sail No.</th>
         <th style="width: 110px;">Hcp (s/hr)</th>
         <th style="width: 140px;">Adjusted Hcp Change (s/hr)</th>
-        <th class="col-revised-hcp" style="width: 140px;">Revised Handicap</th>
+        <th class="col-revised-hcp sep-right" style="width: 140px;">Revised Handicap</th>
         <th style="width: 120px;">Finish Time (hh:mm:ss)</th>
         <th style="width: 60px;">Abs Pos</th>
         <!-- Remaining columns in their previous relative order -->
-        <th class="col-race-pts" style="width: 70px;">Race Pts (Trad)</th>
+        <th class="col-race-pts sep-right" style="width: 70px;">Race Pts (Trad)</th>
         <th class="col-league-pts" style="width: 70px;">League Pts (Adj)</th>
         <th style="width: 110px;">On Course Time (s)</th>
-        <th style="width: 110px;">Hcp Allowance (s)</th>
+        <th class="sep-right" style="width: 110px;">Hcp Allowance (s)</th>
         <th style="width: 120px;">Full Hcp Change (s/hr)</th>
         <th style="width: 80px;">Fleet Adj (%)</th>
       </tr>
