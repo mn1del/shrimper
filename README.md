@@ -213,3 +213,22 @@ The app now uses integer competitor IDs end‑to‑end (DB FK to `competitors.id
 - Tests parity (then simplify): migrate tests to use integer competitor IDs directly (update fixtures and expected maps). After that, remove the conversion layer added in `tests/conftest.py` that translates between string IDs (e.g., "C1") and ints.
 - Health/index endpoints: once the column rename is complete, remove compatibility logic that recognizes both `competitor_ref` and legacy `competitor_id` in the index checks. Files: `app/routes.py` (`/health/indexes`, `/admin/indexes/apply`).
 - Documentation refresh: update this README (and AGENTS.md if present) to describe competitor IDs as integers (`competitors.id`) throughout; remove any references to `C_<sail>`/`C_UNK_*` placeholder IDs. Ensure schema examples and index recommendations match the final column names.
+
+## Dev Notes: Recalculation Notifications (Diagnosis)
+
+Context: When saving race edits, users sometimes see two separate progress indicators and, in some cases, the center-screen overlay appears to “hang”. The relevant code paths are:
+
+- Global overlay in `app/templates/base.html` (`#recalcOverlay`). It is shown by `window.SignalRecalcStart()` and a poller that calls `GET /api/recalc/status` every 1.5s. The overlay only clears after the poller either (a) observes the status become active at least once and then inactive, or (b) hits a long safety timeout (currently 5 minutes). It uses `localStorage` keys `recalc_active`, `recalc_started_at`, and `recalc_observed_active` to coordinate across tabs.
+- Series page toast in `app/templates/series_detail.html` (`#recalcToast`). It also polls `/api/recalc/status?race_id=...` every 1.5s and shows/hides a bottom‑right toast separately from the global overlay. The series page calls `SignalRecalcStart()` as well, causing both UIs to activate.
+- Backend status: `app/routes.py` tracks active background recalculations via the in‑process set `_RECALC_ACTIVE`. The `/api/recalc/status` endpoint reports whether that set is non‑empty (or contains the specific race_id when provided).
+
+Root cause of the perceived “hang”:
+
+- If a recalculation starts and finishes between polling intervals (very fast), the global overlay’s poller may never observe `in_progress = true`. In that case `recalc_observed_active` is never set and the overlay keeps showing until the long safety timeout triggers. Meanwhile the series page toast may hide quickly, leading to inconsistent behavior and the impression that the center overlay is stuck.
+- The duplication (global overlay + per‑page toast) creates two lifecycles that are not coordinated; they can disagree about visibility depending on which poll observed which state.
+
+Planned remediation (next steps in this branch):
+
+- Replace the center overlay and per‑page toast with a single, non‑blocking, bottom‑right toast defined once in `base.html` and used site‑wide.
+- Keep showing the toast immediately when a save triggers recalculation via `SignalRecalcStart()`.
+- Harden the lifecycle: if status is never observed active, auto‑hide after a short grace period (≤10s) instead of waiting for a 5‑minute safety timeout; if it is observed active, hide and perform exactly one reload when it becomes inactive.
