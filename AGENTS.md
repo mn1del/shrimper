@@ -36,7 +36,7 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 
 You are a senior engineer. When on the main branch and you are given a new task to work on: 
 
-1) create a new branch and draft a branch spec for the task. Output only valid JSON matching this schema:
+1) create a new branch (prefix: "codex/") and draft a branch spec for the task. Output only valid JSON matching this schema:
 
 <branch_spec_schema>
 { "branch": "string-kebab",

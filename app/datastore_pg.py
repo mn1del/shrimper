@@ -12,6 +12,48 @@ from contextlib import contextmanager
 _POOL: Optional[pg_pool.AbstractConnectionPool] = None
 
 
+def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except Exception:
+        return default
+
+
+def _connect_kwargs() -> Dict[str, Any]:
+    """Common connection kwargs: connect_timeout + TCP keepalives.
+
+    Defaults:
+      - connect_timeout: 10 seconds (overridable via DB_CONNECT_TIMEOUT)
+      - keepalives: enabled by default; can be disabled by DB_KEEPALIVES=0
+      - keepalive tunables applied if provided (IDLE/INTERVAL/COUNT)
+    """
+    kwargs: Dict[str, Any] = {}
+    # Reasonable default timeout unless explicitly set via env
+    ct_env = _env_int("DB_CONNECT_TIMEOUT")
+    kwargs["connect_timeout"] = ct_env if ct_env is not None else 10
+
+    # Keepalives: enable by default; allow explicit disable
+    ka_env = os.environ.get("DB_KEEPALIVES")
+    if ka_env is None:
+        kwargs["keepalives"] = 1
+    else:
+        kwargs["keepalives"] = 0 if str(ka_env).lower() in ("0", "false") else 1
+
+    idle = _env_int("DB_KEEPALIVES_IDLE")
+    if idle is not None:
+        kwargs["keepalives_idle"] = idle
+    interval = _env_int("DB_KEEPALIVES_INTERVAL")
+    if interval is not None:
+        kwargs["keepalives_interval"] = interval
+    count = _env_int("DB_KEEPALIVES_COUNT")
+    if count is not None:
+        kwargs["keepalives_count"] = count
+    return kwargs
+
+
 def init_pool(minconn: int = 1, maxconn: int = 10) -> None:
     """Initialize a global connection pool using DATABASE_URL.
 
@@ -24,7 +66,7 @@ def init_pool(minconn: int = 1, maxconn: int = 10) -> None:
     if not url:
         # Leave _POOL as None; callers will fall back to direct connections
         return
-    _POOL = pg_pool.ThreadedConnectionPool(minconn, maxconn, dsn=url)
+    _POOL = pg_pool.ThreadedConnectionPool(minconn, maxconn, dsn=url, **_connect_kwargs())
 
 
 @contextmanager
@@ -38,31 +80,63 @@ def _get_conn():
     if not url:
         raise RuntimeError("DATABASE_URL not set; configure a PostgreSQL connection string")
     if _POOL is not None:
-        conn = _POOL.getconn()
-        try:
+        retried = False
+        while True:
+            conn = _POOL.getconn()
+            # Lightweight liveness check: SELECT 1
+            healthy = True
             try:
-                yield conn
-            except Exception:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                # Clear implicit transaction started by SELECT when autocommit is off
                 try:
-                    conn.rollback()
+                    if not getattr(conn, "autocommit", False):
+                        conn.rollback()
                 except Exception:
                     pass
-                raise
-        finally:
-            # Ensure connection not left in a transaction
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                healthy = False
+            except Exception:
+                # Treat unexpected ping errors as unhealthy to be safe
+                healthy = False
+
+            if not healthy:
+                # Discard the broken connection and retry once
+                try:
+                    _POOL.putconn(conn, close=True)
+                except Exception:
+                    pass
+                if retried:
+                    # Second failure: surface error
+                    raise psycopg2.OperationalError("Failed to acquire healthy DB connection after retry")
+                retried = True
+                continue
+
+            # Healthy: yield and ensure cleanup + return to pool afterwards
             try:
-                if getattr(conn, "closed", 0) == 0 and not conn.autocommit:
-                    # If caller didn't commit/rollback and transaction is open, rollback
-                    # status 0 = idle, 1 = active, 2 = intrans, 3 = inerror (psycopg2 docs)
-                    if getattr(conn, "status", 0) in (1, 2, 3):
-                        try:
-                            conn.rollback()
-                        except Exception:
-                            pass
+                try:
+                    yield conn
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    raise
             finally:
-                _POOL.putconn(conn)
+                # Ensure connection not left in a transaction
+                try:
+                    if getattr(conn, "closed", 0) == 0 and not getattr(conn, "autocommit", False):
+                        # status 0 = idle, 1 = active, 2 = intrans, 3 = inerror
+                        if getattr(conn, "status", 0) in (1, 2, 3):
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                finally:
+                    _POOL.putconn(conn)
+            break
     else:
-        conn = psycopg2.connect(url)
+        conn = psycopg2.connect(url, **_connect_kwargs())
         try:
             try:
                 yield conn
