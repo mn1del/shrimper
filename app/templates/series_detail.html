@@ -180,25 +180,10 @@
   .delta { display: inline-flex; align-items: center; gap: 0.25rem; }
   .delta .icon { font-size: 0.85em; line-height: 1; }
 
-  /* Body cell styling from Finish Time column (10th) onwards */
-  .race-table-wrapper tbody td:nth-child(n+10) {
-    background-color: #343a40; /* dark body */
-    color: #ffffff;            /* light text */
-  }
-  /* Ensure links remain visible */
-  .race-table-wrapper tbody td:nth-child(n+10) a { color: #ffffff; }
-  /* Improve controls contrast inside inverted cells */
-  .race-table-wrapper tbody td:nth-child(n+10) input.form-control {
-    background-color: #495057;
-    color: #ffffff;
-    border-color: #6c757d;
-  }
-  .race-table-wrapper tbody td:nth-child(n+10) .btn {
-    color: #ffffff;
-    border-color: #adb5bd;
-  }
-  .race-table-wrapper tbody td:nth-child(n+10) .btn:hover {
-    background-color: rgba(255,255,255,0.08);
+  /* Post-Finish columns: light grey background */
+  .race-table-wrapper tbody td.post-finish-col {
+    background-color: #f5f5f5; /* light grey */
+    color: #212529;            /* standard text */
   }
   /* Finish Time column: light blue background and normal control contrast */
   .race-table-wrapper tbody td.finish-time-cell {
@@ -280,14 +265,14 @@
             <button type="button" class="btn btn-outline-secondary btn-sm clear-time" aria-label="Clear finish time" title="Clear">&times;</button>
           </div>
         </td>
-        <td class="abs-pos">{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
+        <td class="abs-pos post-finish-col">{{ result.abs_pos|int if result.abs_pos is defined and result.abs_pos is not none else '' }}</td>
         <!-- Remaining columns in their previous relative order -->
-        <td class="race-pts">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
-        <td class="league-pts">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
-        <td class="on-course">{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
-        <td class="allowance">{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
-        <td class="full-delta">{{ result.full_delta|round|int if result.full_delta is defined and result.full_delta is not none else '' }}</td>
-        <td class="fleet-adjustment-cell">{{ fleet_adjustment if fleet_adjustment is not none else '' }}</td>
+        <td class="race-pts post-finish-col">{{ result.race_pts|round|int if result.race_pts is defined and result.race_pts is not none else '' }}</td>
+        <td class="league-pts post-finish-col">{{ result.league_pts|round|int if result.league_pts is defined and result.league_pts is not none else '' }}</td>
+        <td class="on-course post-finish-col">{{ result.on_course_secs|round|int if result.on_course_secs is defined and result.on_course_secs is not none else '' }}</td>
+        <td class="allowance post-finish-col">{{ result.allowance|round|int if result.allowance is defined and result.allowance is not none else '' }}</td>
+        <td class="full-delta post-finish-col">{{ result.full_delta|round|int if result.full_delta is defined and result.full_delta is not none else '' }}</td>
+        <td class="fleet-adjustment-cell post-finish-col">{{ fleet_adjustment if fleet_adjustment is not none else '' }}</td>
       </tr>
     {% endfor %}
     </tbody>
