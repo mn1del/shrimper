@@ -81,6 +81,11 @@
         let pollTimer = null;
         const toastEl = document.getElementById('globalRecalcToast');
         const toastObj = (toastEl && window.bootstrap) ? new window.bootstrap.Toast(toastEl) : null;
+        let toastVisible = false;
+        if (toastEl) {
+          toastEl.addEventListener('shown.bs.toast', () => { toastVisible = true; });
+          toastEl.addEventListener('hidden.bs.toast', () => { toastVisible = false; });
+        }
         const RECALC_FLAG = 'recalc_active';
         const RECALC_STARTED_AT = 'recalc_started_at';
         const RECALC_OBSERVED_ACTIVE = 'recalc_observed_active';
@@ -100,8 +105,8 @@
             toggle.removeAttribute('title');
           }
         }
-        function showToast() { try { toastObj && toastObj.show(); } catch (_) {} }
-        function hideToast() { try { toastObj && toastObj.hide(); } catch (_) {} }
+        function showToast() { try { if (toastObj && !toastVisible) toastObj.show(); } catch (_) {} }
+        function hideToast() { try { if (toastObj && toastVisible) toastObj.hide(); } catch (_) {} }
         async function fetchStatusAny() {
           try {
             const res = await fetch('/api/recalc/status', { cache: 'no-store' });
