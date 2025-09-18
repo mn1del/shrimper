@@ -168,6 +168,41 @@ Note: If you change or upgrade the Bootstrap CDN version/URL, update the SRI has
 - Recommended indexes can be inspected at `/health/indexes` and applied via `POST /admin/indexes/apply` (uses `CREATE INDEX CONCURRENTLY`).
 - To skip the full recalculation during app startup (useful on large datasets), set `RECALC_ON_STARTUP=0` in the environment.
 
+## Database Connections & Resilience
+
+The app uses a psycopg2 `ThreadedConnectionPool` with a lightweight liveness check and TCP keepalives to avoid stale-idle disconnects that surface as:
+
+"psycopg2.OperationalError: SSL connection has been closed unexpectedly"
+
+- Defaults: connections are created with `connect_timeout=10` and TCP keepalives enabled.
+- On checkout: a fast `SELECT 1` ping runs; if it fails, the connection is discarded and reacquired once transparently.
+- Direct connects (health/admin routes) use the same options as the pool.
+
+Environment variables to tune behavior:
+
+- `DB_CONNECT_TIMEOUT`: seconds for initial connect (default 10)
+- `DB_KEEPALIVES`: set to `0` to disable (default enabled)
+- `DB_KEEPALIVES_IDLE`: seconds of idle before sending keepalive probes
+- `DB_KEEPALIVES_INTERVAL`: seconds between keepalive probes
+- `DB_KEEPALIVES_COUNT`: number of failed probes before the OS deems the connection dead
+
+Recommended starting point for providers that drop idle connections aggressively (e.g., managed Postgres, PgBouncer):
+
+```bash
+export DB_CONNECT_TIMEOUT=10
+export DB_KEEPALIVES=1
+export DB_KEEPALIVES_IDLE=30
+export DB_KEEPALIVES_INTERVAL=10
+export DB_KEEPALIVES_COUNT=3
+```
+
+Troubleshooting tips:
+
+- Use `/health/db` to verify connectivity and server version.
+- Use `/health/indexes` to check for recommended indexes; POST to `/admin/indexes/apply` to create missing ones concurrently.
+- Use `/health/schema` to confirm `race_results.handicap_override` exists and `finish_time` is TIME; POST to `/admin/schema/upgrade` to fix.
+- If errors persist, lower `DB_KEEPALIVES_IDLE` and `DB_KEEPALIVES_INTERVAL` values to match your platform’s idle timeouts.
+
 ## Optional To‑Do (Future Cleanup)
 
 The app now uses integer competitor IDs end‑to‑end (DB FK to `competitors.id`) with no sail‑number fallbacks. These items can further simplify and harden the codebase:
