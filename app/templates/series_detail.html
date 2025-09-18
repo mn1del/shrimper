@@ -322,14 +322,8 @@
   </div>
   </div>
 <script src="{{ url_for('static', filename='sortable.js') }}"></script>
-<!-- Background recalculation toast -->
+<!-- Settings update toast (preview recalculated) -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1080;">
-  <div id="recalcToast" class="toast align-items-center text-bg-secondary border-0" role="status" aria-live="polite" aria-atomic="true" data-bs-autohide="false">
-    <div class="d-flex">
-      <div class="toast-body">Background recalculation in progress…</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-    </div>
-  </div>
   <div id="settingsToast" class="toast align-items-center text-bg-info border-0 mt-2" role="status" aria-live="polite" aria-atomic="true" data-bs-delay="2000">
     <div class="d-flex">
       <div class="toast-body">Scoring settings updated; preview recalculated.</div>
@@ -372,14 +366,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const changeList = document.getElementById('changeList');
   const confirmSave = document.getElementById('confirmSave');
   const deleteBtn = document.getElementById('deleteRace');
-  const recalcToastEl = document.getElementById('recalcToast');
-  const recalcToast = recalcToastEl ? new bootstrap.Toast(recalcToastEl) : null;
   const settingsToastEl = document.getElementById('settingsToast');
   const settingsToast = settingsToastEl ? new bootstrap.Toast(settingsToastEl) : null;
 
   let orig = {};
   let pendingAction = null;
-  let recalcPoll = null;
   let fetchingScoring = null;
 
   // Normalize user-entered times so that:
@@ -593,36 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function checkRecalcOnce() {
-    try {
-      // Use literal path to avoid BuildError if endpoint name not registered
-      const url = new URL('/api/recalc/status', window.location.origin);
-      url.searchParams.set('race_id', '{{ selected_race.race_id }}');
-      const res = await fetch(url.toString());
-      const data = await res.json();
-      const active = !!data?.in_progress;
-      if (active) {
-        if (recalcToast && !recalcToastEl.classList.contains('show')) recalcToast.show();
-      } else {
-        if (recalcToast && recalcToastEl.classList.contains('show')) recalcToast.hide();
-      }
-      return active;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function startRecalcPolling() {
-    if (!recalcToast) return;
-    if (recalcPoll) return;
-    recalcPoll = setInterval(async () => {
-      const active = await checkRecalcOnce();
-      if (!active) {
-        clearInterval(recalcPoll);
-        recalcPoll = null;
-      }
-    }, 1500);
-  }
+  // Per-page recalculation toast/polling removed in favor of global controller in base.html
 
   function hasChanges() {
     if (seriesSelect.value !== orig.series_id) return true;
@@ -1254,13 +1216,10 @@ document.addEventListener('DOMContentLoaded', () => {
       updateLocked();
       // Prevent users from unlocking while processing
       if (toggle) toggle.disabled = true;
-      // Show recalculation feedback right away
-      if (recalcToast) recalcToast.show();
-      // Signal global overlay and polling across pages
+      // Signal global recalculation UI/polling across pages
       if (window.SignalRecalcStart) {
         try { window.SignalRecalcStart(); } catch (_) {}
       }
-      startRecalcPolling();
       // Proceed with save
       saveChanges();
     }
@@ -1574,8 +1533,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (_) {}
   }
   updateLocked();
-  // On page load, if background recalc is active, show toast and start polling
-  checkRecalcOnce().then(active => { if (active) startRecalcPolling(); });
+  // Global controller in base.html will handle any background recalc state on load
 });
 </script>
 {% endif %}
