@@ -1005,6 +1005,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   liveFormatTimeInput(startTime, false);
   finishInputs.forEach(inp => liveFormatTimeInput(inp, true));
+  // Ensure Start Time selects hours on first mouse/touch interaction as well
+  (function ensureStartHourOnFirstPointer() {
+    if (!startTime) return;
+    function selectHoursOnce(e) {
+      if (startTime.disabled) return;
+      if (startTime.dataset.pointerHourInit === '1') return;
+      // Prevent native caret placement, then focus and select hours
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      if (document.activeElement !== startTime) startTime.focus();
+      try { startTime.setSelectionRange(0, 2); } catch (_) {}
+      startTime.dataset.seg = '0';
+      startTime.dataset.segpos = '0';
+      startTime.dataset.pointerHourInit = '1';
+    }
+    startTime.addEventListener('mousedown', selectHoursOnce, { capture: true });
+    startTime.addEventListener('touchstart', selectHoursOnce, { capture: true });
+  })();
   // Custom tab navigation: keep focus in same column, move by row
   function focusByRow(currentEl, selector, dir = 1) {
     if (!currentEl) return;
