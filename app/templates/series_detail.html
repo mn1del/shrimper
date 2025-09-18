@@ -199,11 +199,8 @@
     color: #212529;            /* inherit dark text for outline btn */
     border-color: #6c757d;     /* secondary outline */
   }
-  /* Keep invalid finish time clearly visible on dark background */
-  .race-table-wrapper tbody td.finish-time-cell.time-invalid {
-    background-color: #6b1a1a !important; /* dark red */
-    color: #ffffff;
-  }
+  /* Invalid finish time on light background remains readable */
+  /* (dark inversion removed; rely on the earlier light red rule) */
 </style>
 
 <div class="table-responsive race-table-wrapper">
