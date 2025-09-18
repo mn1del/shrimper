@@ -91,8 +91,8 @@ def test_series_detail_embeds_scoring_and_seeds(client):
     res = client.get(f"/series/SER_2025_Test?race_id={rid}")
     assert res.status_code == 200
     html = res.get_data(as_text=True)
-    # Ensure script injections exist
+    # Ensure script injections exist (snapshot version is no longer embedded)
     assert "window.SCORING_SETTINGS" in html
     assert "window.SCORING_VERSION" in html
     assert "window.PRE_RACE_SEEDS" in html
-    assert "window.PRE_SNAPSHOT_VERSION" in html
+    assert "window.PRE_SNAPSHOT_VERSION" not in html

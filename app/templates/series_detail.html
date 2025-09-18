@@ -90,8 +90,6 @@
   // Embedded pre-race seeds (seconds per hour) for this race
   // Map: { competitor_id: initial_handicap_s_per_hr }
   window.PRE_RACE_SEEDS = {{ (pre_race_seeds or {}) | tojson }};
-  // Snapshot version guard (hash of seeds + scoring version)
-  window.PRE_SNAPSHOT_VERSION = {{ (pre_snapshot_version or '') | tojson }};
   // Example shape:
   // SCORING_SETTINGS = { version, handicap_delta_by_rank: [{rank, delta_s_per_hr}], league_points_by_rank: [{rank, points}], fleet_size_factor: [{finishers, factor}] }
   // SCORING_VERSION is an integer counter incremented on settings save.

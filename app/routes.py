@@ -1483,13 +1483,6 @@ def race_new():
     breadcrumbs = [('Races', url_for('main.races')), ('Create New Race', None)]
     # For a new race, entrant-only: no seeds yet (no entrants visible)
     pre_race_seeds = {}
-    try:
-        settings_for_hash = ds_get_settings() or {}
-        scoring_hash = _scoring_content_hash(settings_for_hash)
-        _snap_data = json.dumps({'seeds': pre_race_seeds, 'scoring_hash': scoring_hash}, sort_keys=True)
-        pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
-    except Exception:
-        pre_snapshot_version = ''
     return render_template(
         'series_detail.html',
         title='Create New Race',
@@ -1505,7 +1498,6 @@ def race_new():
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
         pre_race_seeds=pre_race_seeds,
-        pre_snapshot_version=pre_snapshot_version,
     )
 #</getdata>
 
@@ -1982,14 +1974,7 @@ def series_detail(series_id):
     except Exception:
         pass
     pre_race_seeds = {int(k): int(v) for k, v in (pre_race_seeds_full or {}).items() if (not entrant_ids) or (int(k) in entrant_ids)}
-    # Compute a snapshot version hash from entrant-only seeds + scoring content hash
-    try:
-        # Use finisher_count computed earlier when results_list was built
-        scoring_hash = _scoring_content_hash_filtered(scoring_settings, finisher_count)
-        _snap_data = json.dumps({'seeds': pre_race_seeds, 'scoring_hash': scoring_hash}, sort_keys=True)
-        pre_snapshot_version = hashlib.sha1(_snap_data.encode('utf-8')).hexdigest()
-    except Exception:
-        pre_snapshot_version = ''
+    # No longer compute a pre-snapshot version for the client.
     return render_template(
         'series_detail.html',
         title=series.get('name', series_id),
@@ -2006,7 +1991,6 @@ def series_detail(series_id):
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
         pre_race_seeds=pre_race_seeds,
-        pre_snapshot_version=pre_snapshot_version,
     )
 
 
