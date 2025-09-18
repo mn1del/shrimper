@@ -2390,9 +2390,30 @@ def update_race(race_id):
         # The last race is the one we added
         new_race = series_obj['races'][-1]
         new_race_id = new_race.get('race_id')
-        # Persist
+        # Persist with minimal entrants writes: include 'competitors' only for the new race
+        def _prune_seasons_for_save(seasons: list[dict], keep_ids: set[str]) -> list[dict]:
+            out: list[dict] = []
+            for season in (seasons or []):
+                s_copy = dict(season)
+                series_list = []
+                for series in (season.get('series') or []):
+                    se_copy = dict(series)
+                    races_out = []
+                    for race in (series.get('races') or []):
+                        r_copy = dict(race)
+                        rid = r_copy.get('race_id')
+                        if rid not in keep_ids and 'competitors' in r_copy:
+                            r_copy.pop('competitors', None)
+                        races_out.append(r_copy)
+                    se_copy['races'] = races_out
+                    series_list.append(se_copy)
+                s_copy['series'] = series_list
+                out.append(s_copy)
+            return out
+
+        pruned = _prune_seasons_for_save(store.get('seasons', []), {str(new_race_id)})
         # Persist only races/series/seasons to avoid touching settings unnecessarily
-        save_data({'seasons': store.get('seasons', [])})
+        save_data({'seasons': pruned})
         # Invalidate just this race cache and its season standings, then schedule forward-only recalculation
         try:
             _cache_delete_race(new_race_id)
@@ -2544,12 +2565,33 @@ def update_race(race_id):
     if target_series is not series_obj:
         ds_renumber_races(series_obj)
 
-    # Persist fast, schedule recalculation in background
-    # Persist only races/series/seasons to avoid unintended settings writes
-    save_data({'seasons': store.get('seasons', [])})
-
     # Determine final race id after any renumber (before scheduling)
     final_race_id = mapping_target.get(race_id, race_obj.get('race_id'))
+
+    # Persist fast with minimal entrants writes: include 'competitors' only for edited race
+    def _prune_seasons_for_save(seasons: list[dict], keep_ids: set[str]) -> list[dict]:
+        out: list[dict] = []
+        for season in (seasons or []):
+            s_copy = dict(season)
+            series_list = []
+            for series in (season.get('series') or []):
+                se_copy = dict(series)
+                races_out = []
+                for race in (series.get('races') or []):
+                    r_copy = dict(race)
+                    rid = r_copy.get('race_id')
+                    if rid not in keep_ids and 'competitors' in r_copy:
+                        r_copy.pop('competitors', None)
+                    races_out.append(r_copy)
+                se_copy['races'] = races_out
+                series_list.append(se_copy)
+            s_copy['series'] = series_list
+            out.append(s_copy)
+        return out
+
+    pruned = _prune_seasons_for_save(store.get('seasons', []), {str(final_race_id)})
+    # Persist only races/series/seasons to avoid unintended settings writes
+    save_data({'seasons': pruned})
     redirect_series_id = target_series.get('series_id')
 
     # Targeted cache invalidation for current race and its season
