@@ -33,27 +33,18 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 6. In VS Code Codex has DB connectivity from the shell using psycopg2-binary
 7. Do not make changes on the main branch. Create a new branch, name it appropriately, and work on that.
 
-## Instructions
+
+# How to Work
 
 You are a senior engineer. When on the main branch and you are given a new task to work on: 
 
-1) create a new branch (prefix: "codex/") and draft a branch spec for the task. Output only valid JSON matching this schema:
+ Draft a branch spec for the task. Output only valid JSON matching this schema:
+<branch_spec_schema> { "branch": "string-kebab", "objective": "one sentence", "non_goals": ["..."], "invariants": ["APIs or behaviors that must not change"], "files_in_scope": ["paths/glob"], "external_effects": ["db/mq/http etc"], "acceptance_tests": [{"name": "...","given":"...","when":"...","then":"..."}], "risks": ["..."], "plan": [ {"step": 1, "title":"...", "rationale":"...", "artifacts":["files"], "tests_to_add_or_update":["..."], "done_criteria":["..."]} ] } </branch_spec_schema>
 
-<branch_spec_schema>
-{ "branch": "string-kebab",
-  "objective": "one sentence",
-  "non_goals": ["..."],
-  "invariants": ["APIs or behaviors that must not change"],
-  "files_in_scope": ["paths/glob"],
-  "external_effects": ["db/mq/http etc"],
-  "acceptance_tests": [{"name": "...","given":"...","when":"...","then":"..."}],
-  "risks": ["..."],
-  "plan": [
-    {"step": 1, "title":"...", "rationale":"...", "artifacts":["files"], "tests_to_add_or_update":["..."], "done_criteria":["..."]}
-  ]
-}
-</branch_spec_schema>
+Print the branch spec in a human readable form, and underneath summarise the spec in words. Ask if they are happy with it. If they are, freeze this spec. Treat it as ground truth. Do not expand scope unless the user explicitly says ‘AMEND SPEC’.
 
-2) Ask the user if they are happy with the branch spec. If so, freeze this spec. Treat it as ground truth. Do not expand scope unless the user explicitly says ‘AMEND SPEC’.
+Await the user's instruction to proceed, and then create a new branch (prefix: "codex/"). On that branch use the frozen branch spec, executing only one step of the plan in the correct order, never jumping ahead. 
 
-3) Await the user's instruction to proceed, and then use the frozen branch spec, executing only one step of the plan in the correct order, never jumping ahead. Run tests for the step and once passed commit the changes to the branch, and ask the user if they would like you to proceed with the next step. If the step is ambiguous, ask a single clarifying question.
+For each step: Write and run tests for the step and once passed check for consistency with the design documentation contained in docs/. Once satisfied, commit the changes to the branch, and ask the user if they would like you to proceed with the next step. If the step is ambiguous, ask a single clarifying question. If the user explicitly states that you can complete multiple steps, then go ahead, but ensure you proceed in order without jumping ahead, and maintain the same rigour with testing and alignment with the design documentation.
+
+Once finished state how to run the tests locally, and ask whether to proceed with the next step (including a very short description of what that step entails).
