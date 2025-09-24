@@ -1,38 +1,54 @@
 {% extends 'base.html' %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fleet.css') }}">
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1>Fleet</h1>
-  <div>
-    <button type="button" class="btn btn-success me-2 d-none" id="saveBtn">Save Changes</button>
-    <button type="button" class="btn btn-danger me-2 d-none" id="cancelBtn">Cancel Changes</button>
-    <button type="button" class="btn btn-outline-secondary" id="editToggle">🔒</button>
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+  <h1 class="mb-2 mb-md-0">Fleet</h1>
+  <div class="d-flex align-items-center fleet-toolbar">
+    <button type="button" class="btn btn-primary" id="addCompetitor" disabled>Add Competitor</button>
+    <button type="button" class="btn btn-success d-none" id="saveBtn">Save Changes</button>
+    <button type="button" class="btn btn-danger d-none" id="cancelBtn">Cancel Changes</button>
+    <button type="button" class="btn btn-outline-secondary" id="editToggle" title="Unlock editing">🔒</button>
   </div>
- </div>
-<div class="mb-3">
-  <button type="button" class="btn btn-primary d-none" id="addCompetitor">Add Competitor</button>
 </div>
 <div id="saveWarning" class="alert alert-warning d-none" role="alert"></div>
-<table class="table table-striped" id="fleetTable">
-  <thead>
-    <tr><th>Sailor</th><th>Boat</th><th>Sail No.</th><th>Starting Hcp</th><th>Current Hcp</th></tr>
-  </thead>
-  <tbody>
-    {% if fleet %}
-      {% for competitor in fleet %}
-        <tr data-id="{{ competitor.competitor_id }}">
-          <td><input class="form-control" value="{{ competitor.sailor_name or '' }}" disabled></td>
-          <td><input class="form-control" value="{{ competitor.boat_name }}" disabled></td>
-          <td><input class="form-control" value="{{ competitor.sail_no }}" disabled></td>
-          <td><input class="form-control" value="{{ competitor.starting_handicap_s_per_hr }}" disabled></td>
-          <td>{{ competitor.current_handicap_s_per_hr }}</td>
+<div class="table-responsive fleet-table-container">
+  <table class="table table-striped align-middle" id="fleetTable">
+    <thead>
+      <tr>
+        <th scope="col">Sailor</th>
+        <th scope="col">Boat</th>
+        <th scope="col">Sail No.</th>
+        <th scope="col">Starting Hcp</th>
+        <th scope="col">Current Hcp</th>
+        <th scope="col" class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if fleet %}
+        {% for competitor in fleet %}
+        <tr data-id="{{ competitor.competitor_id }}" data-row-key="existing-{{ loop.index0 }}">
+          <td><input class="form-control" value="{{ competitor.sailor_name or '' }}" disabled autocomplete="name" data-field="sailor"></td>
+          <td><input class="form-control" value="{{ competitor.boat_name }}" disabled autocomplete="organization-title" data-field="boat"></td>
+          <td><input class="form-control" value="{{ competitor.sail_no }}" disabled autocomplete="off" data-field="sailno"></td>
+          <td><input class="form-control" value="{{ competitor.starting_handicap_s_per_hr }}" disabled autocomplete="off" inputmode="decimal" data-field="starting"></td>
+          <td data-cell="current-hcp">{{ competitor.current_handicap_s_per_hr }}</td>
+          <td class="text-end">
+            <button type="button" class="btn btn-outline-danger btn-sm delete-row" disabled title="Remove competitor">Delete</button>
+          </td>
         </tr>
-      {% endfor %}
-    {% else %}
-      <tr><td colspan="5" class="text-muted">No competitors.</td></tr>
-    {% endif %}
-  </tbody>
-</table>
+        {% endfor %}
+      {% else %}
+        <tr data-empty="1">
+          <td colspan="6" class="text-muted">No competitors yet.</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
 <div class="modal fade" id="confirmModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
     <div class="modal-content">
@@ -52,176 +68,359 @@
 </div>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  let locked = true;
+  const table = document.getElementById('fleetTable');
+  if (!table) return;
+
+  const tbody = table.querySelector('tbody');
   const toggle = document.getElementById('editToggle');
   const addBtn = document.getElementById('addCompetitor');
   const saveBtn = document.getElementById('saveBtn');
   const cancelBtn = document.getElementById('cancelBtn');
-  const tbody = document.querySelector('#fleetTable tbody');
+  const warning = document.getElementById('saveWarning');
   const confirmModalEl = document.getElementById('confirmModal');
-  const confirmModal = new bootstrap.Modal(confirmModalEl);
   const changeList = document.getElementById('changeList');
   const confirmSave = document.getElementById('confirmSave');
-  const warning = document.getElementById('saveWarning');
+  const confirmModal = new bootstrap.Modal(confirmModalEl);
+
+  let locked = true;
   let orig = [];
-
-  function captureOrig() {
-    orig = Array.from(tbody.querySelectorAll('tr')).map(tr => {
-      const inputs = tr.querySelectorAll('input');
-      return {
-        cid: tr.dataset.id || null,
-        sailor: inputs[0].value,
-        boat: inputs[1].value,
-        sailno: inputs[2].value,
-        hcp: inputs[3].value,
-        curr: tr.cells[4].textContent.trim()
-      };
-    });
-  }
-
-  function revertValues() {
-    tbody.innerHTML = '';
-    orig.forEach(o => {
-      const tr = document.createElement('tr');
-      if (o.cid) tr.dataset.id = o.cid;
-      tr.innerHTML = `
-        <td><input class="form-control" value="${o.sailor}" disabled></td>
-        <td><input class="form-control" value="${o.boat}" disabled></td>
-        <td><input class="form-control" value="${o.sailno}" disabled></td>
-        <td><input class="form-control" value="${o.hcp}" disabled></td>
-        <td>${o.curr}</td>`;
-      tbody.appendChild(tr);
-    });
-  }
-
-  function showWarning(msg, type = 'warning') {
-    warning.textContent = msg;
-    warning.className = `alert alert-${type}`;
-    warning.classList.remove('d-none');
-  }
+  let newRowCounter = 0;
 
   function clearWarning() {
     warning.classList.add('d-none');
     warning.textContent = '';
   }
 
-  function updateLocked() {
-    tbody.querySelectorAll('input').forEach(inp => inp.disabled = locked);
-    addBtn.classList.toggle('d-none', locked);
-    saveBtn.classList.toggle('d-none', locked);
-    cancelBtn.classList.toggle('d-none', locked);
-    toggle.textContent = locked ? '🔒' : '🔓';
+  function showWarning(message, tone = 'warning') {
+    warning.textContent = message;
+    warning.className = `alert alert-${tone}`;
+    warning.classList.remove('d-none');
   }
 
-  function collectData() {
-    return Array.from(tbody.querySelectorAll('tr')).map(tr => {
+  function ensureEmptyState() {
+    const hasRows = tbody.querySelector('tr:not([data-empty="1"])');
+    const emptyRow = tbody.querySelector('tr[data-empty="1"]');
+    if (hasRows && emptyRow) {
+      emptyRow.remove();
+      return;
+    }
+    if (!hasRows && !emptyRow) {
+      const row = document.createElement('tr');
+      row.dataset.empty = '1';
+      const cell = document.createElement('td');
+      cell.colSpan = 6;
+      cell.className = 'text-muted';
+      cell.textContent = 'No competitors yet.';
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    }
+  }
+
+  function renderRow(record, { markNew = false } = {}) {
+    const tr = document.createElement('tr');
+    const cid = record.competitor_id;
+    if (cid !== null && cid !== undefined && cid !== '') {
+      tr.dataset.id = cid;
+    }
+    const rowKey = record.rowKey || (cid !== null && cid !== undefined ? String(cid) : `__new_${Date.now()}_${newRowCounter++}`);
+    tr.dataset.rowKey = rowKey;
+    if (markNew) {
+      tr.classList.add('new-row');
+    }
+
+    const configs = [
+      { field: 'sailor_name', value: record.sailor_name || '', type: 'text', autocomplete: 'name', placeholder: 'Sailor name' },
+      { field: 'boat_name', value: record.boat_name || '', type: 'text', autocomplete: 'organization-title', placeholder: 'Boat name' },
+      { field: 'sail_no', value: record.sail_no || '', type: 'text', autocomplete: 'off', placeholder: 'Sail number' },
+      { field: 'starting_handicap_s_per_hr', value: record.starting_handicap_s_per_hr ?? '', type: 'number', autocomplete: 'off', placeholder: '0', inputmode: 'decimal' },
+    ];
+
+    configs.forEach(cfg => {
+      const td = document.createElement('td');
+      const input = document.createElement('input');
+      input.className = 'form-control';
+      input.type = cfg.type;
+      input.value = cfg.value;
+      input.disabled = locked;
+      input.autocomplete = cfg.autocomplete;
+      input.dataset.field = cfg.field;
+      input.placeholder = cfg.placeholder;
+      if (cfg.inputmode) {
+        input.setAttribute('inputmode', cfg.inputmode);
+      }
+      td.appendChild(input);
+      tr.appendChild(td);
+    });
+
+    const currentTd = document.createElement('td');
+    currentTd.dataset.cell = 'current-hcp';
+    currentTd.textContent = record.current_handicap_s_per_hr ?? '';
+    tr.appendChild(currentTd);
+
+    const actionsTd = document.createElement('td');
+    actionsTd.className = 'text-end';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'btn btn-outline-danger btn-sm delete-row';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.disabled = locked;
+    deleteBtn.title = 'Remove competitor';
+    actionsTd.appendChild(deleteBtn);
+    tr.appendChild(actionsTd);
+
+    return tr;
+  }
+
+  function captureOrig() {
+    orig = [];
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(tr => tr.dataset.empty !== '1');
+    rows.forEach((tr, idx) => {
       const inputs = tr.querySelectorAll('input');
-      return {
-        competitor_id: tr.dataset.id || null,
+      if (inputs.length < 4) {
+        return;
+      }
+      const record = {
+        rowKey: tr.dataset.rowKey || tr.dataset.id || `row-${idx}`,
+        competitor_id: tr.dataset.id ? Number(tr.dataset.id) : null,
         sailor_name: inputs[0].value.trim(),
         boat_name: inputs[1].value.trim(),
         sail_no: inputs[2].value.trim(),
-        starting_handicap_s_per_hr: Number(inputs[3].value)
+        starting_handicap_s_per_hr: inputs[3].value.trim(),
+        current_handicap_s_per_hr: (tr.querySelector('[data-cell="current-hcp"]')?.textContent || '').trim(),
       };
+      tr.dataset.rowKey = record.rowKey;
+      orig.push(record);
     });
   }
 
+  function revertValues() {
+    tbody.innerHTML = '';
+    orig.forEach(record => {
+      tbody.appendChild(renderRow(record));
+    });
+    ensureEmptyState();
+  }
+
+  function updateLockedUI() {
+    addBtn.disabled = locked;
+    addBtn.setAttribute('aria-disabled', String(locked));
+    addBtn.title = locked ? 'Unlock to add competitors' : 'Add a competitor';
+    saveBtn.classList.toggle('d-none', locked);
+    cancelBtn.classList.toggle('d-none', locked);
+    toggle.textContent = locked ? '🔒' : '🔓';
+    toggle.setAttribute('title', locked ? 'Unlock editing' : 'Lock editing');
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const disable = locked || tr.dataset.empty === '1';
+      tr.querySelectorAll('input').forEach(input => {
+        input.disabled = disable;
+      });
+      const deleteBtn = tr.querySelector('.delete-row');
+      if (deleteBtn) {
+        deleteBtn.disabled = disable;
+      }
+    });
+  }
+
+  function collectData() {
+    const result = [];
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(tr => tr.dataset.empty !== '1');
+    rows.forEach(tr => {
+      const inputs = tr.querySelectorAll('input');
+      if (inputs.length < 4) {
+        return;
+      }
+      const idRaw = tr.dataset.id;
+      const hcpRaw = inputs[3].value.trim();
+      const starting = hcpRaw === '' ? 0 : Number(hcpRaw);
+      result.push({
+        competitor_id: idRaw ? Number(idRaw) : null,
+        sailor_name: inputs[0].value.trim(),
+        boat_name: inputs[1].value.trim(),
+        sail_no: inputs[2].value.trim(),
+        starting_handicap_s_per_hr: starting,
+      });
+    });
+    return result;
+  }
+
+  function listChanges() {
+    const changes = [];
+    const origMap = new Map(orig.map(record => [record.rowKey, record]));
+    const seen = new Set();
+
+    const describe = comp => comp.sailor_name || comp.boat_name || comp.sail_no || 'Unnamed competitor';
+
+    Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+      if (tr.dataset.empty === '1') {
+        return;
+      }
+      const inputs = tr.querySelectorAll('input');
+      if (inputs.length < 4) {
+        return;
+      }
+      const key = tr.dataset.rowKey || tr.dataset.id || '';
+      const current = {
+        sailor_name: inputs[0].value.trim(),
+        boat_name: inputs[1].value.trim(),
+        sail_no: inputs[2].value.trim(),
+        starting_handicap_s_per_hr: inputs[3].value.trim(),
+      };
+
+      if (origMap.has(key)) {
+        const previous = origMap.get(key);
+        seen.add(key);
+        const label = describe(previous);
+        if (current.sailor_name !== previous.sailor_name) {
+          changes.push(`${label} sailor name: "${previous.sailor_name}" → "${current.sailor_name}"`);
+        }
+        if (current.boat_name !== previous.boat_name) {
+          changes.push(`${label} boat: "${previous.boat_name}" → "${current.boat_name}"`);
+        }
+        if (current.sail_no !== previous.sail_no) {
+          changes.push(`${label} sail no.: "${previous.sail_no}" → "${current.sail_no}"`);
+        }
+        if (current.starting_handicap_s_per_hr !== previous.starting_handicap_s_per_hr) {
+          changes.push(`${label} starting hcp: "${previous.starting_handicap_s_per_hr}" → "${current.starting_handicap_s_per_hr}"`);
+        }
+      } else {
+        const label = current.sailor_name || current.boat_name || current.sail_no || 'Unnamed competitor';
+        changes.push(`New competitor: "${label}"`);
+      }
+    });
+
+    orig.forEach(record => {
+      if (!seen.has(record.rowKey)) {
+        const label = describe(record);
+        changes.push(`Removed competitor: "${label}"`);
+      }
+    });
+
+    return changes;
+  }
+
   addBtn.addEventListener('click', () => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><input class="form-control"></td>
-      <td><input class="form-control"></td>
-      <td><input class="form-control"></td>
-      <td><input class="form-control" type="number"></td>
-      <td></td>`;
-    tbody.appendChild(tr);
+    if (locked) {
+      return;
+    }
+    clearWarning();
+    const record = {
+      rowKey: `__new_${Date.now()}_${newRowCounter++}`,
+      competitor_id: null,
+      sailor_name: '',
+      boat_name: '',
+      sail_no: '',
+      starting_handicap_s_per_hr: '',
+      current_handicap_s_per_hr: '',
+    };
+    const row = renderRow(record, { markNew: true });
+    const emptyRow = tbody.querySelector('tr[data-empty="1"]');
+    if (emptyRow) {
+      emptyRow.remove();
+    }
+    tbody.prepend(row);
+    updateLockedUI();
+    const firstInput = row.querySelector('input');
+    if (firstInput) {
+      firstInput.focus({ preventScroll: true });
+      firstInput.select();
+    }
+    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
   toggle.addEventListener('click', () => {
     locked = !locked;
-    if (!locked) captureOrig();
     clearWarning();
-    updateLocked();
+    if (!locked) {
+      captureOrig();
+    }
+    updateLockedUI();
   });
 
   cancelBtn.addEventListener('click', () => {
     revertValues();
     locked = true;
     clearWarning();
-    updateLocked();
+    updateLockedUI();
   });
 
-  function listChanges() {
-    const changes = [];
-    const origMap = new Map(orig.map(o => [o.cid, o]));
-    Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
-      const inputs = tr.querySelectorAll('input');
-      const cid = tr.dataset.id || null;
-      const cur = {
-        cid,
-        sailor: inputs[0].value,
-        boat: inputs[1].value,
-        sailno: inputs[2].value,
-        hcp: inputs[3].value
-      };
-      const o = origMap.get(cid);
-      if (o) {
-        if (cur.sailor !== o.sailor) changes.push(`${o.sailor || '(no name)'} sailor name: "${o.sailor}" → "${cur.sailor}"`);
-        if (cur.boat !== o.boat) changes.push(`${o.sailor || cur.sailor} boat: "${o.boat}" → "${cur.boat}"`);
-        if (cur.sailno !== o.sailno) changes.push(`${o.sailor || cur.sailor} sail no.: "${o.sailno}" → "${cur.sailno}"`);
-        if (cur.hcp !== o.hcp) changes.push(`${o.sailor || cur.sailor} starting hcp: "${o.hcp}" → "${cur.hcp}"`);
-      } else {
-        changes.push(`New competitor: "${cur.sailor}"`);
-      }
-    });
-    return changes;
-  }
+  tbody.addEventListener('click', event => {
+    const button = event.target.closest('.delete-row');
+    if (!button || locked) {
+      return;
+    }
+    const row = button.closest('tr');
+    if (row) {
+      row.remove();
+      ensureEmptyState();
+    }
+  });
 
   saveBtn.addEventListener('click', () => {
     clearWarning();
     const data = collectData();
+    const invalid = data.find(comp => Number.isNaN(comp.starting_handicap_s_per_hr));
+    if (invalid) {
+      showWarning('Starting handicap must be a number.', 'danger');
+      return;
+    }
     const seen = new Set();
     for (const comp of data) {
-      const sn = comp.sail_no;
-      if (!sn) continue;
-      if (seen.has(sn)) {
-        showWarning(`Duplicate Sail No.: ${sn}`);
+      const sail = comp.sail_no;
+      if (!sail) {
+        continue;
+      }
+      if (seen.has(sail)) {
+        showWarning(`Duplicate Sail No.: ${sail}`);
         return;
       }
-      seen.add(sn);
+      seen.add(sail);
     }
     const changes = listChanges();
+    if (changes.length === 0) {
+      showWarning('No changes to save.', 'info');
+      return;
+    }
     changeList.innerHTML = '';
-    changes.forEach(ch => {
+    changes.forEach(change => {
       const li = document.createElement('li');
-      li.textContent = ch;
+      li.textContent = change;
       changeList.appendChild(li);
     });
     confirmModal.show();
   });
 
   confirmSave.addEventListener('click', async () => {
-    const payload = {competitors: collectData()};
-    const res = await fetch('/api/fleet', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-    if (res.ok) {
-      location.reload();
-    } else {
-      let msg = 'Error saving fleet';
+    const payload = { competitors: collectData() };
+    try {
+      const res = await fetch('/api/fleet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      confirmModal.hide();
+      if (res.ok) {
+        location.reload();
+        return;
+      }
+      let message = 'Error saving fleet';
       try {
         const data = await res.json();
-        if (data.error) msg = data.error;
-      } catch {}
-      showWarning(msg, 'danger');
+        if (data?.error) {
+          message = data.error;
+        }
+      } catch (err) {
+        // ignore JSON parse errors
+      }
+      showWarning(message, 'danger');
+    } catch (err) {
+      confirmModal.hide();
+      showWarning('Network error saving fleet.', 'danger');
     }
-    confirmModal.hide();
   });
 
+  ensureEmptyState();
   captureOrig();
-  updateLocked();
+  updateLockedUI();
 });
 </script>
 {% endblock %}

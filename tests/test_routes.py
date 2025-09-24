@@ -147,6 +147,14 @@ def test_fleet_update_and_duplicates(client):
     assert res2.status_code == 200
 
 
+def test_get_fleet_page_contains_controls(client):
+    res = client.get("/fleet")
+    html = res.get_data(as_text=True)
+    assert 'id="addCompetitor"' in html
+    assert '<th scope="col" class="text-end">Actions</th>' in html
+    assert 'class="btn btn-outline-danger btn-sm delete-row"' in html
+
+
 def test_settings_page_and_save(client):
     res = client.get("/settings")
     html = res.get_data(as_text=True)
