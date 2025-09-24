@@ -147,6 +147,89 @@ def test_fleet_update_and_duplicates(client):
     assert res2.status_code == 200
 
 
+def test_update_fleet_add_edit_delete(client, memory_store):
+    payload = {
+        "competitors": [
+            {
+                "competitor_id": 1,
+                "sailor_name": "Alice Updated",
+                "boat_name": "Boaty",
+                "sail_no": "1",
+                "starting_handicap_s_per_hr": 120,
+            },
+            {
+                "competitor_id": 2,
+                "sailor_name": "Bob",
+                "boat_name": "Crafty",
+                "sail_no": "2",
+                "starting_handicap_s_per_hr": 100,
+            },
+            {
+                "competitor_id": None,
+                "sailor_name": "Charlie",
+                "boat_name": "Clipper",
+                "sail_no": "3",
+                "starting_handicap_s_per_hr": 95,
+            },
+        ]
+    }
+
+    res = client.post("/api/fleet", json=payload)
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["added"] == 1
+    assert body["updated"] == 1
+    assert body["removed"] == 0
+    assert any(c["sailor_name"] == "Charlie" for c in memory_store["fleet"]["competitors"])
+    assert any(c["sailor_name"] == "Alice Updated" for c in memory_store["fleet"]["competitors"])
+
+    # Delete Alice by removing her entry
+    payload_delete = {
+        "competitors": [
+            {
+                "competitor_id": 2,
+                "sailor_name": "Bob",
+                "boat_name": "Crafty",
+                "sail_no": "2",
+                "starting_handicap_s_per_hr": 100,
+            }
+        ]
+    }
+
+    res2 = client.post("/api/fleet", json=payload_delete)
+    assert res2.status_code == 200
+    body2 = res2.get_json()
+    assert body2["removed"] == 1
+    assert len(memory_store["fleet"]["competitors"]) == 1
+    assert memory_store["fleet"]["competitors"][0]["competitor_id"] == 2
+
+
+def test_update_fleet_rejects_invalid_handicap(client):
+    payload = {
+        "competitors": [
+            {
+                "competitor_id": 1,
+                "sailor_name": "Alice",
+                "boat_name": "Boaty",
+                "sail_no": "1",
+                "starting_handicap_s_per_hr": "fast",
+            },
+            {
+                "competitor_id": 2,
+                "sailor_name": "Bob",
+                "boat_name": "Crafty",
+                "sail_no": "2",
+                "starting_handicap_s_per_hr": 100,
+            },
+        ]
+    }
+
+    res = client.post("/api/fleet", json=payload)
+    assert res.status_code == 400
+    body = res.get_json()
+    assert "handicap" in body["error"].lower()
+
+
 def test_get_fleet_page_contains_controls(client):
     res = client.get("/fleet")
     html = res.get_data(as_text=True)

@@ -2066,51 +2066,185 @@ def fleet():
 #<getdata>
 @bp.route('/api/fleet', methods=['POST'])
 def update_fleet():
-    """Persist fleet edits and refresh handicaps."""
-    payload = request.get_json() or {}
-    comps = payload.get('competitors', [])
-    # Load existing fleet only (avoid full dataset materialization)
-    fleet_data = ds_get_fleet()
-    if not fleet_data:
-        fleet_data = {'competitors': []}
-    # Normalize incoming list; preserve id when provided; let datastore assign when missing
-    normalized: list[dict] = []
-    for comp in comps:
+    """Persist fleet edits (add, edit, delete) and trigger handicap refresh."""
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return {'error': 'Request body must be valid JSON.'}, 400
+
+    competitors_raw = payload.get('competitors')
+    if competitors_raw is None:
+        return {'error': 'Missing "competitors" in payload.'}, 400
+    if not isinstance(competitors_raw, list):
+        return {'error': '"competitors" must be a list.'}, 400
+
+    fleet_data = ds_get_fleet() or {'competitors': []}
+    existing = fleet_data.get('competitors', []) or []
+    existing_by_id: dict[int, dict] = {}
+    existing_ids: set[int] = set()
+    for comp in existing:
         cid = comp.get('competitor_id')
         try:
-            cid = int(cid) if cid is not None else None
+            cid_int = int(cid)
         except Exception:
-            cid = None
-        entry = {
-            'competitor_id': cid,
-            'sailor_name': comp.get('sailor_name', ''),
-            'boat_name': comp.get('boat_name', ''),
-            'sail_no': comp.get('sail_no', ''),
-            'starting_handicap_s_per_hr': comp.get('starting_handicap_s_per_hr', 0),
-            'current_handicap_s_per_hr': comp.get('current_handicap_s_per_hr', comp.get('starting_handicap_s_per_hr', 0)),
-        }
-        normalized.append(entry)
-
-    # Enforce unique sail numbers (non-empty)
-    sail_counts: dict[str, int] = {}
-    for c in normalized:
-        sail = (c.get('sail_no') or '').strip()
-        if not sail:
             continue
-        sail_counts[sail] = sail_counts.get(sail, 0) + 1
-    dups = [sn for sn, cnt in sail_counts.items() if cnt > 1]
-    if dups:
-        return {'error': f"Duplicate sail numbers: {', '.join(sorted(dups))}"}, 400
+        existing_ids.add(cid_int)
+        existing_by_id[cid_int] = comp
 
-    fleet_data['competitors'] = normalized
-    fleet_data['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-    # Persist only fleet changes via datastore helper
-    ds_set_fleet(fleet_data)
-    # Fleet changes affect baselines for all races: do a full recalc
+    normalized: list[dict] = []
+    incoming_ids: set[int] = set()
+    updated_ids: set[int] = set()
+    seen_sail_numbers: set[str] = set()
+
+    def _coerce_seconds(value, *, field: str, label: str) -> int:
+        if value in (None, ''):
+            return 0
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == '':
+                return 0
+            if stripped.isdigit() or (stripped.startswith('-') and stripped[1:].isdigit()):
+                return int(stripped)
+        raise ValueError(f'{label} must be a whole number of seconds.')
+
+    for idx, item in enumerate(competitors_raw):
+        if not isinstance(item, dict):
+            return {'error': f'Competitor at index {idx} must be an object.'}, 400
+
+        cid_raw = item.get('competitor_id')
+        if cid_raw in (None, ''):
+            cid: int | None = None
+        else:
+            try:
+                cid = int(cid_raw)
+            except Exception:
+                return {'error': f'Invalid competitor_id at index {idx}.'}, 400
+
+        sailor = (item.get('sailor_name') or '').strip()
+        boat = (item.get('boat_name') or '').strip()
+        sail_no = (item.get('sail_no') or '').strip()
+
+        try:
+            starting = _coerce_seconds(item.get('starting_handicap_s_per_hr'), field='starting_handicap_s_per_hr', label='Starting handicap')
+        except ValueError as exc:
+            label = sailor or boat or sail_no or f'Row {idx + 1}'
+            return {'error': f'{label}: {exc}'}, 400
+
+        # Preserve current handicap when not supplied explicitly
+        existing_curr = None
+        if cid is not None:
+            existing_curr = existing_by_id.get(cid, {}).get('current_handicap_s_per_hr')
+        try:
+            current = _coerce_seconds(
+                item.get('current_handicap_s_per_hr', existing_curr if existing_curr is not None else starting),
+                field='current_handicap_s_per_hr',
+                label='Current handicap',
+            )
+        except ValueError as exc:
+            label = sailor or boat or sail_no or f'Row {idx + 1}'
+            return {'error': f'{label}: {exc}'}, 400
+
+        if cid is not None:
+            incoming_ids.add(cid)
+            existing_entry = existing_by_id.get(cid)
+            if existing_entry:
+                def _norm_str(value: str | None) -> str:
+                    return (value or '').strip()
+
+                try:
+                    existing_start = int(existing_entry.get('starting_handicap_s_per_hr') or 0)
+                except Exception:
+                    existing_start = 0
+                try:
+                    existing_curr = int(existing_entry.get('current_handicap_s_per_hr') or existing_start)
+                except Exception:
+                    existing_curr = existing_start
+                if (
+                    _norm_str(existing_entry.get('sailor_name')) != sailor
+                    or _norm_str(existing_entry.get('boat_name')) != boat
+                    or _norm_str(existing_entry.get('sail_no')) != sail_no
+                    or existing_start != starting
+                    or existing_curr != current
+                ):
+                    updated_ids.add(cid)
+            else:
+                updated_ids.add(cid)
+
+        # Enforce unique sail numbers (case-insensitive, non-empty)
+        if sail_no:
+            canonical = sail_no.upper()
+            if canonical in seen_sail_numbers:
+                return {'error': f'Duplicate sail numbers: {sail_no}'}, 400
+            seen_sail_numbers.add(canonical)
+
+        normalized.append(
+            {
+                'competitor_id': cid,
+                'sailor_name': sailor,
+                'boat_name': boat,
+                'sail_no': sail_no,
+                'starting_handicap_s_per_hr': starting,
+                'current_handicap_s_per_hr': current,
+            }
+        )
+
+    removed_ids = sorted(existing_ids - incoming_ids)
+    added_count = sum(1 for comp in normalized if comp['competitor_id'] is None)
+    updated_count = len(updated_ids)
+
+    current_app.logger.info(
+        'Fleet update requested',
+        extra={
+            'competitors': len(normalized),
+            'added': added_count,
+            'updated': updated_count,
+            'removed': len(removed_ids),
+            'removed_ids': removed_ids,
+        },
+    )
+
+    fleet_payload = {'competitors': normalized, 'updated_at': datetime.utcnow().isoformat() + 'Z'}
+
+    try:
+        persisted = ds_set_fleet(fleet_payload) or {}
+    except ValueError as exc:
+        current_app.logger.warning(
+            'Rejected fleet update',
+            extra={'added': added_count, 'updated': updated_count, 'removed': len(removed_ids)},
+        )
+        return {'error': str(exc)}, 400
+    except Exception as exc:  # pragma: no cover - exercised in integration environments
+        current_app.logger.exception(
+            'Failed to persist fleet update',
+            extra={'added': added_count, 'updated': updated_count, 'removed': len(removed_ids)},
+        )
+        message = 'Error saving fleet'
+        detail = str(exc).strip()
+        if detail:
+            message = detail
+        return {'error': message}, 500
+
+    # Fleet changes affect baseline handicaps for all races
     recalculate_handicaps()
-    # Bust caches after fleet update
     _cache_clear_all()
-    return {'status': 'ok'}
+
+    # Provide summary in response (use persisted data when available)
+    response = {
+        'status': 'ok',
+        'added': added_count,
+        'updated': updated_count,
+        'removed': len(removed_ids),
+    }
+    persisted_comps = persisted.get('competitors') if isinstance(persisted, dict) else None
+    if isinstance(persisted_comps, list):
+        response['competitors'] = persisted_comps
+        # Infer final ids for new competitors when datastore returns them
+        response['new_competitor_ids'] = [c.get('competitor_id') for c in persisted_comps if c.get('competitor_id') not in existing_ids]
+    if persisted.get('deleted_ids'):
+        response['deleted_ids'] = persisted['deleted_ids']
+
+    return response
 #</getdata>
 
 

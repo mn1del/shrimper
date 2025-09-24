@@ -908,22 +908,43 @@ def get_fleet(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 
 
 def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Upsert fleet rows by integer id, inserting new rows when id is missing.
+    """Upsert fleet rows and remove competitors omitted from payload.
 
-    This preserves existing ids to maintain referential integrity with race_results.
+    When ``data`` is provided (JSON fixture path), the structure is updated
+    in-place. Otherwise, the PostgreSQL backend is used.
     """
     competitors_in = (fleet or {}).get("competitors", []) or []
+
+    # In-memory path used by tests
+    if data is not None:
+        data["competitors"] = competitors_in
+        return {"competitors": competitors_in}
+
     competitors_out: List[Dict[str, Any]] = []
+    deleted_ids: List[int] = []
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT id FROM competitors")
+        existing_rows = cur.fetchall() or []
+        existing_ids = {int(row["id"]) for row in existing_rows if row.get("id") is not None}
+        retained_ids: set[int] = set()
+
         for comp in competitors_in:
             cid = comp.get("competitor_id")
             sailor = comp.get("sailor_name")
             boat = comp.get("boat_name")
             sail_no = comp.get("sail_no")
-            start_h = int(comp.get("starting_handicap_s_per_hr") or 0)
-            curr_h = int(comp.get("current_handicap_s_per_hr") or start_h)
+            start_raw = comp.get("starting_handicap_s_per_hr")
+            curr_raw = comp.get("current_handicap_s_per_hr")
+            try:
+                start_h = int(start_raw or 0)
+            except Exception as exc:  # pragma: no cover - guarded earlier
+                raise ValueError(f"Invalid starting handicap for competitor {sailor or boat or sail_no}: {start_raw}") from exc
+            try:
+                curr_h = int(curr_raw if curr_raw is not None else start_h)
+            except Exception as exc:  # pragma: no cover - guarded earlier
+                raise ValueError(f"Invalid current handicap for competitor {sailor or boat or sail_no}: {curr_raw}") from exc
+
             if cid is None:
-                # Insert new competitor and return assigned id
                 cur.execute(
                     """
                     INSERT INTO competitors (sailor_name, boat_name, sail_no, starting_handicap_s_per_hr, current_handicap_s_per_hr)
@@ -937,7 +958,7 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
                 try:
                     cid = int(cid)
                 except Exception:
-                    # Skip invalid ids to avoid corrupting referential integrity
+                    # Skip invalid ids so we do not corrupt race references
                     continue
                 cur.execute(
                     """
@@ -952,9 +973,14 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
                     """,
                     (cid, sailor, boat, sail_no, start_h, curr_h),
                 )
+
+            if cid is None:
+                continue
+
+            retained_ids.add(int(cid))
             competitors_out.append(
                 {
-                    "competitor_id": cid,
+                    "competitor_id": int(cid),
                     "sailor_name": sailor,
                     "boat_name": boat,
                     "sail_no": sail_no,
@@ -962,8 +988,43 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
                     "current_handicap_s_per_hr": curr_h,
                 }
             )
+
+        to_delete = sorted(existing_ids - retained_ids)
+        if to_delete:
+            protected_ids: List[int] = []
+            try:
+                cur.execute(
+                    "SELECT DISTINCT competitor_ref FROM race_results WHERE competitor_ref = ANY(%s)",
+                    (to_delete,),
+                )
+                protected_ids = [int(row["competitor_ref"]) for row in cur.fetchall() if row.get("competitor_ref") is not None]
+            except Exception:
+                try:
+                    cur.execute(
+                        "SELECT DISTINCT competitor_id FROM race_results WHERE competitor_id = ANY(%s)",
+                        (to_delete,),
+                    )
+                    protected_ids = [int(row["competitor_id"]) for row in cur.fetchall() if row.get("competitor_id") is not None]
+                except Exception:
+                    protected_ids = []
+
+            if protected_ids:
+                protected_ids.sort()
+                raise ValueError(
+                    "Cannot delete competitors with recorded race results: "
+                    + ", ".join(str(pid) for pid in protected_ids)
+                )
+
+            if to_delete:
+                cur.execute("DELETE FROM competitors WHERE id = ANY(%s)", (to_delete,))
+                deleted_ids = to_delete
+
         conn.commit()
-    return {"competitors": competitors_out}
+
+    result: Dict[str, Any] = {"competitors": competitors_out}
+    if deleted_ids:
+        result["deleted_ids"] = deleted_ids
+    return result
 
 
 def get_settings(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
