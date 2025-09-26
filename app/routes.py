@@ -1,7 +1,7 @@
 from flask import Blueprint, redirect, render_template, url_for, abort, request, current_app
 import json
 import importlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import os
 import time
 import hashlib
@@ -42,6 +42,21 @@ _RACE_TTL = int(os.environ.get('CACHE_TTL_RACE', '120'))  # seconds
 # Lightweight background executor for async tasks
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get('WORKER_THREADS', '1')))
 _RECALC_ACTIVE: set[str] = set()
+
+
+@bp.app_template_filter('dmy_date')
+def _format_date_dmy(value):
+    """Render ISO-formatted dates as dd-mm-yyyy strings for display."""
+    if not value:
+        return ''
+    if isinstance(value, (datetime, date)):
+        return value.strftime('%d-%m-%Y')
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, '%Y-%m-%d').strftime('%d-%m-%Y')
+        except ValueError:
+            return value
+    return value
 
 
 def _utc_now_isoformat() -> str:

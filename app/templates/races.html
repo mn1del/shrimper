@@ -22,7 +22,7 @@
     {% for race in races %}
     <tr onclick="window.location='{{ url_for('main.race_sheet', race_id=race.race_id) }}'" style="cursor: pointer;">
       <td>{{ race.series_name }}</td>
-      <td>{{ race.date }}</td>
+      <td>{{ race.date|dmy_date }}</td>
       <td>{{ race.start_time or '' }}</td>
       <td>{{ race.finishers }}</td>
     </tr>
