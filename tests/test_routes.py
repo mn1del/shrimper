@@ -85,6 +85,7 @@ def test_race_page_and_redirect(client):
     html = res.get_data(as_text=True)
     assert "Number of Finishers: 2" in html
     assert 'value="00:30:00"' in html
+    assert ">01-01-2025 00:00:00 (Test)<" in html
 
     res = client.get(f"/races/{rid}", follow_redirects=False)
     assert res.status_code == 302
@@ -94,11 +95,11 @@ def test_race_page_and_redirect(client):
 def test_races_page_lists_and_filters(client):
     res = client.get("/races")
     html = res.get_data(as_text=True)
-    assert "2025-01-08" in html and "2025-01-01" in html
+    assert "08-01-2025" in html and "01-01-2025" in html
 
     res = client.get("/races?season=2025")
     html = res.get_data(as_text=True)
-    assert "2025-01-01" in html
+    assert "01-01-2025" in html
 
 
 def test_create_edit_delete_race(client):
