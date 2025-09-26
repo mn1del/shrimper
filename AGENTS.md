@@ -46,6 +46,10 @@ Print the branch spec in a human readable form, and underneath summarise the spe
 
 Await the user's instruction to proceed, and then create a new branch (prefix: "codex/"). On that branch use the frozen branch spec, executing only one step of the plan in the correct order, never jumping ahead. 
 
-For each step: Write and run tests for the step and once passed check for consistency with the design documentation contained in docs/. Once satisfied, commit the changes to the branch, and ask the user if they would like you to proceed with the next step. If the step is ambiguous, ask a single clarifying question. If the user explicitly states that you can complete multiple steps, then go ahead, but ensure you proceed in order without jumping ahead, and maintain the same rigour with testing and alignment with the design documentation.
+For each step: Write and run tests for the step and once passed check for consistency with the design documentation contained in docs/. Once satisfied, commit the changes to the branch, and ask the user if they would like you to proceed with the next step. If the step is ambiguous, ask a single clarifying question. If the user explicitly states that you can complete multiple steps, then go ahead, but ensure you proceed in order without jumping ahead, and maintain the same rigour with testing and alignment with the design documentation between steps.
 
 Once finished state how to run the tests locally, and ask whether to proceed with the next step (including a very short description of what that step entails).
+
+# Final response
+
+When all steps are complete, tests run, and documents updated you can ask the user if they would like to merge changes into the main branch, sync, and delete this branch
