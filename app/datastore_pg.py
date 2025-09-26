@@ -966,6 +966,7 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
         existing_rows: List[Dict[str, Any]] = []
         existing_ids: set[int] = set()
         existing_codes: set[str] = set()
+        existing_codes_by_id: Dict[int, str] = {}
         try:
             cur.execute("SELECT id, competitor_id FROM competitors")
             existing_rows = cur.fetchall() or []
@@ -977,14 +978,19 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
                 raise
         for row in existing_rows:
             rid = row.get("id")
+            code = row.get("competitor_id")
+            parsed_id: Optional[int] = None
             if rid is not None:
                 try:
-                    existing_ids.add(int(rid))
+                    parsed_id = int(rid)
+                    existing_ids.add(parsed_id)
                 except Exception:
-                    pass
-            code = row.get("competitor_id")
+                    parsed_id = None
             if code:
-                existing_codes.add(str(code))
+                str_code = str(code)
+                existing_codes.add(str_code)
+                if parsed_id is not None:
+                    existing_codes_by_id[parsed_id] = str_code
         retained_ids: set[int] = set()
 
         for comp in competitors_in:
@@ -1025,25 +1031,38 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
                     cid = row.get("id")
                     code = row.get("competitor_id")
                     if code:
-                        existing_codes.add(str(code))
+                        str_code = str(code)
+                        existing_codes.add(str_code)
+                        try:
+                            existing_codes_by_id[int(cid)] = str_code
+                        except Exception:
+                            pass
             else:
                 try:
                     cid = int(cid)
                 except Exception:
                     # Skip invalid ids so we do not corrupt race references
                     continue
+                competitor_code = existing_codes_by_id.get(int(cid))
+                if not competitor_code:
+                    competitor_code = _generate_competitor_code(sail_no, existing_codes)
+                    try:
+                        existing_codes_by_id[int(cid)] = competitor_code
+                    except Exception:
+                        pass
                 cur.execute(
                     """
-                    INSERT INTO competitors (id, sailor_name, boat_name, sail_no, starting_handicap_s_per_hr, current_handicap_s_per_hr)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO competitors (id, competitor_id, sailor_name, boat_name, sail_no, starting_handicap_s_per_hr, current_handicap_s_per_hr)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
+                        competitor_id = EXCLUDED.competitor_id,
                         sailor_name = EXCLUDED.sailor_name,
                         boat_name = EXCLUDED.boat_name,
                         sail_no = EXCLUDED.sail_no,
                         starting_handicap_s_per_hr = EXCLUDED.starting_handicap_s_per_hr,
                         current_handicap_s_per_hr = EXCLUDED.current_handicap_s_per_hr
                     """,
-                    (cid, sailor, boat, sail_no, start_h, curr_h),
+                    (cid, competitor_code, sailor, boat, sail_no, start_h, curr_h),
                 )
 
             if cid is None:
