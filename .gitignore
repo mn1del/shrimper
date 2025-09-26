@@ -5,8 +5,6 @@ instance/
 *.pyo
 *.pyd
 *.sqlite
-.env
 venv/
+.venv/
 *.egg-info/
-.dbvenv/
-*venv*
