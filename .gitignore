@@ -8,3 +8,4 @@ instance/
 venv/
 .venv/
 *.egg-info/
+.replit
