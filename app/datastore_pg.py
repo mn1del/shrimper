@@ -1,5 +1,7 @@
 import os
 import json
+import re
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
@@ -10,6 +12,44 @@ from contextlib import contextmanager
 
 
 _POOL: Optional[pg_pool.AbstractConnectionPool] = None
+
+_COMPETITOR_CODE_MAXLEN = 20
+_COMPETITOR_CODE_PREFIX = "C_"
+
+
+def _generate_competitor_code(sail_no: Optional[str], existing_codes: set[str]) -> str:
+    """Derive a unique VARCHAR identifier for competitors.competitor_id."""
+
+    cleaned = ""
+    if sail_no:
+        cleaned = re.sub(r"[^A-Z0-9]", "", str(sail_no).upper())
+    allowed_payload_len = max(_COMPETITOR_CODE_MAXLEN - len(_COMPETITOR_CODE_PREFIX), 0)
+    if allowed_payload_len and cleaned:
+        cleaned = cleaned[:allowed_payload_len]
+    else:
+        cleaned = cleaned[:allowed_payload_len] if cleaned else ""
+
+    if cleaned:
+        base = f"{_COMPETITOR_CODE_PREFIX}{cleaned}"
+        if base not in existing_codes:
+            existing_codes.add(base)
+            return base
+        suffix = 1
+        while suffix < 10000:
+            suffix_token = f"_{suffix}"
+            max_base_len = _COMPETITOR_CODE_MAXLEN - len(suffix_token)
+            candidate = f"{base[:max_base_len]}{suffix_token}"
+            if candidate and candidate not in existing_codes:
+                existing_codes.add(candidate)
+                return candidate
+            suffix += 1
+
+    while True:
+        token = uuid.uuid4().hex.upper()
+        candidate = f"{_COMPETITOR_CODE_PREFIX}{token}"[:_COMPETITOR_CODE_MAXLEN]
+        if candidate and candidate not in existing_codes:
+            existing_codes.add(candidate)
+            return candidate
 
 
 def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
@@ -923,9 +963,34 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
     competitors_out: List[Dict[str, Any]] = []
     deleted_ids: List[int] = []
     with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT id FROM competitors")
-        existing_rows = cur.fetchall() or []
-        existing_ids = {int(row["id"]) for row in existing_rows if row.get("id") is not None}
+        existing_rows: List[Dict[str, Any]] = []
+        existing_ids: set[int] = set()
+        existing_codes: set[str] = set()
+        existing_codes_by_id: Dict[int, str] = {}
+        try:
+            cur.execute("SELECT id, competitor_id FROM competitors")
+            existing_rows = cur.fetchall() or []
+        except Exception as exc:
+            if isinstance(exc, getattr(pg_errors, "UndefinedColumn", tuple())):
+                cur.execute("SELECT id FROM competitors")
+                existing_rows = cur.fetchall() or []
+            else:
+                raise
+        for row in existing_rows:
+            rid = row.get("id")
+            code = row.get("competitor_id")
+            parsed_id: Optional[int] = None
+            if rid is not None:
+                try:
+                    parsed_id = int(rid)
+                    existing_ids.add(parsed_id)
+                except Exception:
+                    parsed_id = None
+            if code:
+                str_code = str(code)
+                existing_codes.add(str_code)
+                if parsed_id is not None:
+                    existing_codes_by_id[parsed_id] = str_code
         retained_ids: set[int] = set()
 
         for comp in competitors_in:
@@ -945,33 +1010,59 @@ def set_fleet(fleet: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> D
                 raise ValueError(f"Invalid current handicap for competitor {sailor or boat or sail_no}: {curr_raw}") from exc
 
             if cid is None:
+                generated_code = _generate_competitor_code(sail_no, existing_codes)
                 cur.execute(
                     """
-                    INSERT INTO competitors (sailor_name, boat_name, sail_no, starting_handicap_s_per_hr, current_handicap_s_per_hr)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id
+                    INSERT INTO competitors (
+                        competitor_id,
+                        sailor_name,
+                        boat_name,
+                        sail_no,
+                        starting_handicap_s_per_hr,
+                        current_handicap_s_per_hr
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id, competitor_id
                     """,
-                    (sailor, boat, sail_no, start_h, curr_h),
+                    (generated_code, sailor, boat, sail_no, start_h, curr_h),
                 )
-                cid = cur.fetchone()["id"]
+                row = cur.fetchone()
+                if row:
+                    cid = row.get("id")
+                    code = row.get("competitor_id")
+                    if code:
+                        str_code = str(code)
+                        existing_codes.add(str_code)
+                        try:
+                            existing_codes_by_id[int(cid)] = str_code
+                        except Exception:
+                            pass
             else:
                 try:
                     cid = int(cid)
                 except Exception:
                     # Skip invalid ids so we do not corrupt race references
                     continue
+                competitor_code = existing_codes_by_id.get(int(cid))
+                if not competitor_code:
+                    competitor_code = _generate_competitor_code(sail_no, existing_codes)
+                    try:
+                        existing_codes_by_id[int(cid)] = competitor_code
+                    except Exception:
+                        pass
                 cur.execute(
                     """
-                    INSERT INTO competitors (id, sailor_name, boat_name, sail_no, starting_handicap_s_per_hr, current_handicap_s_per_hr)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO competitors (id, competitor_id, sailor_name, boat_name, sail_no, starting_handicap_s_per_hr, current_handicap_s_per_hr)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
+                        competitor_id = EXCLUDED.competitor_id,
                         sailor_name = EXCLUDED.sailor_name,
                         boat_name = EXCLUDED.boat_name,
                         sail_no = EXCLUDED.sail_no,
                         starting_handicap_s_per_hr = EXCLUDED.starting_handicap_s_per_hr,
                         current_handicap_s_per_hr = EXCLUDED.current_handicap_s_per_hr
                     """,
-                    (cid, sailor, boat, sail_no, start_h, curr_h),
+                    (cid, competitor_code, sailor, boat, sail_no, start_h, curr_h),
                 )
 
             if cid is None:

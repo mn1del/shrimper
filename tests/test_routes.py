@@ -1,3 +1,4 @@
+import importlib
 import pytest
 import pathlib
 import sys
@@ -228,6 +229,119 @@ def test_update_fleet_rejects_invalid_handicap(client):
     assert res.status_code == 400
     body = res.get_json()
     assert "handicap" in body["error"].lower()
+
+
+def test_api_fleet_creates_competitor_with_generated_id(monkeypatch):
+    import app.datastore_pg as pg
+
+    pg = importlib.reload(pg)
+    monkeypatch.setattr(pg, "init_pool", lambda *args, **kwargs: None)
+
+    recorded = []
+
+    class FakeCursor:
+        def __init__(self, rec):
+            self.rec = rec
+            self._next_fetchall = []
+            self._next_fetchone = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            self.rec.append((sql, params))
+            normalized = " ".join(sql.split())
+            if normalized.startswith("SELECT id, competitor_id FROM competitors"):
+                self._next_fetchall = []
+                self._next_fetchone = None
+            elif "INSERT INTO competitors" in normalized and "RETURNING" in normalized:
+                comp_code = params[0]
+                self._next_fetchall = []
+                self._next_fetchone = {"id": 881, "competitor_id": comp_code}
+            else:
+                self._next_fetchall = []
+                self._next_fetchone = None
+
+        def fetchall(self):
+            return list(self._next_fetchall)
+
+        def fetchone(self):
+            return self._next_fetchone
+
+    class FakeConn:
+        def __init__(self, rec):
+            self.rec = rec
+
+        def cursor(self, cursor_factory=None):
+            return FakeCursor(self.rec)
+
+        def commit(self):
+            pass
+
+    class _Ctx:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __enter__(self):
+            return self.conn
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_get_conn():
+        return _Ctx(FakeConn(recorded))
+
+    monkeypatch.setattr(pg, "_get_conn", fake_get_conn)
+
+    import app.datastore as datastore
+    datastore = importlib.reload(datastore)
+
+    import app.routes as routes
+    routes = importlib.reload(routes)
+
+    monkeypatch.setattr(routes, "ds_get_fleet", lambda: {"competitors": []})
+    monkeypatch.setattr(routes, "recalculate_handicaps", lambda: None)
+    monkeypatch.setattr(routes, "_cache_clear_all", lambda: None)
+
+    import app as app_pkg
+    app_pkg = importlib.reload(app_pkg)
+
+    monkeypatch.setenv("RECALC_ON_STARTUP", "0")
+
+    app = app_pkg.create_app()
+    app.config.update({"TESTING": True})
+
+    with app.test_client() as client_http:
+        payload = {
+            "competitors": [
+                {
+                    "competitor_id": None,
+                    "sailor_name": "W",
+                    "boat_name": "Pelican",
+                    "sail_no": "102",
+                    "starting_handicap_s_per_hr": -118,
+                    "current_handicap_s_per_hr": -28,
+                }
+            ]
+        }
+        res = client_http.post("/api/fleet", json=payload)
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["new_competitor_ids"] == [881]
+        assert body["competitors"][0]["competitor_id"] == 881
+
+    insert_statements = [
+        (sql, params)
+        for (sql, params) in recorded
+        if isinstance(sql, str) and sql.strip().startswith("INSERT INTO competitors")
+    ]
+    assert insert_statements, "Expected INSERT into competitors to occur"
+    _, params = insert_statements[0]
+    assert params is not None
+    assert params[0] is not None and str(params[0]).startswith("C_"), "competitor_id should be generated"
 
 
 def test_get_fleet_page_contains_controls(client):
