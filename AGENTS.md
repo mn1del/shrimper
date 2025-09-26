@@ -25,13 +25,14 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 - The fleet page lets you edit sailor, boat, sail number and starting handicap; saves post to `/api/fleet`, updating the `competitors` table and recalculating handicaps.
 
 ## Dev Notes
-1. Install dependencies: `pip install -r requirements.txt`
-2. `DATABASE_URL` can be found in .env
-3. Run the dev server: `flask --app app run --debug`
-4. Run tests: `pytest`
-5. Keep documentation, especially this file, accurate when structure or workflow changes
-6. In VS Code Codex has DB connectivity from the shell using psycopg2-binary
-7. Do not make changes on the main branch. Create a new branch, name it appropriately, and work on that.
+1. Create the `.venv` virtual environment if it does not exist (`python -m venv .venv`) and activate it for your shell session.
+2. Install dependencies inside `.venv`: `python -m pip install -r requirements.txt`
+3. `DATABASE_URL` can be found in .env
+4. Run the dev server: `flask --app app run --debug`
+5. Run tests from the activated environment: `pytest`
+6. Keep documentation, especially this file, accurate when structure or workflow changes
+7. In VS Code Codex has DB connectivity from the shell using psycopg2-binary
+8. Do not make changes on the main branch. Create a new branch, name it appropriately, and work on that.
 
 
 # How to Work
