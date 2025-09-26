@@ -1,7 +1,7 @@
 from flask import Blueprint, redirect, render_template, url_for, abort, request, current_app
 import json
 import importlib
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import time
 import hashlib
@@ -42,6 +42,11 @@ _RACE_TTL = int(os.environ.get('CACHE_TTL_RACE', '120'))  # seconds
 # Lightweight background executor for async tasks
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get('WORKER_THREADS', '1')))
 _RECALC_ACTIVE: set[str] = set()
+
+
+def _utc_now_isoformat() -> str:
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
 
 def _sorted_compact_scoring(settings: dict) -> dict:
     """Return a compact, normalized scoring dict with stable ordering.
@@ -2204,7 +2209,7 @@ def update_fleet():
         },
     )
 
-    fleet_payload = {'competitors': normalized, 'updated_at': datetime.utcnow().isoformat() + 'Z'}
+    fleet_payload = {'competitors': normalized, 'updated_at': _utc_now_isoformat()}
 
     try:
         persisted = ds_set_fleet(fleet_payload) or {}
@@ -2272,7 +2277,7 @@ def save_settings():
     existing = ds_get_settings() or {"version": 0}
 
     payload["version"] = int(existing.get("version", 0)) + 1
-    payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    payload["updated_at"] = _utc_now_isoformat()
 
     # Persist only settings via datastore helper
     ds_set_settings(payload)
@@ -2475,7 +2480,7 @@ def update_race(race_id):
         if series_choice is None or not race_date:
             abort(400)
         start_time = start_time or ''
-        timestamp = datetime.utcnow().isoformat() + 'Z'
+        timestamp = _utc_now_isoformat()
         try:
             season_year = int(datetime.strptime(race_date, '%Y-%m-%d').year)
         except ValueError:
@@ -2722,7 +2727,7 @@ def update_race(race_id):
                 pruned.append(ent)
         race_obj['competitors'] = pruned
 
-    race_obj['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+    race_obj['updated_at'] = _utc_now_isoformat()
 
     # Renumber races in affected series (and original if moved)
     mapping_target = ds_renumber_races(target_series)
