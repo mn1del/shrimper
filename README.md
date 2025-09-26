@@ -4,12 +4,20 @@ This project is a Flask + Bootstrap skeleton for managing a sailing league. It p
 
 ## Development
 
-Install dependencies and run the dev server (PostgreSQL required):
+Create and activate the project virtual environment, install dependencies, then run the dev server (PostgreSQL required):
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
+python -m pip install -r requirements.txt
 export DATABASE_URL=postgresql://user:pass@host:port/dbname
 flask --app app run --debug
+```
+
+Run the test suite from the same environment:
+
+```bash
+pytest
 ```
 
 Routes are defined in `app/routes.py` and templates live in `app/templates`.
@@ -154,11 +162,12 @@ python migrate_to_postgres.py
 If upgrading from a schema without `race_results.handicap_override`, either rerun the migration or POST to `/admin/schema/upgrade` to add the column in place. Overrides persist and seed subsequent races once this column exists.
 
 ## Dev Workflow
-1. Install dependencies: `pip install -r requirements.txt`
-2. Export `DATABASE_URL` for your Postgres instance
-3. Run the dev server: `flask --app app run --debug`
-4. Run tests: `pytest`
-5. Keep documentation, especially this file, accurate when structure or workflow changes
+1. Ensure the `.venv` virtual environment exists (`python -m venv .venv`) and is activated for your shell session.
+2. Install dependencies inside `.venv`: `python -m pip install -r requirements.txt`
+3. Export `DATABASE_URL` for your Postgres instance
+4. Run the dev server: `flask --app app run --debug`
+5. Run tests from the activated environment: `pytest`
+6. Keep documentation, especially this file, accurate when structure or workflow changes
 
 Note: If you change or upgrade the Bootstrap CDN version/URL, update the SRI hashes in `app/templates/base.html`.
 
