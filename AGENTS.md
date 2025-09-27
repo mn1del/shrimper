@@ -52,4 +52,4 @@ Once finished state how to run the tests locally, and ask whether to proceed wit
 
 # Final response
 
-When all steps are complete, tests run, and documents updated you can ask the user if they would like to merge changes into the main branch, sync, and delete this branch
+When all steps are complete, tests run, and documents updated you can ask the user if they would like to merge changes into the main branch and delete this branch
