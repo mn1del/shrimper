@@ -981,6 +981,45 @@ document.addEventListener('DOMContentLoaded', () => {
     startTime.addEventListener('mousedown', selectHoursOnce, { capture: true });
     startTime.addEventListener('touchstart', selectHoursOnce, { capture: true });
   })();
+  function scrollInputIntoView(input) {
+    if (!input) return;
+    const margin = 12;
+    const wrapper = input.closest('.race-table-wrapper');
+    if (wrapper && wrapper !== document.body) {
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const inputRect = input.getBoundingClientRect();
+      const hasVerticalOverflow = (wrapper.scrollHeight - wrapper.clientHeight) > 1;
+      if (hasVerticalOverflow) {
+        const deltaTop = inputRect.top - (wrapperRect.top + margin);
+        if (deltaTop < 0) {
+          wrapper.scrollTop += deltaTop;
+          return;
+        }
+        const deltaBottom = inputRect.bottom - (wrapperRect.bottom - margin);
+        if (deltaBottom > 0) {
+          wrapper.scrollTop += deltaBottom;
+          return;
+        }
+      }
+      if (inputRect.left < wrapperRect.left || inputRect.right > wrapperRect.right) {
+        try {
+          input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        } catch (_) {
+          input.scrollIntoView();
+        }
+      }
+      if (hasVerticalOverflow) return;
+    }
+    const rect = input.getBoundingClientRect();
+    const viewportTop = margin;
+    const viewportBottom = window.innerHeight - margin;
+    if (rect.top < viewportTop) {
+      window.scrollBy(0, rect.top - viewportTop);
+    } else if (rect.bottom > viewportBottom) {
+      window.scrollBy(0, rect.bottom - viewportBottom);
+    }
+  }
+
   // Custom tab navigation: keep focus in same column, move by row
   function focusByRow(currentEl, selector, dir = 1) {
     if (!currentEl) return;
@@ -1002,6 +1041,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (targetInput && !targetInput.disabled) {
       targetInput.focus();
       try { if (typeof targetInput.select === 'function') targetInput.select(); } catch (_) {}
+      scrollInputIntoView(targetInput);
     }
   }
   // Handle Tab/Shift+Tab on finish time inputs
