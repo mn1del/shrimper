@@ -84,6 +84,42 @@ def create_tables(conn):
                 config JSONB
             )
         """)
+
+        # Admins table for first-party authentication
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS admins (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                password_hash TEXT NOT NULL,
+                is_superadmin BOOLEAN NOT NULL DEFAULT FALSE,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_login_at TIMESTAMPTZ
+            )
+        """)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_admins_email_lower
+            ON admins (LOWER(email))
+        """)
+
+        # Password reset tokens table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id SERIAL PRIMARY KEY,
+                admin_id INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                used_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                requested_ip INET,
+                UNIQUE(token_hash)
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_password_reset_lookup
+            ON password_reset_tokens (admin_id, expires_at)
+        """)
         
         conn.commit()
         print("Database schema created successfully")

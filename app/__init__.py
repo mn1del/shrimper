@@ -2,8 +2,35 @@ import os
 from flask import Flask
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def create_app():
     app = Flask(__name__)
+
+    secret_key = os.environ.get("SECRET_KEY", "").strip()
+    if not secret_key:
+        # Development/test fallback; production should always set SECRET_KEY explicitly
+        secret_key = "development-secret-key"
+    app.config["SECRET_KEY"] = secret_key
+    app.config["SECURITY_PASSWORD_SALT"] = os.environ.get("SECURITY_PASSWORD_SALT", "change-me-salt")
+
+    # Mail configuration (used for password reset emails)
+    mail_defaults = {
+        "MAIL_SERVER": os.environ.get("MAIL_SERVER", ""),
+        "MAIL_PORT": int(os.environ.get("MAIL_PORT", "0") or 0),
+        "MAIL_USERNAME": os.environ.get("MAIL_USERNAME", ""),
+        "MAIL_PASSWORD": os.environ.get("MAIL_PASSWORD", ""),
+        "MAIL_USE_TLS": _env_bool("MAIL_USE_TLS", True),
+        "MAIL_USE_SSL": _env_bool("MAIL_USE_SSL", False),
+        "MAIL_DEFAULT_SENDER": os.environ.get("MAIL_DEFAULT_SENDER", ""),
+        "MAIL_SUPPRESS_SEND": _env_bool("MAIL_SUPPRESS_SEND", False),
+    }
+    app.config.update(mail_defaults)
 
     # PostgreSQL-only configuration (JSON backend retired on this branch)
     db_url = os.environ.get("DATABASE_URL")

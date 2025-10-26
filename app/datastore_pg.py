@@ -9,6 +9,7 @@ from psycopg2 import pool as pg_pool
 from psycopg2.extras import RealDictCursor, execute_values
 from psycopg2 import errors as pg_errors
 from contextlib import contextmanager
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 _POOL: Optional[pg_pool.AbstractConnectionPool] = None
@@ -1373,3 +1374,203 @@ def replace_race_results(race_id: str, entrants: List[Dict[str, Any]]) -> None:
                 rows,
             )
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Admin authentication helpers
+# ---------------------------------------------------------------------------
+
+_ADMIN_COLUMNS = (
+    "id",
+    "email",
+    "is_superadmin",
+    "is_active",
+    "created_at",
+    "updated_at",
+    "last_login_at",
+)
+
+
+def _normalize_email(email: str) -> str:
+    if not isinstance(email, str):
+        raise ValueError("Email address must be a string")
+    normalized = email.strip().lower()
+    if not normalized:
+        raise ValueError("Email address must not be empty")
+    return normalized
+
+
+def _admin_row_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": int(row["id"]) if row.get("id") is not None else None,
+        "email": row.get("email"),
+        "is_superadmin": bool(row.get("is_superadmin")),
+        "is_active": bool(row.get("is_active")),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+        "last_login_at": row.get("last_login_at"),
+    }
+
+
+def _admin_query_columns(include_hash: bool = False) -> str:
+    cols = list(_ADMIN_COLUMNS)
+    if include_hash:
+        cols.append("password_hash")
+    return ", ".join(cols)
+
+
+def create_admin(
+    email: str,
+    password: str,
+    *,
+    is_superadmin: bool = False,
+    is_active: bool = True,
+) -> Dict[str, Any]:
+    """Insert a new admin row with a hashed password."""
+    normalized = _normalize_email(email)
+    if not password:
+        raise ValueError("Password must not be empty")
+    password_hash = generate_password_hash(password)
+    row: Optional[Dict[str, Any]] = None
+
+    try:
+        with _get_conn() as conn:
+            try:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(
+                        f"""
+                        INSERT INTO admins (email, password_hash, is_superadmin, is_active)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING {_admin_query_columns()}
+                        """,
+                        (
+                            normalized,
+                            password_hash,
+                            bool(is_superadmin),
+                            bool(is_active),
+                        ),
+                    )
+                    row = cur.fetchone()
+                conn.commit()
+            except pg_errors.UniqueViolation as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise ValueError(f"Admin already exists for email '{normalized}'") from exc
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while creating admin") from exc
+
+    if not row:
+        raise RuntimeError("Admin creation failed without returning a row")
+    return _admin_row_to_public(row)
+
+
+def get_admin_by_email(
+    email: str,
+    *,
+    include_password_hash: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Fetch admin by email. Optionally include password hash for verification."""
+    normalized = _normalize_email(email)
+    try:
+        with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT {_admin_query_columns(include_hash=include_password_hash)}
+                FROM admins
+                WHERE email = %s
+                """,
+                (normalized,),
+            )
+            row = cur.fetchone()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while fetching admin") from exc
+
+    if not row:
+        return None
+    if include_password_hash:
+        return dict(row)
+    return _admin_row_to_public(row)
+
+
+def get_admin_by_id(admin_id: int) -> Optional[Dict[str, Any]]:
+    try:
+        with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT {_admin_query_columns()}
+                FROM admins
+                WHERE id = %s
+                """,
+                (int(admin_id),),
+            )
+            row = cur.fetchone()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while fetching admin by id") from exc
+
+    if not row:
+        return None
+    return _admin_row_to_public(row)
+
+
+def list_admins() -> List[Dict[str, Any]]:
+    """Return all admins ordered by email."""
+    try:
+        with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT {_admin_query_columns()}
+                FROM admins
+                ORDER BY email ASC
+                """
+            )
+            rows = cur.fetchall() or []
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while listing admins") from exc
+
+    return [_admin_row_to_public(row) for row in rows]
+
+
+def verify_admin_credentials(email: str, password: str) -> Optional[Dict[str, Any]]:
+    """Return the admin dict if credentials are valid and admin is active."""
+    if not password:
+        return None
+    try:
+        row = get_admin_by_email(email, include_password_hash=True)
+    except RuntimeError:
+        raise
+    if not row:
+        return None
+    if not row.get("is_active", True):
+        return None
+    password_hash = row.get("password_hash")
+    if not password_hash:
+        return None
+    if not check_password_hash(password_hash, password):
+        return None
+    row.pop("password_hash", None)
+    return _admin_row_to_public(row)
+
+
+def set_admin_password(admin_id: int, new_password: str) -> None:
+    if not new_password:
+        raise ValueError("New password must not be empty")
+    password_hash = generate_password_hash(new_password)
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE admins
+                SET password_hash = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (password_hash, int(admin_id)),
+            )
+            if cur.rowcount == 0:
+                conn.rollback()
+                raise ValueError(f"Admin id {admin_id} not found")
+            conn.commit()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while updating admin password") from exc
