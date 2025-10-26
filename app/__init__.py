@@ -1,4 +1,5 @@
 import os
+import click
 from flask import Flask, jsonify, redirect, request, url_for
 
 from .auth import build_user, login_manager
@@ -80,6 +81,27 @@ def create_app():
             return jsonify({"error": "authentication_required"}), 401
         next_url = request.url
         return redirect(url_for("main.login", next=next_url))
+
+    @app.cli.command("auth-create-admin")
+    @click.option("--email", prompt=True, help="Email address for the admin account")
+    @click.option(
+        "--password",
+        prompt=True,
+        hide_input=True,
+        confirmation_prompt=True,
+        help="Initial password. The admin can change this later.",
+    )
+    @click.option("--superadmin/--no-superadmin", default=False, help="Grant super-admin privileges")
+    def auth_create_admin(email: str, password: str, superadmin: bool) -> None:
+        """Create an admin account from the CLI."""
+        try:
+            record = datastore_proxy.create_admin(email, password, is_superadmin=superadmin)
+        except ValueError as exc:  # duplicate or validation error
+            click.echo(f"Error: {exc}", err=True)
+            raise click.Abort() from exc
+        click.echo(
+            f"Created admin {record['email']} (superadmin={bool(record.get('is_superadmin'))})"
+        )
 
     from . import routes  # type: ignore
     app.register_blueprint(routes.bp)

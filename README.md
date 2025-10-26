@@ -22,6 +22,53 @@ pytest
 
 Routes are defined in `app/routes.py` and templates live in `app/templates`.
 
+## Authentication & Admins
+
+Shrimper now ships with first-party authentication for editing tools:
+
+- Public race and standings pages remain open.
+- Admin-only pages (`/fleet`, `/settings`, `/admins`, API writes) require login.
+- Super admins can manage other admins via the **Admins** page.
+- Automated password resets are delivered via the configured SMTP server.
+
+### First admin bootstrap
+
+After deploying, create the first super admin with the bundled CLI command:
+
+```bash
+flask --app app auth-create-admin --email you@example.com --superadmin
+```
+
+The command prompts for a password. Admins can change their password from the login page using the “Forgot password?” link.
+
+### Email configuration
+
+Password resets and admin invitations send email through Flask-Mail. Set the following environment variables (Brevo SMTP example shown):
+
+```bash
+export MAIL_SERVER=smtp-relay.brevo.com
+export MAIL_PORT=587
+export MAIL_USE_TLS=1
+export MAIL_USERNAME=your_brevo_login
+export MAIL_PASSWORD=your_brevo_password
+export MAIL_DEFAULT_SENDER="Shrimper Results <results@example.com>"
+```
+
+For testing without sending email, set `MAIL_SUPPRESS_SEND=1`.
+
+### Required secrets
+
+Ensure `SECRET_KEY` and `SECURITY_PASSWORD_SALT` are set in production:
+
+```bash
+export SECRET_KEY="generate-a-random-string"
+export SECURITY_PASSWORD_SALT="generate-another-random-string"
+```
+
+### Password reset flow
+
+Admins can request a reset via `/password/forgot` or a super admin can trigger one from the Admins page. Tokens expire after one hour and become single-use after a successful reset.
+
 ## Database Schema
 
 This branch is PostgreSQL-only (the prior `data.json` backend is retired). The following schema is used:

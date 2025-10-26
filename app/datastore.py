@@ -216,3 +216,7 @@ def get_password_reset_by_hash(token_hash: str) -> Optional[Dict[str, Any]]:
 
 def mark_password_reset_used(token_id: int) -> None:
     return _pg.mark_password_reset_used(token_id)
+
+
+def update_admin_flags(admin_id: int, *, is_active: Optional[bool] = None, is_superadmin: Optional[bool] = None) -> Dict[str, Any]:
+    return _pg.update_admin_flags(admin_id, is_active=is_active, is_superadmin=is_superadmin)

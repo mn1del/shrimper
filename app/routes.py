@@ -31,7 +31,11 @@ from .datastore import (
     set_fleet as ds_set_fleet,
     get_settings as ds_get_settings,
     set_settings as ds_set_settings,
+    list_admins as ds_list_admins,
+    create_admin as ds_create_admin,
+    update_admin_flags as ds_update_admin_flags,
     get_admin_by_email as ds_get_admin_by_email,
+    get_admin_by_id as ds_get_admin_by_id,
     set_admin_password as ds_set_admin_password,
     create_password_reset_token as ds_create_password_reset_token,
     get_password_reset_by_hash as ds_get_password_reset_by_hash,
@@ -91,6 +95,25 @@ def _client_ip() -> str | None:
     if forwarded:
         return forwarded.split(',')[0].strip()
     return request.remote_addr
+
+
+_RESET_TOKEN_TTL = timedelta(hours=1)
+
+
+def _send_reset_link_for_admin(admin_record: dict) -> bool:
+    raw_token = secrets.token_urlsafe(48)
+    token_hash = _hash_token(raw_token)
+    expires_at = datetime.now(timezone.utc) + _RESET_TOKEN_TTL
+    try:
+        ds_create_password_reset_token(admin_record['id'], token_hash, expires_at, _client_ip())
+    except Exception:
+        current_app.logger.exception('Failed to create password reset token for %s', admin_record.get('email'))
+        return False
+    reset_url = url_for('main.password_reset', token=raw_token, _external=True)
+    if not send_password_reset_email(admin_record.get('email'), reset_url):
+        current_app.logger.warning('Password reset email suppressed or failed for %s', admin_record.get('email'))
+        return False
+    return True
 
 
 @bp.app_template_filter('dmy_date')
@@ -1498,18 +1521,7 @@ def password_forgot():
                 current_app.logger.exception('Failed to load admin for password reset')
                 admin = None
             if admin and admin.get('is_active', True):
-                raw_token = secrets.token_urlsafe(48)
-                token_hash = _hash_token(raw_token)
-                expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-                requester_ip = _client_ip()
-                try:
-                    ds_create_password_reset_token(admin['id'], token_hash, expires_at, requester_ip)
-                except Exception:
-                    current_app.logger.exception('Failed to persist reset token for %%s', email_value)
-                else:
-                    reset_url = url_for('main.password_reset', token=raw_token, _external=True)
-                    if not send_password_reset_email(admin['email'], reset_url):
-                        current_app.logger.warning('Password reset email suppressed or failed for %%s', email_value)
+                _send_reset_link_for_admin(admin)
         flash("If an account matches that email, you'll receive a reset link shortly.", "info")
         return redirect(url_for('main.password_forgot'))
 
@@ -1584,6 +1596,104 @@ def password_reset(token: str):
         email=admin_email,
         expires_at=expires_at,
     )
+
+
+@bp.route('/admins')
+@login_required
+@superadmin_required
+def admin_management():
+    admins = ds_list_admins()
+    return render_template(
+        'admins.html',
+        title='Admin Users',
+        admins=admins,
+        current_admin_id=int(current_user.get_id()),
+    )
+
+
+@bp.route('/api/admins')
+@login_required
+@superadmin_required
+def api_list_admins():
+    return {'admins': ds_list_admins()}
+
+
+@bp.route('/api/admins', methods=['POST'])
+@login_required
+@superadmin_required
+def api_create_admin():
+    data = request.get_json(silent=True) or {}
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    is_superadmin = bool(data.get('is_superadmin'))
+    send_reset = bool(data.get('send_reset_link', False))
+    if not email:
+        return {'error': 'Email is required.'}, 400
+    if not password or len(password) < 8:
+        return {'error': 'Password must be at least 8 characters long.'}, 400
+    try:
+        record = ds_create_admin(email, password, is_superadmin=is_superadmin)
+    except ValueError as exc:
+        return {'error': str(exc)}, 400
+    if send_reset:
+        _send_reset_link_for_admin(record)
+    return {'admin': record}, 201
+
+
+@bp.route('/api/admins/<int:admin_id>', methods=['PATCH'])
+@login_required
+@superadmin_required
+def api_update_admin(admin_id: int):
+    data = request.get_json(silent=True) or {}
+    updates: dict[str, bool] = {}
+    if 'is_active' in data:
+        updates['is_active'] = bool(data.get('is_active'))
+    if 'is_superadmin' in data:
+        updates['is_superadmin'] = bool(data.get('is_superadmin'))
+    new_password = data.get('password')
+
+    current_id = int(current_user.get_id())
+    if admin_id == current_id:
+        if updates.get('is_active') is False:
+            return {'error': 'You cannot deactivate your own account.'}, 400
+        if updates.get('is_superadmin') is False:
+            others = [a for a in ds_list_admins() if a.get('id') != admin_id and a.get('is_superadmin')]
+            if not others:
+                return {'error': 'Cannot remove super-admin privileges from the last super-admin.'}, 400
+
+    if updates:
+        try:
+            ds_update_admin_flags(admin_id, **updates)
+        except ValueError as exc:
+            return {'error': str(exc)}, 404
+        except RuntimeError as exc:
+            return {'error': str(exc)}, 500
+
+    if new_password is not None:
+        if not new_password or len(new_password) < 8:
+            return {'error': 'New password must be at least 8 characters long.'}, 400
+        try:
+            ds_set_admin_password(admin_id, new_password)
+        except ValueError as exc:
+            return {'error': str(exc)}, 404
+
+    record = ds_get_admin_by_id(admin_id)
+    if not record:
+        return {'error': 'Admin not found.'}, 404
+    return {'admin': record}
+
+
+@bp.route('/api/admins/<int:admin_id>/reset', methods=['POST'])
+@login_required
+@superadmin_required
+def api_reset_admin(admin_id: int):
+    record = ds_get_admin_by_id(admin_id)
+    if not record:
+        return {'error': 'Admin not found.'}, 404
+    if not record.get('is_active', True):
+        return {'error': 'Admin is inactive.'}, 400
+    success = _send_reset_link_for_admin(record)
+    return {'sent': bool(success)}
 
 
 @bp.route('/')

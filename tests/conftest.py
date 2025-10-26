@@ -274,6 +274,17 @@ def patch_datastore(monkeypatch, memory_store):
                 return None
         return None
 
+    def update_admin_flags(admin_id, *, is_active=None, is_superadmin=None):
+        for record in admins:
+            if int(record.get("id")) == int(admin_id):
+                if is_active is not None:
+                    record["is_active"] = bool(is_active)
+                if is_superadmin is not None:
+                    record["is_superadmin"] = bool(is_superadmin)
+                record["updated_at"] = "2024-01-03T00:00:00Z"
+                return _public_admin(record)
+        raise ValueError("Admin not found")
+
     def create_password_reset_token(admin_id, token_hash, expires_at, requested_ip=None):
         entry = {
             "id": reset_pk["value"],
@@ -332,6 +343,7 @@ def patch_datastore(monkeypatch, memory_store):
     monkeypatch.setattr(pg, "verify_admin_credentials", verify_admin_credentials)
     monkeypatch.setattr(pg, "set_admin_password", set_admin_password)
     monkeypatch.setattr(pg, "record_admin_login", record_admin_login)
+    monkeypatch.setattr(pg, "update_admin_flags", update_admin_flags)
     monkeypatch.setattr(pg, "create_password_reset_token", create_password_reset_token)
     monkeypatch.setattr(pg, "get_password_reset_by_hash", get_password_reset_by_hash)
     monkeypatch.setattr(pg, "mark_password_reset_used", mark_password_reset_used)

@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block extra_head %}
+  <script>
+    window.__INITIAL_ADMINS__ = {{ admins|tojson }};
+    window.__CURRENT_ADMIN_ID__ = {{ current_admin_id }};
+  </script>
+  <script defer src="{{ url_for('static', filename='js/admins.js') }}"></script>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Admin Users</h1>
+  <button type="button" class="btn btn-outline-secondary" id="refreshAdmins">Refresh</button>
+</div>
+<div id="adminAlert" class="alert d-none" role="alert"></div>
+<div class="card mb-4">
+  <div class="card-header">Add admin</div>
+  <div class="card-body">
+    <form id="addAdminForm" class="row gy-2 gx-3 align-items-end">
+      <div class="col-md-4">
+        <label for="adminEmail" class="form-label">Email</label>
+        <input type="email" class="form-control" id="adminEmail" name="email" required>
+      </div>
+      <div class="col-md-3">
+        <label for="adminPassword" class="form-label">Password</label>
+        <input type="password" class="form-control" id="adminPassword" name="password" minlength="8" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Role</label>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="adminSuper" name="is_superadmin">
+          <label class="form-check-label" for="adminSuper">Super admin</label>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Add</button>
+      </div>
+      <div class="col-12 form-text">Password must be at least 8 characters. Super admins can manage other admins.</div>
+    </form>
+  </div>
+</div>
+<table class="table table-striped align-middle" id="adminsTable">
+  <thead>
+    <tr>
+      <th scope="col">Email</th>
+      <th scope="col">Status</th>
+      <th scope="col">Role</th>
+      <th scope="col">Last login</th>
+      <th scope="col" class="text-end">Actions</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+{% endblock %}

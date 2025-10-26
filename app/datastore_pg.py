@@ -1594,6 +1594,40 @@ def record_admin_login(admin_id: int) -> None:
         raise RuntimeError("Database unavailable while recording admin login") from exc
 
 
+def update_admin_flags(
+    admin_id: int,
+    *,
+    is_active: Optional[bool] = None,
+    is_superadmin: Optional[bool] = None,
+) -> Dict[str, Any]:
+    updates: List[str] = []
+    params: List[Any] = []
+    if is_active is not None:
+        updates.append("is_active = %s")
+        params.append(bool(is_active))
+    if is_superadmin is not None:
+        updates.append("is_superadmin = %s")
+        params.append(bool(is_superadmin))
+    if not updates:
+        admin = get_admin_by_id(admin_id)
+        if admin is None:
+            raise ValueError(f"Admin id {admin_id} not found")
+        return admin
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    params.append(int(admin_id))
+    sql = f"UPDATE admins SET {', '.join(updates)} WHERE id = %s RETURNING {_admin_query_columns()}"
+    try:
+        with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            conn.commit()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while updating admin flags") from exc
+    if not row:
+        raise ValueError(f"Admin id {admin_id} not found")
+    return _admin_row_to_public(row)
+
+
 def create_password_reset_token(
     admin_id: int,
     token_hash: str,
