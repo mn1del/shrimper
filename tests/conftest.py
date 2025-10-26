@@ -1,5 +1,6 @@
 import os
 import copy
+from datetime import datetime, timezone
 import pytest
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -59,6 +60,7 @@ def memory_store():
         "fleet": {"competitors": []},
         "seasons": [],
         "admins": [],
+        "password_reset_tokens": [],
     }
     return store
 
@@ -190,6 +192,8 @@ def patch_datastore(monkeypatch, memory_store):
     # Admin helpers
     admins = memory_store.setdefault("admins", [])
     admin_pk = {"value": 1}
+    reset_tokens = memory_store.setdefault("password_reset_tokens", [])
+    reset_pk = {"value": 1}
 
     def _next_admin_id():
         val = admin_pk["value"]
@@ -270,6 +274,41 @@ def patch_datastore(monkeypatch, memory_store):
                 return None
         return None
 
+    def create_password_reset_token(admin_id, token_hash, expires_at, requested_ip=None):
+        entry = {
+            "id": reset_pk["value"],
+            "admin_id": int(admin_id),
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "requested_ip": requested_ip,
+            "created_at": datetime.now(timezone.utc),
+            "used_at": None,
+        }
+        reset_pk["value"] += 1
+        reset_tokens.append(entry)
+        return dict(entry)
+
+    def get_password_reset_by_hash(token_hash):
+        for entry in reversed(reset_tokens):
+            if entry.get("token_hash") == token_hash:
+                admin = get_admin_by_id(entry.get("admin_id"))
+                if admin is None:
+                    return None
+                combined = dict(entry)
+                combined.update(admin)
+                combined["email"] = admin.get("email")
+                combined["is_active"] = admin.get("is_active", True)
+                combined["is_superadmin"] = admin.get("is_superadmin", False)
+                return combined
+        return None
+
+    def mark_password_reset_used(token_id):
+        for entry in reset_tokens:
+            if int(entry.get("id")) == int(token_id):
+                entry["used_at"] = datetime.now(timezone.utc)
+                return None
+        return None
+
     # Patch all used functions
     monkeypatch.setattr(pg, "load_data", load_data)
     monkeypatch.setattr(pg, "save_data", save_data)
@@ -293,6 +332,9 @@ def patch_datastore(monkeypatch, memory_store):
     monkeypatch.setattr(pg, "verify_admin_credentials", verify_admin_credentials)
     monkeypatch.setattr(pg, "set_admin_password", set_admin_password)
     monkeypatch.setattr(pg, "record_admin_login", record_admin_login)
+    monkeypatch.setattr(pg, "create_password_reset_token", create_password_reset_token)
+    monkeypatch.setattr(pg, "get_password_reset_by_hash", get_password_reset_by_hash)
+    monkeypatch.setattr(pg, "mark_password_reset_used", mark_password_reset_used)
     # Patch scoring constants and helper functions in-place
     import app.scoring as _scoring
     settings = memory_store["settings"]

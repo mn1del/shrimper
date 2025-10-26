@@ -1,10 +1,11 @@
-from flask import Blueprint, redirect, render_template, url_for, abort, request, current_app
+from flask import Blueprint, redirect, render_template, url_for, abort, request, current_app, flash
 import json
 import importlib
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 import os
 import time
 import hashlib
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from urllib.parse import urljoin, urlparse
@@ -14,6 +15,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from .scoring import calculate_race_results, _scaling_factor
 from . import scoring as scoring_module
 from .auth import build_user
+from .email import send_password_reset_email
 from .datastore import (
     load_data,
     save_data,
@@ -29,6 +31,11 @@ from .datastore import (
     set_fleet as ds_set_fleet,
     get_settings as ds_get_settings,
     set_settings as ds_set_settings,
+    get_admin_by_email as ds_get_admin_by_email,
+    set_admin_password as ds_set_admin_password,
+    create_password_reset_token as ds_create_password_reset_token,
+    get_password_reset_by_hash as ds_get_password_reset_by_hash,
+    mark_password_reset_used as ds_mark_password_reset_used,
     verify_admin_credentials as ds_verify_admin_credentials,
     record_admin_login as ds_record_admin_login,
 )
@@ -73,6 +80,17 @@ def superadmin_required(func):
         return func(*args, **kwargs)
 
     return _wrapped
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def _client_ip() -> str | None:
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr
 
 
 @bp.app_template_filter('dmy_date')
@@ -1467,6 +1485,105 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('main.races'))
+
+
+@bp.route('/password/forgot', methods=['GET', 'POST'])
+def password_forgot():
+    if request.method == 'POST':
+        email_value = (request.form.get('email') or '').strip().lower()
+        if email_value:
+            try:
+                admin = ds_get_admin_by_email(email_value)
+            except Exception:
+                current_app.logger.exception('Failed to load admin for password reset')
+                admin = None
+            if admin and admin.get('is_active', True):
+                raw_token = secrets.token_urlsafe(48)
+                token_hash = _hash_token(raw_token)
+                expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+                requester_ip = _client_ip()
+                try:
+                    ds_create_password_reset_token(admin['id'], token_hash, expires_at, requester_ip)
+                except Exception:
+                    current_app.logger.exception('Failed to persist reset token for %%s', email_value)
+                else:
+                    reset_url = url_for('main.password_reset', token=raw_token, _external=True)
+                    if not send_password_reset_email(admin['email'], reset_url):
+                        current_app.logger.warning('Password reset email suppressed or failed for %%s', email_value)
+        flash("If an account matches that email, you'll receive a reset link shortly.", "info")
+        return redirect(url_for('main.password_forgot'))
+
+    return render_template('reset_request.html', title='Forgot password')
+
+
+@bp.route('/password/reset/<token>', methods=['GET', 'POST'])
+def password_reset(token: str):
+    token_hash = _hash_token(token or '')
+    try:
+        record = ds_get_password_reset_by_hash(token_hash)
+    except Exception:
+        current_app.logger.exception('Failed to load password reset token')
+        record = None
+
+    now = datetime.now(timezone.utc)
+    is_valid = False
+    admin_email = None
+    admin_id = None
+    token_id = None
+    expires_at: datetime | None = None
+
+    if record:
+        token_id = record.get('id') or record.get('token_id')
+        admin_id = record.get('admin_id')
+        admin_email = record.get('email')
+        expires_at = record.get('expires_at')
+        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        used_at = record.get('used_at')
+        if isinstance(used_at, datetime) and used_at.tzinfo is None:
+            used_at = used_at.replace(tzinfo=timezone.utc)
+        active = record.get('is_active', True)
+        if (
+            token_id is not None
+            and admin_id is not None
+            and used_at is None
+            and active
+            and (expires_at is None or expires_at >= now)
+        ):
+            is_valid = True
+
+    if not is_valid:
+        return render_template('reset_form.html', title='Reset password', invalid=True), 400
+
+    errors: list[str] = []
+    if request.method == 'POST':
+        password = (request.form.get('password') or '').strip()
+        confirm = (request.form.get('confirm') or '').strip()
+        if len(password) < 8:
+            errors.append('Password must be at least 8 characters long.')
+        if password != confirm:
+            errors.append('Passwords do not match.')
+        if not errors and admin_id is not None and token_id is not None:
+            try:
+                ds_set_admin_password(admin_id, password)
+                ds_mark_password_reset_used(token_id)
+            except ValueError as exc:
+                errors.append(str(exc))
+            except Exception:
+                current_app.logger.exception('Failed to apply password reset for admin %%s', admin_id)
+                errors.append('Unable to update password right now. Please try again.')
+            else:
+                flash('Password updated. Sign in with your new password.', 'success')
+                return redirect(url_for('main.login', email=admin_email))
+
+    return render_template(
+        'reset_form.html',
+        title='Reset password',
+        token=token,
+        errors=errors,
+        email=admin_email,
+        expires_at=expires_at,
+    )
 
 
 @bp.route('/')

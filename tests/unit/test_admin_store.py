@@ -1,7 +1,8 @@
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
 import pathlib
 import sys
+from unittest.mock import MagicMock
+import importlib
 
 import pytest
 from psycopg2 import OperationalError
@@ -11,61 +12,9 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 import app.datastore_pg as admin_store  # noqa: E402
 
 
-class _StubCursor:
-    def __init__(self, row: Optional[Dict[str, Any]] = None, rows: Optional[List[Dict[str, Any]]] = None, error: Optional[Exception] = None):
-        self._row = row
-        self._rows = rows or []
-        self._error = error
-        self.statements: List[tuple[str, tuple[Any, ...]]] = []
-
-    def execute(self, sql: str, params: tuple[Any, ...]):
-        self.statements.append((sql.strip(), params))
-        if self._error:
-            raise self._error
-
-    def fetchone(self):
-        return self._row
-
-    def fetchall(self):
-        return self._rows
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class _StubConn:
-    def __init__(self, cursor: _StubCursor):
-        self.cursor_instance = cursor
-        self.committed = False
-        self.rollbacked = False
-
-    def cursor(self, cursor_factory=None):
-        return self.cursor_instance
-
-    def commit(self):
-        self.committed = True
-
-    def rollback(self):
-        self.rollbacked = True
-
-
-def _patch_conn(monkeypatch, cursor: _StubCursor):
-    created: List[_StubConn] = []
-
-    @contextmanager
-    def _fake_conn():
-        conn = _StubConn(cursor)
-        created.append(conn)
-        yield conn
-
-    monkeypatch.setattr(admin_store, "_get_conn", _fake_conn)
-    return created
-
-
 def test_create_admin_hashes_password_and_commits(monkeypatch):
+    global admin_store
+    admin_store = importlib.reload(admin_store)
     row = {
         "id": 1,
         "email": "admin@example.com",
@@ -75,9 +24,18 @@ def test_create_admin_hashes_password_and_commits(monkeypatch):
         "updated_at": "2024-01-01T00:00:00Z",
         "last_login_at": None,
     }
-    cursor = _StubCursor(row=row)
-    conns = _patch_conn(monkeypatch, cursor)
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_cursor.fetchone.return_value = row
+    mock_conn.cursor.return_value = mock_cursor
 
+    @contextmanager
+    def _fake_conn():
+        yield mock_conn
+
+    monkeypatch.setattr(admin_store, "_get_conn", _fake_conn)
+    assert admin_store._get_conn is _fake_conn
     monkeypatch.setattr(admin_store, "generate_password_hash", lambda password: f"HASH::{password}")
 
     admin = admin_store.create_admin("Admin@Example.com", "secret", is_superadmin=True)
@@ -85,27 +43,45 @@ def test_create_admin_hashes_password_and_commits(monkeypatch):
     assert admin["email"] == "admin@example.com"
     assert admin["is_superadmin"] is True
     assert "password_hash" not in admin
-
-    assert conns[0].committed is True
-    executed_sql, params = cursor.statements[0]
+    assert mock_conn.cursor.called
+    mock_cursor.execute.assert_called_once()
+    executed_sql, params = mock_cursor.execute.call_args[0]
     assert "INSERT INTO admins" in executed_sql
     assert params[0] == "admin@example.com"
     assert params[1] == "HASH::secret"
+    mock_conn.commit.assert_called_once()
 
 
 def test_create_admin_duplicate_email_rolls_back(monkeypatch):
-    error = pg_errors.UniqueViolation()
-    cursor = _StubCursor(error=error)
-    conns = _patch_conn(monkeypatch, cursor)
+    global admin_store
+    admin_store = importlib.reload(admin_store)
+    class FakeUniqueViolation(Exception):
+        pass
+
+    monkeypatch.setattr(admin_store.pg_errors, "UniqueViolation", FakeUniqueViolation, raising=False)
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_cursor.execute.side_effect = FakeUniqueViolation()
+    mock_conn.cursor.return_value = mock_cursor
+
+    @contextmanager
+    def _fake_conn():
+        yield mock_conn
+
+    monkeypatch.setattr(admin_store, "_get_conn", _fake_conn)
     monkeypatch.setattr(admin_store, "generate_password_hash", lambda password: f"H::{password}")
 
     with pytest.raises(ValueError):
         admin_store.create_admin("dup@example.com", "secret")
 
-    assert conns[0].rollbacked is True
+    mock_conn.rollback.assert_called_once()
 
 
 def test_get_admin_by_email_returns_public_dict(monkeypatch):
+    global admin_store
+    admin_store = importlib.reload(admin_store)
     row = {
         "id": 42,
         "email": "hello@example.com",
@@ -115,18 +91,29 @@ def test_get_admin_by_email_returns_public_dict(monkeypatch):
         "updated_at": "2024-01-02T00:00:00Z",
         "last_login_at": None,
     }
-    cursor = _StubCursor(row=row)
-    _patch_conn(monkeypatch, cursor)
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_cursor.fetchone.return_value = row
+    mock_conn.cursor.return_value = mock_cursor
+
+    @contextmanager
+    def _fake_conn():
+        yield mock_conn
+
+    monkeypatch.setattr(admin_store, "_get_conn", _fake_conn)
 
     admin = admin_store.get_admin_by_email("Hello@Example.com")
 
     assert admin == row
-    executed_sql, params = cursor.statements[0]
+    executed_sql, params = mock_cursor.execute.call_args[0]
     assert "WHERE email = %s" in executed_sql
     assert params[0] == "hello@example.com"
 
 
 def test_verify_admin_credentials(monkeypatch):
+    global admin_store
+    admin_store = importlib.reload(admin_store)
     record = {
         "id": 7,
         "email": "admin@example.com",
@@ -150,11 +137,16 @@ def test_verify_admin_credentials(monkeypatch):
 
 
 def test_create_admin_db_failure(monkeypatch):
-    @contextmanager
-    def _failing_conn():
-        raise OperationalError("boom")
+    global admin_store
+    admin_store = importlib.reload(admin_store)
+    class _FailConn:
+        def __enter__(self):
+            raise OperationalError("boom")
 
-    monkeypatch.setattr(admin_store, "_get_conn", _failing_conn)
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(admin_store, "_get_conn", lambda: _FailConn())
 
     with pytest.raises(RuntimeError):
         admin_store.create_admin("admin@example.com", "secret")

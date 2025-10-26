@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
 
 # PostgreSQL-only datastore proxy
@@ -198,3 +199,20 @@ def set_admin_password(admin_id: int, new_password: str) -> None:
 
 def record_admin_login(admin_id: int) -> None:
     return _pg.record_admin_login(admin_id)
+
+
+def create_password_reset_token(
+    admin_id: int,
+    token_hash: str,
+    expires_at: datetime,
+    requested_ip: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _pg.create_password_reset_token(admin_id, token_hash, expires_at, requested_ip)
+
+
+def get_password_reset_by_hash(token_hash: str) -> Optional[Dict[str, Any]]:
+    return _pg.get_password_reset_by_hash(token_hash)
+
+
+def mark_password_reset_used(token_id: int) -> None:
+    return _pg.mark_password_reset_used(token_id)

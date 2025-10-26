@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-4">
+    {% if invalid %}
+      <h1 class="h4 mb-3">Reset link expired</h1>
+      <p class="text-muted">This password reset link is invalid or has expired. Request a new link below.</p>
+      <a class="btn btn-primary" href="{{ url_for('main.password_forgot') }}">Request new link</a>
+    {% else %}
+      <h1 class="h4 mb-3">Choose a new password</h1>
+      {% if errors %}
+        <div class="alert alert-danger" role="alert">
+          <ul class="mb-0">
+            {% for err in errors %}
+            <li>{{ err }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      <form method="post" novalidate>
+        <div class="mb-3">
+          <label for="password" class="form-label">New password</label>
+          <input type="password" class="form-control" id="password" name="password" required minlength="8">
+        </div>
+        <div class="mb-3">
+          <label for="confirm" class="form-label">Confirm password</label>
+          <input type="password" class="form-control" id="confirm" name="confirm" required minlength="8">
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Update password</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

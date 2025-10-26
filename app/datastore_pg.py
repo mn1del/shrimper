@@ -2,6 +2,7 @@ import os
 import json
 import re
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
@@ -1591,3 +1592,84 @@ def record_admin_login(admin_id: int) -> None:
             conn.commit()
     except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
         raise RuntimeError("Database unavailable while recording admin login") from exc
+
+
+def create_password_reset_token(
+    admin_id: int,
+    token_hash: str,
+    expires_at: datetime,
+    requested_ip: Optional[str] = None,
+) -> Dict[str, Any]:
+    try:
+        with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Invalidate prior outstanding tokens for this admin
+            cur.execute(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = CURRENT_TIMESTAMP
+                WHERE admin_id = %s AND used_at IS NULL
+                """,
+                (int(admin_id),),
+            )
+            cur.execute(
+                """
+                INSERT INTO password_reset_tokens (admin_id, token_hash, expires_at, requested_ip)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, admin_id, expires_at, created_at, requested_ip
+                """,
+                (int(admin_id), token_hash, expires_at, requested_ip),
+            )
+            row = cur.fetchone()
+            conn.commit()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while creating password reset token") from exc
+    if not row:
+        raise RuntimeError("Failed to persist password reset token")
+    return dict(row)
+
+
+def get_password_reset_by_hash(token_hash: str) -> Optional[Dict[str, Any]]:
+    try:
+        with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT pr.id,
+                       pr.admin_id,
+                       pr.token_hash,
+                       pr.expires_at,
+                       pr.used_at,
+                       pr.created_at,
+                       pr.requested_ip,
+                       a.email,
+                       a.is_active,
+                       a.is_superadmin
+                FROM password_reset_tokens pr
+                JOIN admins a ON a.id = pr.admin_id
+                WHERE pr.token_hash = %s
+                ORDER BY pr.created_at DESC
+                LIMIT 1
+                """,
+                (token_hash,),
+            )
+            row = cur.fetchone()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while fetching password reset token") from exc
+    if not row:
+        return None
+    return dict(row)
+
+
+def mark_password_reset_used(token_id: int) -> None:
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (int(token_id),),
+            )
+            conn.commit()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while marking reset token used") from exc

@@ -2,6 +2,7 @@ import os
 from flask import Flask, jsonify, redirect, request, url_for
 
 from .auth import build_user, login_manager
+from .email import mail
 from . import datastore as datastore_proxy
 
 
@@ -58,6 +59,8 @@ def create_app():
         app.logger.exception("PostgreSQL pool initialization failed; continuing without pool")
 
     # Routes use datastore proxies that now target PostgreSQL
+
+    mail.init_app(app)
 
     login_manager.init_app(app)
 
