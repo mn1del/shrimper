@@ -1,6 +1,7 @@
 import os
 import copy
 import pytest
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +58,7 @@ def memory_store():
         },
         "fleet": {"competitors": []},
         "seasons": [],
+        "admins": [],
     }
     return store
 
@@ -185,6 +187,89 @@ def patch_datastore(monkeypatch, memory_store):
         d["settings"] = settings or {}
         return d
 
+    # Admin helpers
+    admins = memory_store.setdefault("admins", [])
+    admin_pk = {"value": 1}
+
+    def _next_admin_id():
+        val = admin_pk["value"]
+        admin_pk["value"] += 1
+        return val
+
+    def _public_admin(record):
+        data = dict(record)
+        data.pop("password_hash", None)
+        return data
+
+    def create_admin(email, password, is_superadmin=False, is_active=True):
+        if not email:
+            raise ValueError("Email required")
+        normalized = email.strip().lower()
+        if any(a.get("email") == normalized for a in admins):
+            raise ValueError(f"Admin already exists for email '{normalized}'")
+        if not password:
+            raise ValueError("Password required")
+        record = {
+            "id": _next_admin_id(),
+            "email": normalized,
+            "is_superadmin": bool(is_superadmin),
+            "is_active": bool(is_active),
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "last_login_at": None,
+            "password_hash": generate_password_hash(password or "temp"),
+        }
+        admins.append(record)
+        return _public_admin(record)
+
+    def get_admin_by_email(email, include_password_hash=False):
+        if not email:
+            return None
+        normalized = email.strip().lower()
+        for record in admins:
+            if record.get("email") == normalized:
+                if include_password_hash:
+                    return dict(record)
+                return _public_admin(record)
+        return None
+
+    def get_admin_by_id(admin_id):
+        for record in admins:
+            if int(record.get("id")) == int(admin_id):
+                return _public_admin(record)
+        return None
+
+    def list_admins():
+        return [_public_admin(record) for record in sorted(admins, key=lambda r: r.get("email"))]
+
+    def verify_admin_credentials(email, password):
+        record = get_admin_by_email(email, include_password_hash=True)
+        if not record:
+            return None
+        if not record.get("is_active", True):
+            return None
+        if not password or not check_password_hash(record.get("password_hash"), password):
+            return None
+        return _public_admin(record)
+
+    def set_admin_password(admin_id, new_password):
+        if not new_password:
+            raise ValueError("New password required")
+        for record in admins:
+            if int(record.get("id")) == int(admin_id):
+                record["password_hash"] = generate_password_hash(new_password)
+                record["updated_at"] = "2024-01-01T00:00:00Z"
+                return None
+        raise ValueError("Admin not found")
+
+    def record_admin_login(admin_id):
+        for record in admins:
+            if int(record.get("id")) == int(admin_id):
+                record["last_login_at"] = "2024-01-02T00:00:00Z"
+                record["updated_at"] = "2024-01-02T00:00:00Z"
+                return None
+        return None
+
     # Patch all used functions
     monkeypatch.setattr(pg, "load_data", load_data)
     monkeypatch.setattr(pg, "save_data", save_data)
@@ -201,6 +286,13 @@ def patch_datastore(monkeypatch, memory_store):
     monkeypatch.setattr(pg, "set_fleet", set_fleet)
     monkeypatch.setattr(pg, "get_settings", get_settings)
     monkeypatch.setattr(pg, "set_settings", set_settings)
+    monkeypatch.setattr(pg, "create_admin", create_admin)
+    monkeypatch.setattr(pg, "get_admin_by_email", get_admin_by_email)
+    monkeypatch.setattr(pg, "get_admin_by_id", get_admin_by_id)
+    monkeypatch.setattr(pg, "list_admins", list_admins)
+    monkeypatch.setattr(pg, "verify_admin_credentials", verify_admin_credentials)
+    monkeypatch.setattr(pg, "set_admin_password", set_admin_password)
+    monkeypatch.setattr(pg, "record_admin_login", record_admin_login)
     # Patch scoring constants and helper functions in-place
     import app.scoring as _scoring
     settings = memory_store["settings"]

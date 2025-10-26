@@ -6,9 +6,14 @@ import os
 import time
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
+from urllib.parse import urljoin, urlparse
+
+from flask_login import current_user, login_required, login_user, logout_user
 
 from .scoring import calculate_race_results, _scaling_factor
 from . import scoring as scoring_module
+from .auth import build_user
 from .datastore import (
     load_data,
     save_data,
@@ -24,6 +29,8 @@ from .datastore import (
     set_fleet as ds_set_fleet,
     get_settings as ds_get_settings,
     set_settings as ds_set_settings,
+    verify_admin_credentials as ds_verify_admin_credentials,
+    record_admin_login as ds_record_admin_login,
 )
 from .datastore import update_race_row as ds_update_race_row
 from .datastore import replace_race_results as ds_replace_race_results
@@ -42,6 +49,30 @@ _RACE_TTL = int(os.environ.get('CACHE_TTL_RACE', '120'))  # seconds
 # Lightweight background executor for async tasks
 _EXECUTOR = ThreadPoolExecutor(max_workers=int(os.environ.get('WORKER_THREADS', '1')))
 _RECALC_ACTIVE: set[str] = set()
+
+
+def _is_safe_redirect(target: str | None) -> bool:
+    if not target:
+        return False
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    if not test_url.netloc:
+        return True
+    return (test_url.scheme or ref_url.scheme) in ('http', 'https') and test_url.netloc == ref_url.netloc
+
+
+def _render_login(error: str | None = None, email: str | None = None, next_url: str | None = None):
+    return render_template('login.html', title='Sign In', error=error, email=email or '', next=next_url or '')
+
+
+def superadmin_required(func):
+    @wraps(func)
+    def _wrapped(*args, **kwargs):
+        if not getattr(current_user, 'is_superadmin', False):
+            abort(403)
+        return func(*args, **kwargs)
+
+    return _wrapped
 
 
 @bp.app_template_filter('dmy_date')
@@ -568,6 +599,8 @@ def health_handicaps():
         return {'status': 'error', 'error': str(e)}, 500
 
 @bp.route('/admin/schema/upgrade', methods=['POST'])
+@login_required
+@superadmin_required
 def schema_upgrade():
     """Ensure required schema is present and correct.
 
@@ -630,6 +663,8 @@ def schema_upgrade():
         return {'ok': False, 'status': 'error', 'error': str(e)}
 
 @bp.route('/admin/indexes/apply', methods=['POST'])
+@login_required
+@superadmin_required
 def apply_missing_indexes():
     """Create recommended indexes if missing.
 
@@ -1387,6 +1422,53 @@ def _season_standings(season: int, scoring: str) -> tuple[list[dict], list[dict]
 #</getdata>
 
 
+@bp.route('/login', methods=['GET', 'POST'])
+def login():
+    next_url = request.args.get('next') or request.form.get('next')
+    if next_url and not _is_safe_redirect(next_url):
+        next_url = url_for('main.races')
+
+    if current_user.is_authenticated:
+        return redirect(next_url or url_for('main.races'))
+
+    error = None
+    email_value = ''
+
+    if request.method == 'POST':
+        email_value = (request.form.get('email') or '').strip()
+        password = request.form.get('password') or ''
+        if not email_value or not password:
+            error = 'Email and password are required.'
+        else:
+            try:
+                admin = ds_verify_admin_credentials(email_value, password)
+            except RuntimeError:
+                current_app.logger.exception('Authentication backend unavailable')
+                error = 'Authentication temporarily unavailable. Please try again.'
+            else:
+                if admin:
+                    user = build_user(admin)
+                    if user is not None:
+                        login_user(user)
+                        try:
+                            ds_record_admin_login(admin['id'])
+                        except Exception:  # pragma: no cover - best effort logging only
+                            current_app.logger.warning('Failed to record admin login', exc_info=True)
+                        return redirect(next_url or url_for('main.races'))
+                error = 'Invalid email or password.'
+    else:
+        email_value = (request.args.get('email') or '').strip()
+
+    return _render_login(error=error, email=email_value, next_url=next_url)
+
+
+@bp.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('main.races'))
+
+
 @bp.route('/')
 def index():
     return redirect(url_for('main.races'))
@@ -1484,6 +1566,7 @@ def _load_series_meta(series_id: str):
 
 #<getdata>
 @bp.route('/races/new')
+@login_required
 def race_new():
     series_list = [entry['series'] for entry in _load_series_entries()]
     fleet = ds_get_fleet().get('competitors', [])
@@ -1527,6 +1610,7 @@ def race_new():
 
 
 @bp.route('/series/<series_id>')
+@login_required
 def series_detail(series_id):
     series, races = _find_series(series_id)
     if series is None:
@@ -2015,6 +2099,7 @@ def series_detail(series_id):
         scoring_settings=scoring_settings_compact,
         scoring_version=scoring_version,
         pre_race_seeds=pre_race_seeds,
+        unlocked=current_user.is_authenticated,
     )
 
 
@@ -2076,6 +2161,7 @@ def standings():
 
 #<getdata>
 @bp.route('/fleet')
+@login_required
 def fleet():
     breadcrumbs = [('Fleet', None)]
     competitors = ds_get_fleet().get('competitors', [])
@@ -2085,6 +2171,7 @@ def fleet():
 
 #<getdata>
 @bp.route('/api/fleet', methods=['POST'])
+@login_required
 def update_fleet():
     """Persist fleet edits (add, edit, delete) and trigger handicap refresh."""
     payload = request.get_json(silent=True)
@@ -2276,6 +2363,7 @@ def rules():
 
 #<getdata>
 @bp.route('/settings')
+@login_required
 def settings():
     breadcrumbs = [('Settings', None)]
     settings_data = ds_get_settings()
@@ -2285,6 +2373,7 @@ def settings():
 
 #<getdata>
 @bp.route('/api/settings', methods=['POST'])
+@login_required
 def save_settings():
     """Persist updated settings to the JSON configuration file."""
     payload = request.get_json() or {}
@@ -2309,6 +2398,7 @@ def save_settings():
 
 #<getdata>
 @bp.route('/api/settings/scoring')
+@login_required
 def get_scoring_settings():
     """Return compact scoring settings for client-side computation.
 
@@ -2420,6 +2510,7 @@ def race_snapshot_version(race_id: str):
 
 #<getdata>
 @bp.route('/api/races/<race_id>', methods=['POST'])
+@login_required
 def update_race(race_id):
     data = request.get_json() or {}
     series_choice = data.get('series_id')
@@ -2853,6 +2944,7 @@ def update_race(race_id):
 
 #<getdata>
 @bp.route('/api/races/<race_id>/preview', methods=['POST'])
+@login_required
 def preview_race(race_id):
     """Return recalculated results for the given race without persisting.
 
@@ -3067,6 +3159,7 @@ def preview_race(race_id):
 #</getdata>
 #<getdata>
 @bp.route('/api/races/<race_id>', methods=['DELETE'])
+@login_required
 def delete_race(race_id):
     store = load_data()
     season_obj, series_obj, race_obj = ds_find_race(race_id, data=store)

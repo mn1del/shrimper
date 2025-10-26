@@ -1,5 +1,8 @@
 import os
-from flask import Flask
+from flask import Flask, jsonify, redirect, request, url_for
+
+from .auth import build_user, login_manager
+from . import datastore as datastore_proxy
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -55,6 +58,26 @@ def create_app():
         app.logger.exception("PostgreSQL pool initialization failed; continuing without pool")
 
     # Routes use datastore proxies that now target PostgreSQL
+
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def _load_user(user_id: str):
+        try:
+            admin = datastore_proxy.get_admin_by_id(int(user_id))
+        except Exception:
+            return None
+        if not admin or not bool(admin.get("is_active", True)):
+            return None
+        return build_user(admin)
+
+    @login_manager.unauthorized_handler
+    def _unauthorized():
+        if request.path.startswith("/api/") or request.is_json:
+            return jsonify({"error": "authentication_required"}), 401
+        next_url = request.url
+        return redirect(url_for("main.login", next=next_url))
+
     from . import routes  # type: ignore
     app.register_blueprint(routes.bp)
 

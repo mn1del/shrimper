@@ -170,3 +170,31 @@ def update_race_row(race_id: str, fields: Dict[str, Any]) -> None:
 
 def replace_race_results(race_id: str, entrants: List[Dict[str, Any]]) -> None:
     return _pg.replace_race_results(race_id, entrants)
+
+
+def create_admin(email: str, password: str, *, is_superadmin: bool = False, is_active: bool = True) -> Dict[str, Any]:
+    return _pg.create_admin(email, password, is_superadmin=is_superadmin, is_active=is_active)
+
+
+def get_admin_by_email(email: str, *, include_password_hash: bool = False) -> Optional[Dict[str, Any]]:
+    return _pg.get_admin_by_email(email, include_password_hash=include_password_hash)
+
+
+def get_admin_by_id(admin_id: int) -> Optional[Dict[str, Any]]:
+    return _pg.get_admin_by_id(admin_id)
+
+
+def list_admins() -> List[Dict[str, Any]]:
+    return _pg.list_admins()
+
+
+def verify_admin_credentials(email: str, password: str) -> Optional[Dict[str, Any]]:
+    return _pg.verify_admin_credentials(email, password)
+
+
+def set_admin_password(admin_id: int, new_password: str) -> None:
+    return _pg.set_admin_password(admin_id, new_password)
+
+
+def record_admin_login(admin_id: int) -> None:
+    return _pg.record_admin_login(admin_id)

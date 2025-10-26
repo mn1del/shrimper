@@ -4,7 +4,7 @@ import pathlib
 import sys
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from app import create_app
+from app import create_app, datastore
 
 
 @pytest.fixture()
@@ -75,7 +75,9 @@ def client(memory_store):
 
     app = create_app()
     app.config.update({"TESTING": True})
+    datastore.create_admin("tester@example.com", "secret", is_superadmin=True)
     with app.test_client() as c:
+        c.post("/login", data={"email": "tester@example.com", "password": "secret"})
         yield c
 
 
@@ -299,9 +301,63 @@ def test_api_fleet_creates_competitor_with_generated_id(monkeypatch):
 
     import app.datastore as datastore
     datastore = importlib.reload(datastore)
+    monkeypatch.setattr(
+        datastore,
+        "verify_admin_credentials",
+        lambda email, password: {
+            "id": 1,
+            "email": email,
+            "is_superadmin": True,
+            "is_active": True,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "last_login_at": None,
+        },
+    )
+    monkeypatch.setattr(datastore, "record_admin_login", lambda admin_id: None)
+    monkeypatch.setattr(
+        datastore,
+        "create_admin",
+        lambda email, password, **_: {
+            "id": 1,
+            "email": email,
+            "is_superadmin": True,
+            "is_active": True,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "last_login_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        datastore,
+        "get_admin_by_id",
+        lambda admin_id: {
+            "id": 1,
+            "email": "tester@example.com",
+            "is_superadmin": True,
+            "is_active": True,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "last_login_at": None,
+        },
+    )
 
     import app.routes as routes
     routes = importlib.reload(routes)
+    monkeypatch.setattr(
+        routes,
+        "ds_verify_admin_credentials",
+        lambda email, password: {
+            "id": 1,
+            "email": email,
+            "is_superadmin": True,
+            "is_active": True,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "last_login_at": None,
+        },
+    )
+    monkeypatch.setattr(routes, "ds_record_admin_login", lambda admin_id: None)
 
     monkeypatch.setattr(routes, "ds_get_fleet", lambda: {"competitors": []})
     monkeypatch.setattr(routes, "recalculate_handicaps", lambda: None)
@@ -314,8 +370,8 @@ def test_api_fleet_creates_competitor_with_generated_id(monkeypatch):
 
     app = app_pkg.create_app()
     app.config.update({"TESTING": True})
-
     with app.test_client() as client_http:
+        client_http.post("/login", data={"email": "tester@example.com", "password": "secret"})
         payload = {
             "competitors": [
                 {

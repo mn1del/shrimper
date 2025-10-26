@@ -1574,3 +1574,20 @@ def set_admin_password(admin_id: int, new_password: str) -> None:
             conn.commit()
     except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
         raise RuntimeError("Database unavailable while updating admin password") from exc
+
+
+def record_admin_login(admin_id: int) -> None:
+    try:
+        with _get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE admins
+                SET last_login_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                (int(admin_id),),
+            )
+            conn.commit()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        raise RuntimeError("Database unavailable while recording admin login") from exc
