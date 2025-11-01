@@ -200,13 +200,9 @@ psql $DATABASE_URL -f add_indexes.sql
 
 ### Migration
 
-If migrating from an older deployment that used `data.json`, populate PostgreSQL once using:
-```bash
-export DATABASE_URL=postgresql://user:pass@host:port/dbname
-python migrate_to_postgres.py
-```
-
-If upgrading from a schema without `race_results.handicap_override`, either rerun the migration or POST to `/admin/schema/upgrade` to add the column in place. Overrides persist and seed subsequent races once this column exists.
+> ⚠️ **Legacy warning:** Earlier iterations of this project relied on a `data.json` export and a helper script named `migrate_to_postgres.py`. That approach is obsolete and unsafe for live databases—the script drops tables and references columns that no longer exist. It has been removed from the repository.  
+>
+> If you still have historical JSON data to import, rebuild a one-off migration that matches the current schema or insert the records manually. Never run the old script against production data.
 
 ## Dev Workflow
 1. Ensure the `.venv` virtual environment exists (`python -m venv .venv`) and is activated for your shell session.
