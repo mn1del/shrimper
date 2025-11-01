@@ -34,6 +34,7 @@ This repository is a Flask + Bootstrap skeleton for tracking sailing league resu
 7. In VS Code Codex has DB connectivity from the shell using psycopg2-binary
 8. Do not make changes on the main branch. Create a new branch, name it appropriately, and work on that.
 9. Use `flask --app app auth-create-admin` to seed super-admins and configure mail via `MAIL_*` env vars (see `docs/authentication.md`). Legacy helpers that referenced `data.json` or `migrate_to_postgres.py` are retired—do not run them against live data.
+10. Before drafting any plan or performing schema work, inspect the current PostgreSQL schema (`psql` introspection, `information_schema`, etc.) so proposed steps reflect reality and avoid destructive mismatches.
 
 
 # How to Work
